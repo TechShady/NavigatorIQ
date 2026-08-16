@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.dt-app/
+*.local
+.env
+.env.*
+!.env.example

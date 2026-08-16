@@ -1,0 +1,27 @@
+{
+  "$schema": "./.dt-app/app.config.schema.json",
+  "environmentUrl": "https://guu84124.apps.dynatrace.com",
+  "app": {
+    "name": "NavigatorIQ",
+    "version": "0.1.0",
+    "description": "Persona-driven operational intelligence for Dynatrace. Not an official Dynatrace app.",
+    "id": "my.navigator.iq.app",
+    "scopes": [
+      { "name": "storage:logs:read", "comment": "read log data" },
+      { "name": "storage:buckets:read", "comment": "read storage buckets" },
+      { "name": "storage:metrics:read", "comment": "read host and service metrics" },
+      { "name": "storage:entities:read", "comment": "read entity data" },
+      { "name": "storage:smartscape:read", "comment": "read smartscape nodes (K8S entities)" },
+      { "name": "storage:events:read", "comment": "read Davis problems and events" },
+      { "name": "storage:spans:read", "comment": "read distributed traces" },
+      { "name": "storage:system:read", "comment": "read system data" },
+      { "name": "storage:security:read", "comment": "read security data" },
+      { "name": "environment-api:metrics:read", "comment": "read metrics v2" },
+      { "name": "environment-api:entities:read", "comment": "read entities v2" },
+      { "name": "state:user-app-states:read", "comment": "read per-user settings" },
+      { "name": "state:user-app-states:write", "comment": "save per-user settings" },
+      { "name": "state:app-states:read", "comment": "read shared settings" },
+      { "name": "state:app-states:write", "comment": "save shared settings" }
+    ]
+  }
+}

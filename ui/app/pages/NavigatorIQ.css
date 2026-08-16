@@ -1,0 +1,91 @@
+.iq-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #090c16;
+  color: #ffffff;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+.iq-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+
+.iq-main {
+  flex: 2;
+  overflow-y: auto;
+  padding: 20px 24px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.iq-sidebar {
+  flex: 0 0 280px;
+  overflow-y: auto;
+  padding: 20px 16px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* Timeframe tab buttons */
+.iq-tab {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.iq-tab:hover {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.iq-tab--active {
+  color: #7ab4ff;
+  background: rgba(69, 137, 255, 0.15);
+  border-color: rgba(69, 137, 255, 0.4);
+  font-weight: 700;
+}
+
+/* Scrollbar styling */
+.iq-main::-webkit-scrollbar,
+.iq-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.iq-main::-webkit-scrollbar-track,
+.iq-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.iq-main::-webkit-scrollbar-thumb,
+.iq-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.iq-main::-webkit-scrollbar-thumb:hover,
+.iq-sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.45);
+}
+
+/* Responsive: stack columns on narrow viewports */
+@media (max-width: 900px) {
+  .iq-content {
+    flex-direction: column;
+  }
+  .iq-sidebar {
+    flex: 0 0 auto;
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+}
