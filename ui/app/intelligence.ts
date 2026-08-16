@@ -78,7 +78,7 @@ function assessDeveloper(cur: AllQueryResults, prev: AllQueryResults, t: Thresho
           : sev === "yellow"
           ? "Monitor the error trend in Services. Open Distributed Traces to find impacted operations."
           : "Error rate is within normal range. Continue monitoring.",
-        builtinAppPath: "dynatrace.classic.services",
+        builtinAppPath: "dynatrace.services",
         builtinAppLabel: "Services",
         customApp: sev !== "green" ? { ...CUSTOM_APPS.servicesOverview, tab: "Errors" } : undefined,
       });
@@ -100,7 +100,7 @@ function assessDeveloper(cur: AllQueryResults, prev: AllQueryResults, t: Thresho
           : rtSev === "yellow"
           ? "Review response time breakdown in Services. Check for slow database calls or downstream dependencies."
           : "Response times are healthy.",
-        builtinAppPath: "dynatrace.classic.distributed.traces",
+        builtinAppPath: "dynatrace.distributedtracing",
         builtinAppLabel: "Distributed Traces",
         customApp: rtSev !== "green" ? { ...CUSTOM_APPS.servicesOverview, tab: "Metrics" } : undefined,
       });
@@ -152,7 +152,7 @@ function assessSre(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConf
         : finalSev === "yellow"
         ? "Review open problems in Problems app. Verify SLO burn rates are within budget."
         : "Environment is problem-free. Review closed problems for patterns.",
-      builtinAppPath: "dynatrace.classic.problems",
+      builtinAppPath: "dynatrace.davis.problems",
       builtinAppLabel: "Problems",
     });
 
@@ -172,7 +172,7 @@ function assessSre(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConf
         recommendation: sloProxy !== "green"
           ? "Open SLOs to check error budget burn rate. Correlate with Problems to identify the root cause."
           : "Error rates support SLO compliance. Review SLOs to verify burn rates.",
-        builtinAppPath: "dynatrace.classic.slo",
+        builtinAppPath: "dynatrace.slos",
         builtinAppLabel: "SLOs",
         customApp: sloProxy !== "green" ? { ...CUSTOM_APPS.servicesOverview, tab: "Errors" } : undefined,
       });
@@ -220,7 +220,7 @@ function assessPlatform(cur: AllQueryResults, prev: AllQueryResults, t: Threshol
       recommendation: memSev !== "green"
         ? "Check memory-heavy processes via Hosts app. Consider right-sizing or adding capacity."
         : "Memory usage is healthy.",
-      builtinAppPath: "dynatrace.classic.hosts",
+      builtinAppPath: "dynatrace.infraops",
       builtinAppLabel: "Hosts",
     });
   }
@@ -275,7 +275,7 @@ function assessSecurity(cur: AllQueryResults, prev: AllQueryResults, t: Threshol
         : vulnSev === "yellow"
         ? "Review high-severity vulnerabilities in Application Security. Check exploitability scores."
         : "No critical vulnerabilities open. Continue regular scanning.",
-      builtinAppPath: "dynatrace.classic.vulnerabilities",
+      builtinAppPath: "dynatrace.security.vulnerabilities",
       builtinAppLabel: "Vulnerabilities",
     });
 
@@ -294,7 +294,7 @@ function assessSecurity(cur: AllQueryResults, prev: AllQueryResults, t: Threshol
         recommendation: sec.exploitedAttacks > 0
           ? "URGENT: Open Attacks app. Isolate affected services. Escalate to security team immediately."
           : "Review attack patterns in Attacks app. Verify blocking rules are active.",
-        builtinAppPath: "dynatrace.classic.attacks",
+        builtinAppPath: "dynatrace.security.attacks",
         builtinAppLabel: "Attacks",
       });
     }
@@ -324,7 +324,7 @@ function assessDba(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConf
       recommendation: rtSev !== "green"
         ? "Open Databases app to identify slow queries. Use Distributed Traces to find the originating service calls."
         : "Database response times are within acceptable range.",
-      builtinAppPath: "dynatrace.classic.databases",
+      builtinAppPath: "dynatrace.database.overview",
       builtinAppLabel: "Databases",
     });
   }
@@ -370,8 +370,8 @@ function assessNetwork(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
       recommendation: errSev !== "green"
         ? "Open Network Monitoring to identify affected hosts and traffic patterns. Check Smartscape for topology context."
         : "Network error rates are nominal.",
-      builtinAppPath: "dynatrace.classic.network",
-      builtinAppLabel: "Network Monitoring",
+      builtinAppPath: "dynatrace.infraops",
+      builtinAppLabel: "Infrastructure & Operations",
     });
 
     const connSev = classify(net.connectivityEvents, t.networkErrorsYellow, 1);
@@ -383,8 +383,8 @@ function assessNetwork(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         metricValue: net.connectivityEvents,
         metricUnit: "events",
         recommendation: "Open Smartscape to visualize affected connections and identify isolated services.",
-        builtinAppPath: "dynatrace.classic.smartscape",
-        builtinAppLabel: "Smartscape Topology",
+        builtinAppPath: "dynatrace.infraops",
+        builtinAppLabel: "Infrastructure & Operations",
       });
     }
   }
@@ -411,7 +411,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
       recommendation: errSev !== "green"
         ? "Open Session Replay to investigate error sessions. Drill into User Journey → Errors tab for impacted funnels."
         : "Session error rate is healthy.",
-      builtinAppPath: "dynatrace.classic.session.segmentation",
+      builtinAppPath: "dynatrace.session.replay",
       builtinAppLabel: "Session Replay",
       customApp: errSev !== "green" ? { ...CUSTOM_APPS.userJourney, tab: "Errors" } : undefined,
     });
@@ -430,7 +430,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         recommendation: lcpSev !== "green"
           ? "Open User Journey → Web Vitals tab to see LCP by page. Check render-blocking resources and server response times."
           : "Core Web Vitals are in good range.",
-        builtinAppPath: "dynatrace.classic.rum.overview",
+        builtinAppPath: "dynatrace.rum.overview",
         builtinAppLabel: "Digital Experience",
         customApp: lcpSev !== "green" ? { ...CUSTOM_APPS.userJourney, tab: "Web Vitals" } : undefined,
       });
@@ -444,7 +444,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         metricValue: dx.syntheticFailures,
         metricUnit: "failures",
         recommendation: "Open Synthetic Monitoring to see which tests failed and from which locations. Compare with real user data.",
-        builtinAppPath: "dynatrace.classic.synthetic",
+        builtinAppPath: "dynatrace.synthetic",
         builtinAppLabel: "Synthetic Monitoring",
       });
     }
@@ -478,7 +478,7 @@ function assessDevops(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdC
         : dep.totalDeployments > 0
         ? "Recent deployments completed successfully. Open Releases to verify post-deploy metrics."
         : "No deployments in this period. This may be expected.",
-      builtinAppPath: failSev !== "green" ? "dynatrace.automations" : "dynatrace.classic.releases",
+      builtinAppPath: failSev !== "green" ? "dynatrace.automations" : "dynatrace.releases",
       builtinAppLabel: failSev !== "green" ? "Workflows" : "Releases",
     });
   }
@@ -496,7 +496,7 @@ function assessDevops(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdC
         previousValue: psh?.errorRatePct,
         ...errTrend,
         recommendation: "Cross-reference deployment timestamps with error spikes in Services Overview. Consider rollback if errors persist.",
-        builtinAppPath: "dynatrace.classic.releases",
+        builtinAppPath: "dynatrace.releases",
         builtinAppLabel: "Releases",
         customApp: { ...CUSTOM_APPS.servicesOverview, tab: "Errors" },
       });
@@ -602,18 +602,6 @@ export function computeAssessment(
 ): Assessment {
   const t: ThresholdConfig = { ...DEFAULT_THRESHOLDS, ...partialThresholds };
 
-  const hasAnyData = Object.values(cur).some((v) => v !== null);
-  if (!hasAnyData) {
-    return {
-      redItems: [],
-      yellowItems: [],
-      greenItems: [],
-      overallHealth: "green",
-      narrative: "Loading data… Queries are executing. Results will appear shortly.",
-      dataAvailable: false,
-    };
-  }
-
   let allItems: AssessmentItem[];
   switch (persona) {
     case "developer": allItems = assessDeveloper(cur, prev, t, tf); break;
@@ -631,10 +619,25 @@ export function computeAssessment(
   const yellowItems = allItems.filter((i) => i.severity === "yellow");
   const existingGreenItems = allItems.filter((i) => i.severity === "green");
   const supplementalGreen = buildGreenItems(allItems, cur);
-  const greenItems = [...existingGreenItems, ...supplementalGreen];
+  let greenItems = [...existingGreenItems, ...supplementalGreen];
+
+  // When no data came back from any query for this timeframe, show a helpful "quiet" item
+  const hasAnyData = Object.values(cur).some((v) => v !== null);
+  if (!hasAnyData || (redItems.length === 0 && yellowItems.length === 0 && greenItems.length === 0)) {
+    greenItems = [{
+      severity: "green",
+      title: "No Activity in This Timeframe",
+      detail: `No significant events or metrics were detected in ${tf.label}. This may indicate a quiet monitoring period, no traffic in the selected window, or that specific metric types are not yet available in this environment.`,
+      recommendation: `Try a longer timeframe (Today, Yesterday, or Last 7 Days) to see activity patterns. Check Infrastructure & Operations to verify agents are reporting.`,
+      builtinAppPath: "dynatrace.infraops",
+      builtinAppLabel: "Infrastructure & Operations",
+    }];
+  }
 
   const overallHealth: Severity = redItems.length > 0 ? "red" : yellowItems.length > 0 ? "yellow" : "green";
-  const narrative = buildNarrative(allItems, persona, tf, cur, prev);
+  const narrative = (redItems.length === 0 && yellowItems.length === 0 && !hasAnyData)
+    ? `No monitoring data found for ${tf.label}. Ensure Dynatrace agents are active and the environment has traffic in this window.`
+    : buildNarrative(allItems, persona, tf, cur, prev);
 
   return { redItems, yellowItems, greenItems, overallHealth, narrative, dataAvailable: true };
 }

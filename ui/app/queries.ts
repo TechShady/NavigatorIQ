@@ -15,9 +15,9 @@ import type {
 
 export function serviceHealthQuery(from: string, to: string): string {
   return `timeseries
-  err=sum(dt.service.request.failure.count),
+  err=sum(dt.service.request.failure_count),
   total=sum(dt.service.request.count),
-  rt=avg(dt.service.response.time),
+  rt=avg(dt.service.request.response_time),
   interval:auto, from:${from}, to:${to}
 | summarize
   totalErrors=sum(arraySum(err)),
@@ -48,23 +48,22 @@ export function hostHealthQuery(from: string, to: string): string {
   cpu=avg(dt.host.cpu.usage),
   mem=avg(dt.host.memory.usage),
   interval:auto, from:${from}, to:${to}, by:{dt.entity.host}
+| fieldsAdd avgCpu=arrayAvg(cpu), avgMem=arrayAvg(mem)
 | summarize
-  avgCpuPct=avg(arrayAvg(cpu)),
-  avgMemPct=avg(arrayAvg(mem)),
-  highCpuHosts=countIf(arrayAvg(cpu)>80),
-  highMemHosts=countIf(arrayAvg(mem)>85),
+  avgCpuPct=avg(avgCpu),
+  avgMemPct=avg(avgMem),
+  highCpuHosts=countIf(avgCpu>80),
+  highMemHosts=countIf(avgMem>85),
   totalHosts=count(),
-  cpuTimeline=collectArray(arrayAvg(cpu))`;
+  cpuTimeline=collectArray(avgCpu)`;
 }
 
 export function k8sQuery(from: string, to: string): string {
-  return `timeseries
-  restarts=sum(dt.kubernetes.pod.restart_count),
-  notReady=avg(dt.kubernetes.pod.not_ready_count),
-  interval:auto, from:${from}, to:${to}
+  return `fetch events, from:${from}, to:${to}
+| filter event.type == "KUBERNETES_POD_RESTART_RATE_HIGH" or event.type == "KUBERNETES_CONTAINER_OOM_KILL" or event.type == "KUBERNETES_NODE_UNSCHEDULABLE" or (isNotNull(dt.entity.cloud_application_namespace) and (matchesPhrase(event.title, "restart") or matchesPhrase(event.title, "CrashLoop")))
 | summarize
-  totalPodRestarts=sum(arraySum(restarts)),
-  totalNotReadyPods=max(arrayMax(notReady))`;
+  totalPodRestarts=countIf(event.type == "KUBERNETES_POD_RESTART_RATE_HIGH" or event.type == "KUBERNETES_CONTAINER_OOM_KILL" or matchesPhrase(event.title, "restart") or matchesPhrase(event.title, "CrashLoop")),
+  totalNotReadyPods=countIf(event.type == "KUBERNETES_NODE_UNSCHEDULABLE")`;
 }
 
 export function securityQuery(from: string, to: string): string {
@@ -87,8 +86,8 @@ export function attacksQuery(from: string, to: string): string {
 
 export function databaseQuery(from: string, to: string): string {
   return `timeseries
-  rt=avg(dt.service.response.time),
-  err=sum(dt.service.request.failure.count),
+  rt=avg(dt.service.request.response_time),
+  err=sum(dt.service.request.failure_count),
   total=sum(dt.service.request.count),
   interval:auto, from:${from}, to:${to}
 | summarize
@@ -107,24 +106,20 @@ export function networkQuery(from: string, to: string): string {
 
 export function networkErrorsQuery(from: string, to: string): string {
   return `timeseries
-  netErr=sum(dt.host.network.errors.total),
+  retx=sum(dt.process.network.packets.re_tx),
   interval:auto, from:${from}, to:${to}
-| summarize totalNetErrors=sum(arraySum(netErr))`;
+| summarize totalNetErrors=sum(arraySum(retx))`;
 }
 
 export function digitalExpQuery(from: string, to: string): string {
-  return `timeseries
-  err=sum(dt.rum.error.count),
-  sessions=sum(dt.rum.session.count),
-  lcp=avg(dt.rum.browser.largest_contentful_paint),
-  apdex=avg(dt.rum.user_experience.apdex.value),
-  interval:auto, from:${from}, to:${to}
+  // RUM metrics are accessed via bizevents in Grail
+  return `fetch bizevents, from:${from}, to:${to}
+| filter event.type == "rum" or isNotNull(app.id)
 | summarize
-  totalErrors=sum(arraySum(err)),
-  totalSessions=sum(arraySum(sessions)),
-  avgLcpMs=avg(arrayAvg(lcp)),
-  avgApdex=avg(arrayAvg(apdex)),
-  lcpTimeline=collectArray(arrayAvg(lcp))
+  totalErrors=countIf(event.type == "rum_error" or isNotNull(error.id)),
+  totalSessions=countIf(isNotNull(session.id)),
+  avgLcpMs=avg(lcp),
+  avgApdex=avg(user_experience.apdex)
 | fieldsAdd sessionErrorRatePct=if(totalSessions>0, totalErrors/totalSessions*100, else:0)`;
 }
 
@@ -252,10 +247,12 @@ export function parseDigitalExp(dxRecords: DqlRecord[] | undefined, synthRecords
   const d = dxRecords?.[0] ?? {};
   const s = synthRecords?.[0] ?? {};
   if (!dxRecords?.[0] && !synthRecords?.[0]) return null;
+  const totalSessions = num(d, "totalSessions");
+  const totalErrors = num(d, "totalErrors");
   return {
-    sessionErrorRatePct: num(d, "sessionErrorRatePct"),
-    totalSessions: num(d, "totalSessions"),
-    totalErrors: num(d, "totalErrors"),
+    sessionErrorRatePct: totalSessions > 0 ? (totalErrors / totalSessions) * 100 : num(d, "sessionErrorRatePct"),
+    totalSessions,
+    totalErrors,
     avgLcpMs: num(d, "avgLcpMs"),
     avgApdex: num(d, "avgApdex"),
     syntheticFailures: num(s, "syntheticFailures"),
