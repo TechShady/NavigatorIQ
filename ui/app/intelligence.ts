@@ -12,8 +12,58 @@ import type {
   K8sResult,
   SecurityResult,
   DigitalExpResult,
+  HeatBucketDetail,
+  HeatBucketMetric,
 } from "./types";
 import { DEFAULT_THRESHOLDS, CUSTOM_APPS } from "./constants";
+
+// ─── Heat / Z-score computation ────────────────────────────────────────────
+
+function computeHeat(timelines: number[][]): number[] {
+  const nonEmpty = timelines.filter((t) => t.length > 1);
+  if (nonEmpty.length === 0) return [];
+  const len = Math.max(...nonEmpty.map((t) => t.length));
+  return Array.from({ length: len }, (_, i) => {
+    let maxZ = 0;
+    for (const timeline of nonEmpty) {
+      const mean = timeline.reduce((a, b) => a + b, 0) / timeline.length;
+      const std = Math.max(
+        Math.sqrt(timeline.reduce((a, b) => a + (b - mean) ** 2, 0) / timeline.length),
+        0.001
+      );
+      const v = timeline[i] ?? mean;
+      maxZ = Math.max(maxZ, (v - mean) / std);
+    }
+    return Math.max(0, maxZ);
+  });
+}
+
+// ─── Bucket-level heat detail ──────────────────────────────────────────────
+
+function zToLevel(z: number): HeatBucketDetail["level"] {
+  return z >= 2.5 ? "spike" : z >= 1.5 ? "warm" : z >= 0.75 ? "elevated" : "normal";
+}
+
+interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; fmt: (v: number) => string }
+
+function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBucketDetail[] {
+  const valid = metrics.filter((m) => m.timeline.length > 1);
+  if (heatScores.length === 0) return [];
+  const stats = valid.map(({ timeline }) => {
+    const mean = timeline.reduce((a, b) => a + b, 0) / timeline.length;
+    const std = Math.max(Math.sqrt(timeline.reduce((a, b) => a + (b - mean) ** 2, 0) / timeline.length), 0.001);
+    return { mean, std };
+  });
+  return heatScores.map((z, i) => ({
+    bucketIndex: i,
+    zScore: z,
+    level: zToLevel(z),
+    metrics: valid.map((m, mi): HeatBucketMetric => {
+      const value = m.timeline[i] ?? stats[mi].mean;
+      return { label: m.label, value, displayValue: m.fmt(value), zScore: (value - stats[mi].mean) / stats[mi].std, isTraffic: m.isTraffic };
+    }),
+  }));
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -129,54 +179,88 @@ function assessDeveloper(cur: AllQueryResults, prev: AllQueryResults, t: Thresho
   return items;
 }
 
-function assessSre(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConfig, _tf: TimeframeInfo): AssessmentItem[] {
+function assessSre(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConfig, tf: TimeframeInfo): AssessmentItem[] {
   const items: AssessmentItem[] = [];
-  const pr = cur.problems;
-  const ppr = prev.problems;
+  const sh = cur.serviceHealth;
+  const psh = prev.serviceHealth;
+  const le = cur.logErrors;
+  const ple = prev.logErrors;
+  const hh = cur.hostHealth as HostHealthResult | null;
+  const phh = prev.hostHealth as HostHealthResult | null;
 
-  if (pr) {
-    const sev = classify(pr.critical, t.problemsRed, t.problemsYellow);
-    const totalSev = classify(pr.total, t.problemsRed * 2, t.problemsYellow * 2);
-    const finalSev = sev === "red" || totalSev === "red" ? "red" : sev === "yellow" || totalSev === "yellow" ? "yellow" : "green";
-    const trendData = ppr ? calcTrend(pr.total, ppr.total) : undefined;
+  if (sh) {
+    const sloProxy = classify(sh.errorRatePct, t.errorRateRedPct, t.errorRateYellowPct);
+    const errTrend = psh ? calcTrend(sh.errorRatePct, psh.errorRatePct) : undefined;
     items.push({
-      severity: finalSev,
-      title: finalSev === "green" ? "No Active Problems" : `${pr.total} Active Problem${pr.total !== 1 ? "s" : ""} (${pr.critical} Critical)`,
-      detail: `${pr.total} open problems: ${pr.critical} critical, ${pr.performance} performance. ${trendData ? trendLabel(trendData.trend, trendData.trendPct) : ""}`,
-      metricValue: pr.total,
-      metricUnit: "problems",
-      previousValue: ppr?.total,
-      ...trendData,
-      recommendation: finalSev === "red"
-        ? "Open Problems immediately and investigate critical availability/error events. Check impact scope and assign owners."
-        : finalSev === "yellow"
-        ? "Review open problems in Problems app. Verify SLO burn rates are within budget."
-        : "Environment is problem-free. Review closed problems for patterns.",
-      builtinAppPath: "dynatrace.davis.problems",
-      builtinAppLabel: "Problems",
+      severity: sloProxy,
+      title: sloProxy === "green" ? "Service Error Rate — SLO Safe" : `Service Error Rate Threatening SLO Budget`,
+      detail: `Error rate ${pct(sh.errorRatePct)} across ${sh.totalRequests.toLocaleString()} requests. ${errTrend ? trendLabel(errTrend.trend, errTrend.trendPct) : ""} Sustained errors burn down SLO error budgets.`,
+      metricValue: sh.errorRatePct,
+      metricUnit: "%",
+      previousValue: psh?.errorRatePct,
+      ...errTrend,
+      recommendation: sloProxy !== "green"
+        ? "Open SLOs to inspect error budget burn rate. Cross-reference with Services to identify failing operations."
+        : "Error rates are within healthy range. Review SLOs to confirm budget consumption.",
+      builtinAppPath: "dynatrace.slos",
+      builtinAppLabel: "SLOs",
+      customApp: sloProxy !== "green" ? { ...CUSTOM_APPS.servicesOverview, tab: "Errors" } : undefined,
     });
 
-    const sh = cur.serviceHealth;
-    const psh = prev.serviceHealth;
-    if (sh) {
-      const sloProxy = classify(sh.errorRatePct, t.errorRateRedPct, t.errorRateYellowPct);
-      const trendData2 = psh ? calcTrend(sh.errorRatePct, psh.errorRatePct) : undefined;
-      items.push({
-        severity: sloProxy,
-        title: sloProxy === "green" ? "Service Health Supports SLOs" : "Service Errors May Threaten SLOs",
-        detail: `Service error rate ${pct(sh.errorRatePct)} — sustained errors will burn SLO error budget. ${trendData2 ? trendLabel(trendData2.trend, trendData2.trendPct) : ""}`,
-        metricValue: sh.errorRatePct,
-        metricUnit: "%",
-        previousValue: psh?.errorRatePct,
-        ...trendData2,
-        recommendation: sloProxy !== "green"
-          ? "Open SLOs to check error budget burn rate. Correlate with Problems to identify the root cause."
-          : "Error rates support SLO compliance. Review SLOs to verify burn rates.",
-        builtinAppPath: "dynatrace.slos",
-        builtinAppLabel: "SLOs",
-        customApp: sloProxy !== "green" ? { ...CUSTOM_APPS.servicesOverview, tab: "Errors" } : undefined,
-      });
-    }
+    const rtSev = classify(sh.avgRtMs, t.responseTimeRedMs, t.responseTimeYellowMs);
+    const rtTrend = psh ? calcTrend(sh.avgRtMs, psh.avgRtMs) : undefined;
+    items.push({
+      severity: rtSev,
+      title: rtSev === "green" ? `Response Time Healthy — ${ms(sh.avgRtMs)}` : `Response Time Degraded — ${ms(sh.avgRtMs)}`,
+      detail: `Avg response time ${ms(sh.avgRtMs)} over ${tf.label}. ${rtTrend ? trendLabel(rtTrend.trend, rtTrend.trendPct) : ""} ${sh.totalRequests.toLocaleString()} total requests.`,
+      metricValue: sh.avgRtMs,
+      metricUnit: "ms",
+      previousValue: psh?.avgRtMs,
+      ...rtTrend,
+      recommendation: rtSev !== "green"
+        ? "Open Distributed Traces and filter for slow spans. Identify which services or operations are degraded."
+        : "Response times are healthy.",
+      builtinAppPath: "dynatrace.distributedtracing",
+      builtinAppLabel: "Distributed Traces",
+    });
+  }
+
+  if (le) {
+    const logSev = classify(le.totalLogErrors, t.logErrorsRedCount, t.logErrorsYellowCount);
+    const logTrend = ple ? calcTrend(le.totalLogErrors, ple.totalLogErrors) : undefined;
+    items.push({
+      severity: logSev,
+      title: logSev === "green" ? "Log Error Volume Normal" : `${le.totalLogErrors.toLocaleString()} Log Errors — Investigate`,
+      detail: `${le.totalLogErrors.toLocaleString()} ERROR/FATAL log entries in ${tf.label}. ${logTrend ? trendLabel(logTrend.trend, logTrend.trendPct) : ""}`,
+      metricValue: le.totalLogErrors,
+      metricUnit: "errors",
+      previousValue: ple?.totalLogErrors,
+      ...logTrend,
+      recommendation: logSev !== "green"
+        ? "Open Logs and filter by status=ERROR. Look for repeated stack traces or high-volume error sources."
+        : "Log error volume is within normal range.",
+      builtinAppPath: "dynatrace.logs",
+      builtinAppLabel: "Logs",
+    });
+  }
+
+  if (hh && hh.totalHosts > 0) {
+    const cpuSev = classify(hh.avgCpuPct, t.cpuRedPct, t.cpuYellowPct);
+    const cpuTrend = phh ? calcTrend(hh.avgCpuPct, phh.avgCpuPct) : undefined;
+    items.push({
+      severity: cpuSev,
+      title: cpuSev === "green" ? `Infrastructure Healthy — ${pct(hh.avgCpuPct)} avg CPU` : `${hh.highCpuHosts} Host${hh.highCpuHosts !== 1 ? "s" : ""} CPU Saturated`,
+      detail: `Avg CPU ${pct(hh.avgCpuPct)}, avg mem ${pct(hh.avgMemPct)} across ${hh.totalHosts} hosts. ${hh.highCpuHosts} hosts above ${t.cpuRedPct}% CPU threshold. ${cpuTrend ? trendLabel(cpuTrend.trend, cpuTrend.trendPct) : ""}`,
+      metricValue: hh.avgCpuPct,
+      metricUnit: "%",
+      previousValue: phh?.avgCpuPct,
+      ...cpuTrend,
+      recommendation: cpuSev !== "green"
+        ? "Open Infrastructure & Operations, filter by CPU usage. Correlate high-CPU hosts with service response time degradation."
+        : "Host infrastructure is healthy.",
+      builtinAppPath: "dynatrace.infraops",
+      builtinAppLabel: "Infrastructure & Operations",
+    });
   }
 
   return items;
@@ -189,7 +273,7 @@ function assessPlatform(cur: AllQueryResults, prev: AllQueryResults, t: Threshol
   const k8s = cur.k8s as K8sResult | null;
   const pk8s = prev.k8s as K8sResult | null;
 
-  if (hh) {
+  if (hh && hh.totalHosts > 0) {
     const cpuSev = classify(hh.avgCpuPct, t.cpuRedPct, t.cpuYellowPct);
     const memSev = classify(hh.avgMemPct, t.memRedPct, t.memYellowPct);
     const cpuTrend = phh ? calcTrend(hh.avgCpuPct, phh.avgCpuPct) : undefined;
@@ -310,7 +394,7 @@ function assessDba(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConf
   const le = cur.logErrors;
   const ple = prev.logErrors;
 
-  if (db) {
+  if (db && db.avgRtMs > 0) {
     const rtSev = classify(db.avgRtMs, t.dbRtRedMs, t.dbRtYellowMs);
     const rtTrend = pdb ? calcTrend(db.avgRtMs, pdb.avgRtMs) : undefined;
     items.push({
@@ -398,41 +482,102 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
   const pdx = prev.digitalExp as DigitalExpResult | null;
 
   if (dx) {
-    const errSev = classify(dx.sessionErrorRatePct, t.sessionErrorRateRedPct, t.sessionErrorRateYellowPct);
-    const errTrend = pdx ? calcTrend(dx.sessionErrorRatePct, pdx.sessionErrorRatePct) : undefined;
-    items.push({
-      severity: errSev,
-      title: errSev === "green" ? "Session Error Rate Normal" : `Session Error Rate ${pct(dx.sessionErrorRatePct)}`,
-      detail: `${pct(dx.sessionErrorRatePct)} of ${dx.totalSessions.toLocaleString()} sessions had errors. ${errTrend ? trendLabel(errTrend.trend, errTrend.trendPct) : ""}`,
-      metricValue: dx.sessionErrorRatePct,
-      metricUnit: "%",
-      previousValue: pdx?.sessionErrorRatePct,
-      ...errTrend,
-      recommendation: errSev !== "green"
-        ? "Open Session Replay to investigate error sessions. Drill into User Journey → Errors tab for impacted funnels."
-        : "Session error rate is healthy.",
-      builtinAppPath: "dynatrace.session.replay",
-      builtinAppLabel: "Session Replay",
-      customApp: errSev !== "green" ? { ...CUSTOM_APPS.userJourney, tab: "Errors" } : undefined,
-    });
+    if (dx.totalSessions > 0) {
+      const errSev = classify(dx.sessionErrorRatePct, t.sessionErrorRateRedPct, t.sessionErrorRateYellowPct);
+      const errTrend = pdx ? calcTrend(dx.sessionErrorRatePct, pdx.sessionErrorRatePct) : undefined;
+      items.push({
+        severity: errSev,
+        title: errSev === "green" ? `Error Rate Normal — ${pct(dx.sessionErrorRatePct)}` : `Error Rate Elevated — ${pct(dx.sessionErrorRatePct)}`,
+        detail: `${pct(dx.sessionErrorRatePct)} error rate across ${dx.totalSessions.toLocaleString()} sessions (${dx.totalErrors.toLocaleString()} error events). ${errTrend ? trendLabel(errTrend.trend, errTrend.trendPct) : ""}`,
+        metricValue: dx.sessionErrorRatePct,
+        metricUnit: "%",
+        previousValue: pdx?.sessionErrorRatePct,
+        ...errTrend,
+        recommendation: errSev !== "green"
+          ? "Open Session Replay to investigate error sessions. Drill into User Journey → Errors tab for impacted funnels."
+          : "Session error rate is healthy.",
+        builtinAppPath: "dynatrace.session.replay",
+        builtinAppLabel: "Session Replay",
+        customApp: errSev !== "green" ? { ...CUSTOM_APPS.userJourney, tab: "Errors" } : undefined,
+      });
+    }
+
+    if (dx.avgDurationMs > 0) {
+      const durSev = classify(dx.avgDurationMs, 5000, 3000);
+      const durTrend = pdx ? calcTrend(dx.avgDurationMs, pdx.avgDurationMs) : undefined;
+      items.push({
+        severity: durSev,
+        title: durSev === "green" ? `Avg Duration Healthy — ${ms(dx.avgDurationMs)}` : `Avg Duration Elevated — ${ms(dx.avgDurationMs)}`,
+        detail: `Average user action duration ${ms(dx.avgDurationMs)} (Apdex T=3s: good <3s, tolerable <12s). ${durTrend ? trendLabel(durTrend.trend, durTrend.trendPct) : ""}`,
+        metricValue: dx.avgDurationMs,
+        metricUnit: "ms",
+        previousValue: pdx?.avgDurationMs,
+        ...durTrend,
+        recommendation: durSev !== "green"
+          ? "Open User Journey to identify slow pages and actions. Check for slow backend calls in Distributed Traces."
+          : "Average user interaction duration is within healthy range.",
+        builtinAppPath: "dynatrace.rum.overview",
+        builtinAppLabel: "Digital Experience",
+        customApp: { ...CUSTOM_APPS.userJourney, tab: "Performance" },
+      });
+    }
+
+    if (dx.avgTtfbMs > 0) {
+      const ttfbSev = classify(dx.avgTtfbMs, 1800, 800);
+      const ttfbTrend = pdx ? calcTrend(dx.avgTtfbMs, pdx.avgTtfbMs) : undefined;
+      items.push({
+        severity: ttfbSev,
+        title: ttfbSev === "green" ? `TTFB Healthy — ${ms(dx.avgTtfbMs)}` : `TTFB Slow — ${ms(dx.avgTtfbMs)}`,
+        detail: `Time to First Byte avg ${ms(dx.avgTtfbMs)} (good <800ms, needs improvement <1.8s). ${ttfbTrend ? trendLabel(ttfbTrend.trend, ttfbTrend.trendPct) : ""}`,
+        metricValue: dx.avgTtfbMs,
+        metricUnit: "ms",
+        previousValue: pdx?.avgTtfbMs,
+        ...ttfbTrend,
+        recommendation: ttfbSev !== "green"
+          ? "Slow TTFB indicates backend or network latency. Open Services to check response times on the first-mile server."
+          : "TTFB is in the good range.",
+        builtinAppPath: "dynatrace.services",
+        builtinAppLabel: "Services",
+      });
+    }
+
+    if (dx.avgFcpMs > 0) {
+      const fcpSev = classify(dx.avgFcpMs, 3000, 1800);
+      const fcpTrend = pdx ? calcTrend(dx.avgFcpMs, pdx.avgFcpMs) : undefined;
+      items.push({
+        severity: fcpSev,
+        title: fcpSev === "green" ? `FCP Healthy — ${ms(dx.avgFcpMs)}` : `FCP Slow — ${ms(dx.avgFcpMs)}`,
+        detail: `First Contentful Paint avg ${ms(dx.avgFcpMs)} (good <1.8s, needs improvement <3s). ${fcpTrend ? trendLabel(fcpTrend.trend, fcpTrend.trendPct) : ""}`,
+        metricValue: dx.avgFcpMs,
+        metricUnit: "ms",
+        previousValue: pdx?.avgFcpMs,
+        ...fcpTrend,
+        recommendation: fcpSev !== "green"
+          ? "Check for render-blocking scripts and stylesheets. Use Waterfall view in Digital Experience."
+          : "First Contentful Paint is in the good range.",
+        builtinAppPath: "dynatrace.rum.overview",
+        builtinAppLabel: "Digital Experience",
+        customApp: { ...CUSTOM_APPS.userJourney, tab: "Web Vitals" },
+      });
+    }
 
     if (dx.avgLcpMs > 0) {
       const lcpSev = classify(dx.avgLcpMs, t.lcpRedMs, t.lcpYellowMs);
       const lcpTrend = pdx ? calcTrend(dx.avgLcpMs, pdx.avgLcpMs) : undefined;
       items.push({
         severity: lcpSev,
-        title: lcpSev === "green" ? "Core Web Vitals Healthy" : `LCP Degraded — ${ms(dx.avgLcpMs)}`,
-        detail: `Largest Contentful Paint avg ${ms(dx.avgLcpMs)} (target: <2.5s good, <4s needs improvement). Apdex: ${dx.avgApdex.toFixed(2)}. ${lcpTrend ? trendLabel(lcpTrend.trend, lcpTrend.trendPct) : ""}`,
+        title: lcpSev === "green" ? `LCP Healthy — ${ms(dx.avgLcpMs)}` : `LCP Degraded — ${ms(dx.avgLcpMs)}`,
+        detail: `Largest Contentful Paint avg ${ms(dx.avgLcpMs)} (good <2.5s, needs improvement <4s). ${lcpTrend ? trendLabel(lcpTrend.trend, lcpTrend.trendPct) : ""}`,
         metricValue: dx.avgLcpMs,
-        metricUnit: "ms LCP",
+        metricUnit: "ms",
         previousValue: pdx?.avgLcpMs,
         ...lcpTrend,
         recommendation: lcpSev !== "green"
-          ? "Open User Journey → Web Vitals tab to see LCP by page. Check render-blocking resources and server response times."
-          : "Core Web Vitals are in good range.",
+          ? "Open User Journey → Web Vitals tab. Check render-blocking resources and server response times."
+          : "LCP is in the good range.",
         builtinAppPath: "dynatrace.rum.overview",
         builtinAppLabel: "Digital Experience",
-        customApp: lcpSev !== "green" ? { ...CUSTOM_APPS.userJourney, tab: "Web Vitals" } : undefined,
+        customApp: { ...CUSTOM_APPS.userJourney, tab: "Web Vitals" },
       });
     }
 
@@ -513,7 +658,7 @@ function buildGreenItems(items: AssessmentItem[], cur: AllQueryResults): Assessm
   const allSevere = items.filter((i) => i.severity !== "green");
 
   const sh = cur.serviceHealth;
-  if (sh && !allSevere.find((i) => i.title.includes("Error Rate") || i.title.includes("Response"))) {
+  if (sh && sh.totalRequests > 0 && !allSevere.find((i) => i.title.includes("Error Rate") || i.title.includes("Response"))) {
     greenItems.push({
       severity: "green",
       title: "Services Healthy",
@@ -522,21 +667,12 @@ function buildGreenItems(items: AssessmentItem[], cur: AllQueryResults): Assessm
     });
   }
   const hh = cur.hostHealth;
-  if (hh && !allSevere.find((i) => i.title.includes("CPU") || i.title.includes("Memory"))) {
+  if (hh && hh.totalHosts > 0 && !allSevere.find((i) => i.title.includes("CPU") || i.title.includes("Memory") || i.title.includes("Infrastructure"))) {
     greenItems.push({
       severity: "green",
       title: `${hh.totalHosts} Hosts Healthy`,
       detail: `Avg CPU ${pct(hh.avgCpuPct)}, avg memory ${pct(hh.avgMemPct)} across all hosts.`,
       recommendation: "Host resources are healthy. No action needed.",
-    });
-  }
-  const pr = cur.problems;
-  if (pr && pr.total === 0 && !allSevere.find((i) => i.title.includes("Problem"))) {
-    greenItems.push({
-      severity: "green",
-      title: "No Active Davis Problems",
-      detail: "Davis AI detected no anomalies in this period.",
-      recommendation: "Environment is healthy. Review problem history for patterns.",
     });
   }
 
@@ -634,10 +770,74 @@ export function computeAssessment(
     }];
   }
 
+  // ─── Heat scores + per-bucket detail from persona-specific metric timelines ──
+  const sh = cur.serviceHealth;
+  const db = cur.database;
+  const dtl = cur.digitalTimelapse;
+  const ptl = cur.platformTimeline;
+  let heatScores: number[] = [];
+  let bucketDetails: HeatBucketDetail[] = [];
+
+  const fmtMs2 = (v: number) => ms(v);
+  const fmtPct2 = (v: number) => `${v.toFixed(2)}%`;
+  const fmtInt = (v: number) => Math.round(v).toLocaleString();
+
+  switch (persona) {
+    case "developer":
+    case "sre":
+    case "devops": {
+      if (sh) {
+        const errRateTl = sh.requestTimeline.map((req, i) =>
+          req > 0 ? ((sh.errorTimeline[i] ?? 0) / req) * 100 : 0
+        );
+        const timelineSet = persona === "sre" ? [errRateTl] : [errRateTl, sh.rtTimeline];
+        heatScores = computeHeat(timelineSet);
+        const defs: MetricDef[] = [
+          { label: "Requests", timeline: sh.requestTimeline, isTraffic: true, fmt: fmtInt },
+          { label: "Error Rate", timeline: errRateTl, fmt: fmtPct2 },
+          ...(persona !== "sre" ? [{ label: "Response Time", timeline: sh.rtTimeline, fmt: fmtMs2 } as MetricDef] : []),
+        ];
+        bucketDetails = buildBucketDetails(heatScores, defs);
+      }
+      break;
+    }
+    case "dba":
+      if (db) {
+        heatScores = computeHeat([db.rtTimeline]);
+        bucketDetails = buildBucketDetails(heatScores, [
+          { label: "DB Response Time", timeline: db.rtTimeline, fmt: fmtMs2 },
+        ]);
+      }
+      break;
+    case "digital":
+      if (dtl) {
+        heatScores = computeHeat([dtl.errorRateTimeline, dtl.lcpTimeline, dtl.durationTimeline]);
+        bucketDetails = buildBucketDetails(heatScores, [
+          { label: "Events", timeline: dtl.eventsTimeline, isTraffic: true, fmt: fmtInt },
+          { label: "Error Rate", timeline: dtl.errorRateTimeline, fmt: fmtPct2 },
+          { label: "Avg Duration", timeline: dtl.durationTimeline, fmt: fmtMs2 },
+          { label: "LCP", timeline: dtl.lcpTimeline, fmt: fmtMs2 },
+          { label: "TTFB", timeline: dtl.ttfbTimeline, fmt: fmtMs2 },
+        ]);
+      }
+      break;
+    case "platform":
+      if (ptl) {
+        heatScores = computeHeat([ptl.cpuTimeline, ptl.memTimeline]);
+        bucketDetails = buildBucketDetails(heatScores, [
+          { label: "CPU Usage", timeline: ptl.cpuTimeline, fmt: fmtPct2 },
+          { label: "Memory Usage", timeline: ptl.memTimeline, fmt: fmtPct2 },
+        ]);
+      }
+      break;
+    default:
+      break;
+  }
+
   const overallHealth: Severity = redItems.length > 0 ? "red" : yellowItems.length > 0 ? "yellow" : "green";
   const narrative = (redItems.length === 0 && yellowItems.length === 0 && !hasAnyData)
     ? `No monitoring data found for ${tf.label}. Ensure Dynatrace agents are active and the environment has traffic in this window.`
     : buildNarrative(allItems, persona, tf, cur, prev);
 
-  return { redItems, yellowItems, greenItems, overallHealth, narrative, dataAvailable: true };
+  return { redItems, yellowItems, greenItems, overallHealth, narrative, dataAvailable: true, heatScores, bucketLabel: tf.bucketLabel, bucketDetails };
 }

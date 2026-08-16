@@ -78,6 +78,21 @@ export interface SavedSettings {
   global: Partial<GlobalSettings>;
 }
 
+export interface HeatBucketMetric {
+  label: string;
+  value: number;
+  displayValue: string;
+  zScore: number;
+  isTraffic?: boolean;
+}
+
+export interface HeatBucketDetail {
+  bucketIndex: number;
+  zScore: number;
+  level: "normal" | "elevated" | "warm" | "spike";
+  metrics: HeatBucketMetric[];
+}
+
 export interface AssessmentItem {
   severity: Severity;
   title: string;
@@ -100,6 +115,9 @@ export interface Assessment {
   overallHealth: Severity;
   narrative: string;
   dataAvailable: boolean;
+  heatScores: number[];
+  bucketLabel: string;
+  bucketDetails: HeatBucketDetail[];
 }
 
 // ─── Query result shapes ───────────────────────────────────────────────
@@ -111,16 +129,11 @@ export interface ServiceHealthResult {
   errorRatePct: number;
   rtTimeline: number[];
   errorTimeline: number[];
+  requestTimeline: number[];
 }
 
 export interface LogErrorsResult {
   totalLogErrors: number;
-}
-
-export interface ProblemsResult {
-  total: number;
-  critical: number;
-  performance: number;
 }
 
 export interface HostHealthResult {
@@ -162,6 +175,9 @@ export interface DigitalExpResult {
   totalSessions: number;
   totalErrors: number;
   avgLcpMs: number;
+  avgTtfbMs: number;
+  avgFcpMs: number;
+  avgDurationMs: number;
   avgApdex: number;
   syntheticFailures: number;
   lcpTimeline: number[];
@@ -173,10 +189,22 @@ export interface DeploymentResult {
   releaseEvents: number;
 }
 
+export interface DigitalTimelapseResult {
+  errorRateTimeline: number[];
+  durationTimeline: number[];
+  lcpTimeline: number[];
+  ttfbTimeline: number[];
+  eventsTimeline: number[];
+}
+
+export interface PlatformTimelineResult {
+  cpuTimeline: number[];
+  memTimeline: number[];
+}
+
 export interface AllQueryResults {
   serviceHealth: ServiceHealthResult | null;
   logErrors: LogErrorsResult | null;
-  problems: ProblemsResult | null;
   hostHealth: HostHealthResult | null;
   k8s: K8sResult | null;
   security: SecurityResult | null;
@@ -184,6 +212,8 @@ export interface AllQueryResults {
   network: NetworkResult | null;
   digitalExp: DigitalExpResult | null;
   deployments: DeploymentResult | null;
+  digitalTimelapse: DigitalTimelapseResult | null;
+  platformTimeline: PlatformTimelineResult | null;
 }
 
 export interface TimeframeInfo {
@@ -194,4 +224,6 @@ export interface TimeframeInfo {
   prevFrom: string;
   prevTo: string;
   prevLabel: string;
+  interval: string;
+  bucketLabel: string;
 }

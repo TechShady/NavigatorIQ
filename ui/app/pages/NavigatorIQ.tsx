@@ -13,7 +13,6 @@ import {
 import {
   serviceHealthQuery, parseServiceHealth,
   logErrorsQuery, parseLogErrors,
-  problemsQuery, parseProblems,
   hostHealthQuery, parseHostHealth,
   k8sQuery, parseK8s,
   securityQuery, attacksQuery, parseSecurity,
@@ -21,6 +20,8 @@ import {
   networkQuery, networkErrorsQuery, parseNetwork,
   digitalExpQuery, syntheticQuery, parseDigitalExp,
   deploymentQuery, workflowQuery, parseDeployments,
+  digitalTimelapseQuery, parseDigitalTimelapse,
+  platformTimelineQuery, parsePlatformTimeline,
 } from "../queries";
 import { computeAssessment } from "../intelligence";
 import { PersonaPickerModal } from "../components/PersonaPickerModal";
@@ -94,12 +95,10 @@ export function NavigatorIQ() {
 
   // ─── Query strings: only run real queries for visited tabs ──────────────
   const seed = refreshSeed;
-  const svcQ     = isTabLoaded ? withSeed(serviceHealthQuery(tf.from, tf.to), seed) : NOOP_QUERY;
-  const svcPrevQ = isTabLoaded ? withSeed(serviceHealthQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
+  const svcQ     = isTabLoaded ? withSeed(serviceHealthQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const svcPrevQ = isTabLoaded ? withSeed(serviceHealthQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
   const logQ     = isTabLoaded ? withSeed(logErrorsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
   const logPrevQ = isTabLoaded ? withSeed(logErrorsQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const probQ    = isTabLoaded ? withSeed(problemsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
-  const probPrevQ= isTabLoaded ? withSeed(problemsQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
   const hostQ    = isTabLoaded ? withSeed(hostHealthQuery(tf.from, tf.to), seed) : NOOP_QUERY;
   const hostPrevQ= isTabLoaded ? withSeed(hostHealthQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
   const k8sQ     = isTabLoaded ? withSeed(k8sQuery(tf.from, tf.to), seed) : NOOP_QUERY;
@@ -108,8 +107,8 @@ export function NavigatorIQ() {
   const secPrevQ = isTabLoaded ? withSeed(securityQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
   const atkQ     = isTabLoaded ? withSeed(attacksQuery(tf.from, tf.to), seed) : NOOP_QUERY;
   const atkPrevQ = isTabLoaded ? withSeed(attacksQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const dbQ      = isTabLoaded ? withSeed(databaseQuery(tf.from, tf.to), seed) : NOOP_QUERY;
-  const dbPrevQ  = isTabLoaded ? withSeed(databaseQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
+  const dbQ      = isTabLoaded ? withSeed(databaseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const dbPrevQ  = isTabLoaded ? withSeed(databaseQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
   const netErrQ  = isTabLoaded ? withSeed(networkErrorsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
   const netErrPQ = isTabLoaded ? withSeed(networkErrorsQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
   const netConQ  = isTabLoaded ? withSeed(networkQuery(tf.from, tf.to), seed) : NOOP_QUERY;
@@ -122,14 +121,16 @@ export function NavigatorIQ() {
   const deplPQ   = isTabLoaded ? withSeed(deploymentQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
   const wfQ      = isTabLoaded ? withSeed(workflowQuery(tf.from, tf.to), seed) : NOOP_QUERY;
   const wfPQ     = isTabLoaded ? withSeed(workflowQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
+  const dxTlQ    = isTabLoaded ? withSeed(digitalTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const dxTlPQ   = isTabLoaded ? withSeed(digitalTimelapseQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
+  const ptlQ     = isTabLoaded ? withSeed(platformTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const ptlPQ    = isTabLoaded ? withSeed(platformTimelineQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
   const svcR      = useDql({ query: svcQ });
   const svcPrevR  = useDql({ query: svcPrevQ });
   const logR      = useDql({ query: logQ });
   const logPrevR  = useDql({ query: logPrevQ });
-  const probR     = useDql({ query: probQ });
-  const probPrevR = useDql({ query: probPrevQ });
   const hostR     = useDql({ query: hostQ });
   const hostPrevR = useDql({ query: hostPrevQ });
   const k8sR      = useDql({ query: k8sQ });
@@ -152,37 +153,43 @@ export function NavigatorIQ() {
   const deplPR    = useDql({ query: deplPQ });
   const wfR       = useDql({ query: wfQ });
   const wfPR      = useDql({ query: wfPQ });
+  const dxTlR     = useDql({ query: dxTlQ });
+  const dxTlPR    = useDql({ query: dxTlPQ });
+  const ptlR      = useDql({ query: ptlQ });
+  const ptlPR     = useDql({ query: ptlPQ });
 
   // ─── Parse results ──────────────────────────────────────────────────────
 
   const curResults = useMemo(() => ({
-    serviceHealth: parseServiceHealth(recs(svcR)),
-    logErrors:     parseLogErrors(recs(logR)),
-    problems:      parseProblems(recs(probR)),
-    hostHealth:    parseHostHealth(recs(hostR)),
-    k8s:           parseK8s(recs(k8sR)),
-    security:      parseSecurity(recs(secR), recs(atkR)),
-    database:      parseDatabase(recs(dbR)),
-    network:       parseNetwork(recs(netErrR), recs(netConR)),
-    digitalExp:    parseDigitalExp(recs(dxR), recs(synthR)),
-    deployments:   parseDeployments(recs(deplR), recs(wfR)),
-  }), [svcR.data, logR.data, probR.data, hostR.data, k8sR.data, secR.data, atkR.data, dbR.data, netErrR.data, netConR.data, dxR.data, synthR.data, deplR.data, wfR.data]);
+    serviceHealth:    parseServiceHealth(recs(svcR)),
+    logErrors:        parseLogErrors(recs(logR)),
+    hostHealth:       parseHostHealth(recs(hostR)),
+    k8s:              parseK8s(recs(k8sR)),
+    security:         parseSecurity(recs(secR), recs(atkR)),
+    database:         parseDatabase(recs(dbR)),
+    network:          parseNetwork(recs(netErrR), recs(netConR)),
+    digitalExp:       parseDigitalExp(recs(dxR), recs(synthR)),
+    deployments:      parseDeployments(recs(deplR), recs(wfR)),
+    digitalTimelapse: parseDigitalTimelapse(recs(dxTlR)),
+    platformTimeline: parsePlatformTimeline(recs(ptlR)),
+  }), [svcR.data, logR.data, hostR.data, k8sR.data, secR.data, atkR.data, dbR.data, netErrR.data, netConR.data, dxR.data, synthR.data, deplR.data, wfR.data, dxTlR.data, ptlR.data]);
 
   const prevResults = useMemo(() => ({
-    serviceHealth: parseServiceHealth(recs(svcPrevR)),
-    logErrors:     parseLogErrors(recs(logPrevR)),
-    problems:      parseProblems(recs(probPrevR)),
-    hostHealth:    parseHostHealth(recs(hostPrevR)),
-    k8s:           parseK8s(recs(k8sPrevR)),
-    security:      parseSecurity(recs(secPrevR), recs(atkPrevR)),
-    database:      parseDatabase(recs(dbPrevR)),
-    network:       parseNetwork(recs(netErrPR), recs(netConPR)),
-    digitalExp:    parseDigitalExp(recs(dxPrevR), recs(synthPR)),
-    deployments:   parseDeployments(recs(deplPR), recs(wfPR)),
-  }), [svcPrevR.data, logPrevR.data, probPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data]);
+    serviceHealth:    parseServiceHealth(recs(svcPrevR)),
+    logErrors:        parseLogErrors(recs(logPrevR)),
+    hostHealth:       parseHostHealth(recs(hostPrevR)),
+    k8s:              parseK8s(recs(k8sPrevR)),
+    security:         parseSecurity(recs(secPrevR), recs(atkPrevR)),
+    database:         parseDatabase(recs(dbPrevR)),
+    network:          parseNetwork(recs(netErrPR), recs(netConPR)),
+    digitalExp:       parseDigitalExp(recs(dxPrevR), recs(synthPR)),
+    deployments:      parseDeployments(recs(deplPR), recs(wfPR)),
+    digitalTimelapse: parseDigitalTimelapse(recs(dxTlPR)),
+    platformTimeline: parsePlatformTimeline(recs(ptlPR)),
+  }), [svcPrevR.data, logPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data, dxTlPR.data, ptlPR.data]);
 
   // ─── Loading state ──────────────────────────────────────────────────────
-  const isLoading = isTabLoaded && [svcR, logR, probR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR].some((r) => r.isLoading);
+  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR].some((r) => r.isLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
@@ -321,7 +328,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} />
+          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />

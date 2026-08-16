@@ -1,7 +1,6 @@
 import type {
   ServiceHealthResult,
   LogErrorsResult,
-  ProblemsResult,
   HostHealthResult,
   K8sResult,
   SecurityResult,
@@ -9,38 +8,29 @@ import type {
   NetworkResult,
   DigitalExpResult,
   DeploymentResult,
+  DigitalTimelapseResult,
+  PlatformTimelineResult,
 } from "./types";
 
 // ─── DQL Query Builders ────────────────────────────────────────────────────
 
-export function serviceHealthQuery(from: string, to: string): string {
+export function serviceHealthQuery(from: string, to: string, interval = "auto"): string {
   return `timeseries
   err=sum(dt.service.request.failure_count),
   total=sum(dt.service.request.count),
   rt=avg(dt.service.request.response_time),
-  interval:auto, from:${from}, to:${to}
-| summarize
-  totalErrors=sum(arraySum(err)),
-  totalRequests=sum(arraySum(total)),
-  avgRtMs=avg(arrayAvg(rt))/1000000,
-  rtTimeline=collectArray(arrayAvg(rt)),
-  errTimeline=collectArray(arraySum(err))
-| fieldsAdd errorRatePct=if(totalRequests>0, totalErrors/totalRequests*100, else:0)`;
+  interval:${interval}, from:${from}, to:${to}
+| fieldsAdd
+  totalErrors=arraySum(err),
+  totalRequests=arraySum(total),
+  avgRtMs=arrayAvg(rt)/1000000,
+  errorRatePct=if(totalRequests>0, toDouble(totalErrors)/toDouble(totalRequests)*100, else:0.0)`;
 }
 
 export function logErrorsQuery(from: string, to: string): string {
   return `fetch logs, from:${from}, to:${to}
-| filter log.level == "ERROR" or log.level == "SEVERE" or log.level == "CRITICAL"
+| filter status == "ERROR" or status == "FATAL"
 | summarize totalLogErrors=count()`;
-}
-
-export function problemsQuery(from: string, to: string): string {
-  return `fetch dt.davis.problems, from:${from}, to:${to}
-| filter status == "OPEN"
-| summarize
-  total=count(),
-  critical=countIf(severityLevel=="AVAILABILITY" or severityLevel=="ERROR"),
-  performance=countIf(severityLevel=="PERFORMANCE" or severityLevel=="RESOURCE_CONTENTION")`;
 }
 
 export function hostHealthQuery(from: string, to: string): string {
@@ -66,8 +56,8 @@ export function k8sQuery(from: string, to: string): string {
   totalNotReadyPods=countIf(event.type == "KUBERNETES_NODE_UNSCHEDULABLE")`;
 }
 
-export function securityQuery(from: string, to: string): string {
-  return `fetch events, from:${from}, to:${to}
+export function securityQuery(_from: string, _to: string): string {
+  return `fetch events, from:now()-90d, to:now()
 | filter event.type == "VULNERABILITY_STATE_REPORT_EVENT" and vulnerabilityStatus == "OPEN"
 | summarize
   criticalVulns=countIf(vulnerabilityRiskLevel=="CRITICAL"),
@@ -84,17 +74,16 @@ export function attacksQuery(from: string, to: string): string {
   exploitedAttacks=countIf(attack.state=="EXPLOITING" or attack.state=="EXPLOITED")`;
 }
 
-export function databaseQuery(from: string, to: string): string {
+export function databaseQuery(from: string, to: string, interval = "auto"): string {
   return `timeseries
   rt=avg(dt.service.request.response_time),
   err=sum(dt.service.request.failure_count),
   total=sum(dt.service.request.count),
-  interval:auto, from:${from}, to:${to}
-| summarize
-  avgRtMs=avg(arrayAvg(rt))/1000000,
-  totalErrors=sum(arraySum(err)),
-  totalRequests=sum(arraySum(total)),
-  rtTimeline=collectArray(arrayAvg(rt))
+  interval:${interval}, from:${from}, to:${to}
+| fieldsAdd
+  avgRtMs=arrayAvg(rt)/1000000,
+  totalErrors=arraySum(err),
+  totalRequests=arraySum(total)
 | fieldsAdd slowQueries=if(avgRtMs>500, totalRequests, else:0)`;
 }
 
@@ -112,15 +101,17 @@ export function networkErrorsQuery(from: string, to: string): string {
 }
 
 export function digitalExpQuery(from: string, to: string): string {
-  // RUM metrics are accessed via bizevents in Grail
-  return `fetch bizevents, from:${from}, to:${to}
-| filter event.type == "rum" or isNotNull(app.id)
+  return `fetch user.events, from:${from}, to:${to}
+| filter dt.rum.user_type != "robot"
 | summarize
-  totalErrors=countIf(event.type == "rum_error" or isNotNull(error.id)),
-  totalSessions=countIf(isNotNull(session.id)),
-  avgLcpMs=avg(lcp),
-  avgApdex=avg(user_experience.apdex)
-| fieldsAdd sessionErrorRatePct=if(totalSessions>0, totalErrors/totalSessions*100, else:0)`;
+  totalSessions=countDistinct(dt.rum.session.id),
+  totalEvents=count(),
+  totalErrors=countIf(characteristics.has_error == true),
+  avgLcpMs=avg(web_vitals.largest_contentful_paint)/1000000.0,
+  avgTtfbMs=avg(web_vitals.time_to_first_byte)/1000000.0,
+  avgFcpMs=avg(web_vitals.first_contentful_paint)/1000000.0,
+  avgDurationMs=avg(duration)/1000000.0
+| fieldsAdd sessionErrorRatePct=if(totalEvents>0, toDouble(totalErrors)/toDouble(totalEvents)*100, else:0)`;
 }
 
 export function syntheticQuery(from: string, to: string): string {
@@ -133,6 +124,31 @@ export function deploymentQuery(from: string, to: string): string {
   return `fetch events, from:${from}, to:${to}
 | filter event.type == "DEPLOYMENT_EVENT" or event.type == "APPLICATION_DEPLOYMENT" or event.type == "CUSTOM_DEPLOYMENT"
 | summarize totalDeployments=count()`;
+}
+
+// Per-bucket RUM timelapse — drives Digital Experience heat strip
+export function digitalTimelapseQuery(from: string, to: string, interval = "auto"): string {
+  return `fetch user.events, from:${from}, to:${to}
+| filter dt.rum.user_type != "robot"
+| fieldsAdd event_ts = coalesce(start_time, timestamp)
+| fieldsAdd bucket_ts = bin(event_ts, ${interval})
+| summarize
+  totalEvents=count(),
+  totalErrors=countIf(characteristics.has_error == true),
+  avgDurationMs=avg(duration)/1000000.0,
+  avgLcpMs=avg(web_vitals.largest_contentful_paint)/1000000.0,
+  avgTtfbMs=avg(web_vitals.time_to_first_byte)/1000000.0,
+  by: {bucket_ts}
+| fieldsAdd errorRatePct=if(totalEvents>0, toDouble(totalErrors)/toDouble(totalEvents)*100, else:0.0)
+| sort bucket_ts asc`;
+}
+
+// Per-bucket host CPU/mem timelapse (no by: → truly temporal) — drives Platform heat strip
+export function platformTimelineQuery(from: string, to: string, interval = "auto"): string {
+  return `timeseries
+  cpu=avg(dt.host.cpu.usage),
+  mem=avg(dt.host.memory.usage),
+  interval:${interval}, from:${from}, to:${to}`;
 }
 
 export function workflowQuery(from: string, to: string): string {
@@ -166,8 +182,9 @@ export function parseServiceHealth(records: DqlRecord[] | undefined): ServiceHea
     totalRequests: num(r, "totalRequests"),
     avgRtMs: num(r, "avgRtMs"),
     errorRatePct: num(r, "errorRatePct"),
-    rtTimeline: arr(r, "rtTimeline").map((v) => v / 1000000),
-    errorTimeline: arr(r, "errTimeline"),
+    rtTimeline: arr(r, "rt").map((v) => v / 1000000),
+    errorTimeline: arr(r, "err"),
+    requestTimeline: arr(r, "total"),
   };
 }
 
@@ -175,16 +192,6 @@ export function parseLogErrors(records: DqlRecord[] | undefined): LogErrorsResul
   const r = records?.[0];
   if (!r) return null;
   return { totalLogErrors: num(r, "totalLogErrors") };
-}
-
-export function parseProblems(records: DqlRecord[] | undefined): ProblemsResult | null {
-  const r = records?.[0];
-  if (!r) return null;
-  return {
-    total: num(r, "total"),
-    critical: num(r, "critical"),
-    performance: num(r, "performance"),
-  };
 }
 
 export function parseHostHealth(records: DqlRecord[] | undefined): HostHealthResult | null {
@@ -229,7 +236,7 @@ export function parseDatabase(records: DqlRecord[] | undefined): DatabaseResult 
     avgRtMs: num(r, "avgRtMs"),
     totalErrors: num(r, "totalErrors"),
     slowQueries: num(r, "slowQueries"),
-    rtTimeline: arr(r, "rtTimeline").map((v) => v / 1000000),
+    rtTimeline: arr(r, "rt").map((v) => v / 1000000),
   };
 }
 
@@ -247,17 +254,38 @@ export function parseDigitalExp(dxRecords: DqlRecord[] | undefined, synthRecords
   const d = dxRecords?.[0] ?? {};
   const s = synthRecords?.[0] ?? {};
   if (!dxRecords?.[0] && !synthRecords?.[0]) return null;
-  const totalSessions = num(d, "totalSessions");
-  const totalErrors = num(d, "totalErrors");
   return {
-    sessionErrorRatePct: totalSessions > 0 ? (totalErrors / totalSessions) * 100 : num(d, "sessionErrorRatePct"),
-    totalSessions,
-    totalErrors,
+    sessionErrorRatePct: num(d, "sessionErrorRatePct"),
+    totalSessions: num(d, "totalSessions"),
+    totalErrors: num(d, "totalErrors"),
     avgLcpMs: num(d, "avgLcpMs"),
+    avgTtfbMs: num(d, "avgTtfbMs"),
+    avgFcpMs: num(d, "avgFcpMs"),
+    avgDurationMs: num(d, "avgDurationMs"),
     avgApdex: num(d, "avgApdex"),
     syntheticFailures: num(s, "syntheticFailures"),
     lcpTimeline: arr(d, "lcpTimeline"),
   };
+}
+
+export function parseDigitalTimelapse(records: DqlRecord[] | undefined): DigitalTimelapseResult | null {
+  if (!records || records.length === 0) return null;
+  return {
+    errorRateTimeline: records.map((r) => num(r, "errorRatePct")),
+    durationTimeline: records.map((r) => num(r, "avgDurationMs")),
+    lcpTimeline: records.map((r) => num(r, "avgLcpMs")),
+    ttfbTimeline: records.map((r) => num(r, "avgTtfbMs")),
+    eventsTimeline: records.map((r) => num(r, "totalEvents")),
+  };
+}
+
+export function parsePlatformTimeline(records: DqlRecord[] | undefined): PlatformTimelineResult | null {
+  const r = records?.[0];
+  if (!r) return null;
+  const cpuTimeline = arr(r, "cpu");
+  const memTimeline = arr(r, "mem");
+  if (cpuTimeline.length === 0) return null;
+  return { cpuTimeline, memTimeline };
 }
 
 export function parseDeployments(deployRecords: DqlRecord[] | undefined, workflowRecords: DqlRecord[] | undefined): DeploymentResult | null {

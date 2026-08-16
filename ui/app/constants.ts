@@ -28,7 +28,7 @@ export const PERSONAS: PersonaDef[] = [
     label: "SRE",
     icon: "🛡️",
     description: "Reliability, SLOs & incidents",
-    tabSummary: "Active problems by severity, SLO violations, Davis anomalies. Recommendations link to Problems, SLOs, and Workflows apps.",
+    tabSummary: "Service error rates, response time, log volume, and host health — all viewed through an SLO reliability lens.",
   },
   {
     id: "platform",
@@ -85,7 +85,7 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
   sre: [
     { label: "Problems", appPath: "dynatrace.davis.problems", docsUrl: "https://docs.dynatrace.com/docs/discover-dynatrace/platform/davis-ai/root-cause-analysis/davis-problems-app", enabled: true },
     { label: "SLOs", appPath: "dynatrace.slos", docsUrl: "https://docs.dynatrace.com/docs/observe/service-level-objectives", enabled: true },
-    { label: "Davis Anomaly Detection", appPath: "dynatrace.davis.anomaly.detection", docsUrl: "https://docs.dynatrace.com/docs/observe/davis-ai/anomaly-detection", enabled: true },
+    { label: "Anomaly Detection", appPath: "dynatrace.davis.anomaly.detection", docsUrl: "https://docs.dynatrace.com/docs/observe/davis-ai/anomaly-detection", enabled: true },
     { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
     { label: "Workflows", appPath: "dynatrace.automations", docsUrl: "https://docs.dynatrace.com/docs/deliver/workflows", enabled: true },
   ],
@@ -178,15 +178,15 @@ export const TIMEFRAME_TABS: TimeframeTab[] = ["30min", "2h", "today", "yesterda
 export function getTimeframeInfo(tab: TimeframeTab): TimeframeInfo {
   switch (tab) {
     case "30min":
-      return { tab, label: "Last 30 Min", from: "now()-30m", to: "now()", prevFrom: "now()-60m", prevTo: "now()-30m", prevLabel: "prior 30 min" };
+      return { tab, label: "Last 30 Min", from: "now()-30m", to: "now()", prevFrom: "now()-60m", prevTo: "now()-30m", prevLabel: "prior 30 min", interval: "1m", bucketLabel: "1-min" };
     case "2h":
-      return { tab, label: "Last 2 Hours", from: "now()-2h", to: "now()", prevFrom: "now()-4h", prevTo: "now()-2h", prevLabel: "prior 2 hours" };
+      return { tab, label: "Last 2 Hours", from: "now()-2h", to: "now()", prevFrom: "now()-4h", prevTo: "now()-2h", prevLabel: "prior 2 hours", interval: "5m", bucketLabel: "5-min" };
     case "today":
-      return { tab, label: "Today", from: "now()/d", to: "now()", prevFrom: "now()-1d/d", prevTo: "now()/d", prevLabel: "yesterday" };
+      return { tab, label: "Today", from: "now()/d", to: "now()", prevFrom: "now()-1d/d", prevTo: "now()/d", prevLabel: "yesterday", interval: "30m", bucketLabel: "30-min" };
     case "yesterday":
-      return { tab, label: "Yesterday", from: "now()-1d/d", to: "now()/d", prevFrom: "now()-2d/d", prevTo: "now()-1d/d", prevLabel: "day before" };
+      return { tab, label: "Yesterday", from: "now()-1d/d", to: "now()/d", prevFrom: "now()-2d/d", prevTo: "now()-1d/d", prevLabel: "day before", interval: "15m", bucketLabel: "15-min" };
     case "7d":
-      return { tab, label: "Last 7 Days", from: "now()-7d", to: "now()", prevFrom: "now()-14d", prevTo: "now()-7d", prevLabel: "prior 7 days" };
+      return { tab, label: "Last 7 Days", from: "now()-7d", to: "now()", prevFrom: "now()-14d", prevTo: "now()-7d", prevLabel: "prior 7 days", interval: "1h", bucketLabel: "1-hour" };
   }
 }
 
