@@ -72,7 +72,7 @@ export function NavigatorIQ() {
   const settings = useMemo(() => parseSettings(settingsState.data?.value as string | undefined), [settingsState.data?.value]);
 
   const handleSaveSettings = useCallback((s: SavedSettings) => {
-    saveSettingsRaw({ key: SETTINGS_KEY, body: { value: JSON.stringify(s) } });
+    saveSettingsRaw({ key: SETTINGS_KEY, body: { value: JSON.stringify(s) });
   }, [saveSettingsRaw]);
 
   // ─── Auto-refresh ───────────────────────────────────────────────────────
@@ -124,34 +124,34 @@ export function NavigatorIQ() {
   const wfPQ     = isTabLoaded ? withSeed(workflowQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
-  const svcR      = useDql({ body: { query: svcQ } });
-  const svcPrevR  = useDql({ body: { query: svcPrevQ } });
-  const logR      = useDql({ body: { query: logQ } });
-  const logPrevR  = useDql({ body: { query: logPrevQ } });
-  const probR     = useDql({ body: { query: probQ } });
-  const probPrevR = useDql({ body: { query: probPrevQ } });
-  const hostR     = useDql({ body: { query: hostQ } });
-  const hostPrevR = useDql({ body: { query: hostPrevQ } });
-  const k8sR      = useDql({ body: { query: k8sQ } });
-  const k8sPrevR  = useDql({ body: { query: k8sPrevQ } });
-  const secR      = useDql({ body: { query: secQ } });
-  const secPrevR  = useDql({ body: { query: secPrevQ } });
-  const atkR      = useDql({ body: { query: atkQ } });
-  const atkPrevR  = useDql({ body: { query: atkPrevQ } });
-  const dbR       = useDql({ body: { query: dbQ } });
-  const dbPrevR   = useDql({ body: { query: dbPrevQ } });
-  const netErrR   = useDql({ body: { query: netErrQ } });
-  const netErrPR  = useDql({ body: { query: netErrPQ } });
-  const netConR   = useDql({ body: { query: netConQ } });
-  const netConPR  = useDql({ body: { query: netConPQ } });
-  const dxR       = useDql({ body: { query: dxQ } });
-  const dxPrevR   = useDql({ body: { query: dxPrevQ } });
-  const synthR    = useDql({ body: { query: synthQ } });
-  const synthPR   = useDql({ body: { query: synthPQ } });
-  const deplR     = useDql({ body: { query: deplQ } });
-  const deplPR    = useDql({ body: { query: deplPQ } });
-  const wfR       = useDql({ body: { query: wfQ } });
-  const wfPR      = useDql({ body: { query: wfPQ } });
+  const svcR      = useDql({ query: svcQ });
+  const svcPrevR  = useDql({ query: svcPrevQ });
+  const logR      = useDql({ query: logQ });
+  const logPrevR  = useDql({ query: logPrevQ });
+  const probR     = useDql({ query: probQ });
+  const probPrevR = useDql({ query: probPrevQ });
+  const hostR     = useDql({ query: hostQ });
+  const hostPrevR = useDql({ query: hostPrevQ });
+  const k8sR      = useDql({ query: k8sQ });
+  const k8sPrevR  = useDql({ query: k8sPrevQ });
+  const secR      = useDql({ query: secQ });
+  const secPrevR  = useDql({ query: secPrevQ });
+  const atkR      = useDql({ query: atkQ });
+  const atkPrevR  = useDql({ query: atkPrevQ });
+  const dbR       = useDql({ query: dbQ });
+  const dbPrevR   = useDql({ query: dbPrevQ });
+  const netErrR   = useDql({ query: netErrQ });
+  const netErrPR  = useDql({ query: netErrPQ });
+  const netConR   = useDql({ query: netConQ });
+  const netConPR  = useDql({ query: netConPQ });
+  const dxR       = useDql({ query: dxQ });
+  const dxPrevR   = useDql({ query: dxPrevQ });
+  const synthR    = useDql({ query: synthQ });
+  const synthPR   = useDql({ query: synthPQ });
+  const deplR     = useDql({ query: deplQ });
+  const deplPR    = useDql({ query: deplPQ });
+  const wfR       = useDql({ query: wfQ });
+  const wfPR      = useDql({ query: wfPQ });
 
   // ─── Parse results ──────────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ export function NavigatorIQ() {
             ? databaseQuery(from, to)
             : serviceHealthQuery(from, to);
     try {
-      const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 } });
+      const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 });
       const records = (res.result as any)?.records ?? [];
       const parsed = parseServiceHealth(records);
       return parsed?.rtTimeline ?? [];

@@ -69,11 +69,11 @@ export function k8sQuery(from: string, to: string): string {
 
 export function securityQuery(from: string, to: string): string {
   return `fetch events, from:${from}, to:${to}
-| filter event.type == "VULNERABILITY_STATE_REPORT_EVENT" and `vulnerabilityStatus` == "OPEN"
+| filter event.type == "VULNERABILITY_STATE_REPORT_EVENT" and vulnerabilityStatus == "OPEN"
 | summarize
-  criticalVulns=countIf(`vulnerabilityRiskLevel`=="CRITICAL"),
-  highVulns=countIf(`vulnerabilityRiskLevel`=="HIGH"),
-  mediumVulns=countIf(`vulnerabilityRiskLevel`=="MEDIUM"),
+  criticalVulns=countIf(vulnerabilityRiskLevel=="CRITICAL"),
+  highVulns=countIf(vulnerabilityRiskLevel=="HIGH"),
+  mediumVulns=countIf(vulnerabilityRiskLevel=="MEDIUM"),
   totalVulns=count()`;
 }
 
@@ -82,7 +82,7 @@ export function attacksQuery(from: string, to: string): string {
 | filter event.type == "ATTACK_CANDIDATE_EVENT" or event.type == "SECURITY_ATTACK_DETECTION_EVENT"
 | summarize
   totalAttacks=count(),
-  exploitedAttacks=countIf(`~attack.state`=="EXPLOITING" or `~attack.state`=="EXPLOITED")`;
+  exploitedAttacks=countIf(attack.state=="EXPLOITING" or attack.state=="EXPLOITED")`;
 }
 
 export function databaseQuery(from: string, to: string): string {
@@ -215,9 +215,9 @@ export function parseK8s(records: DqlRecord[] | undefined): K8sResult | null {
 }
 
 export function parseSecurity(secRecords: DqlRecord[] | undefined, attackRecords: DqlRecord[] | undefined): SecurityResult | null {
-  const s = secRecords?.[0];
-  const a = attackRecords?.[0];
-  if (!s && !a) return null;
+  const s = secRecords?.[0] ?? {};
+  const a = attackRecords?.[0] ?? {};
+  if (!secRecords?.[0] && !attackRecords?.[0]) return null;
   return {
     criticalVulns: num(s, "criticalVulns"),
     highVulns: num(s, "highVulns"),
@@ -239,9 +239,9 @@ export function parseDatabase(records: DqlRecord[] | undefined): DatabaseResult 
 }
 
 export function parseNetwork(errRecords: DqlRecord[] | undefined, connRecords: DqlRecord[] | undefined): NetworkResult | null {
-  const e = errRecords?.[0];
-  const c = connRecords?.[0];
-  if (!e && !c) return null;
+  const e = errRecords?.[0] ?? {};
+  const c = connRecords?.[0] ?? {};
+  if (!errRecords?.[0] && !connRecords?.[0]) return null;
   return {
     totalNetErrors: num(e, "totalNetErrors"),
     connectivityEvents: num(c, "connectivityEvents"),
@@ -249,9 +249,9 @@ export function parseNetwork(errRecords: DqlRecord[] | undefined, connRecords: D
 }
 
 export function parseDigitalExp(dxRecords: DqlRecord[] | undefined, synthRecords: DqlRecord[] | undefined): DigitalExpResult | null {
-  const d = dxRecords?.[0];
-  const s = synthRecords?.[0];
-  if (!d && !s) return null;
+  const d = dxRecords?.[0] ?? {};
+  const s = synthRecords?.[0] ?? {};
+  if (!dxRecords?.[0] && !synthRecords?.[0]) return null;
   return {
     sessionErrorRatePct: num(d, "sessionErrorRatePct"),
     totalSessions: num(d, "totalSessions"),
@@ -264,9 +264,9 @@ export function parseDigitalExp(dxRecords: DqlRecord[] | undefined, synthRecords
 }
 
 export function parseDeployments(deployRecords: DqlRecord[] | undefined, workflowRecords: DqlRecord[] | undefined): DeploymentResult | null {
-  const d = deployRecords?.[0];
-  const w = workflowRecords?.[0];
-  if (!d && !w) return null;
+  const d = deployRecords?.[0] ?? {};
+  const w = workflowRecords?.[0] ?? {};
+  if (!deployRecords?.[0] && !workflowRecords?.[0]) return null;
   return {
     totalDeployments: num(d, "totalDeployments"),
     workflowFailures: num(w, "workflowFailures"),
