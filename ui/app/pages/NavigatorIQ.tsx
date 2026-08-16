@@ -72,7 +72,7 @@ export function NavigatorIQ() {
   const settings = useMemo(() => parseSettings(settingsState.data?.value as string | undefined), [settingsState.data?.value]);
 
   const handleSaveSettings = useCallback((s: SavedSettings) => {
-    saveSettingsRaw({ key: SETTINGS_KEY, body: { value: JSON.stringify(s) });
+    saveSettingsRaw({ key: SETTINGS_KEY, body: { value: JSON.stringify(s) } });
   }, [saveSettingsRaw]);
 
   // ─── Auto-refresh ───────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ export function NavigatorIQ() {
             ? databaseQuery(from, to)
             : serviceHealthQuery(from, to);
     try {
-      const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 });
+      const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 } });
       const records = (res.result as any)?.records ?? [];
       const parsed = parseServiceHealth(records);
       return parsed?.rtTimeline ?? [];
