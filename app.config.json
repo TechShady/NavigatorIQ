@@ -4,7 +4,7 @@
   "app": {
     "name": "NavigatorIQ",
     "version": "0.1.0",
-    "description": "Persona-driven operational intelligence for Dynatrace. Not an official Dynatrace app.",
+    "description": "Persona-driven operational intelligence for Dynatrace (community app)",
     "id": "my.navigator.iq.app",
     "scopes": [
       { "name": "storage:logs:read", "comment": "read log data" },
