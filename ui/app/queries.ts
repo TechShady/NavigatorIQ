@@ -10,6 +10,8 @@ import type {
   DeploymentResult,
   DigitalTimelapseResult,
   PlatformTimelineResult,
+  HeatMetricConfig,
+  MetricDisplayUnit,
 } from "./types";
 
 // ─── DQL Query Builders ────────────────────────────────────────────────────
@@ -297,4 +299,52 @@ export function parseDeployments(deployRecords: DqlRecord[] | undefined, workflo
     workflowFailures: num(w, "workflowFailures"),
     releaseEvents: num(d, "totalDeployments"),
   };
+}
+
+// ─── Custom Heat Metrics Query ─────────────────────────────────────────────
+
+export function buildCustomHeatQuery(metrics: HeatMetricConfig[], from: string, to: string, interval: string): string {
+  if (metrics.length === 0) return "fetch logs | limit 0";
+  const fields = metrics.map((m, i) => `  m${i}=${m.aggregation}(${m.metricKey})`).join(",\n");
+  return `timeseries\n${fields},\n  interval:${interval}, from:${from}, to:${to}`;
+}
+
+export function makeMetricFmt(unit?: MetricDisplayUnit): (v: number) => string {
+  switch (unit) {
+    case "ns->ms":
+    case "µs->ms":
+      return (v: number) => {
+        if (v >= 1000) return `${(v / 1000).toFixed(1)}s`;
+        if (v >= 10) return `${Math.round(v)}ms`;
+        if (v > 0) return `${v.toFixed(2)}ms`;
+        return "0ms";
+      };
+    case "pct":
+      return (v: number) => `${v.toFixed(2)}%`;
+    default:
+      return (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : Math.round(v).toLocaleString();
+  }
+}
+
+function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] {
+  switch (unit) {
+    case "ns->ms": return raw.map((v) => v / 1000000);
+    case "µs->ms": return raw.map((v) => v / 1000);
+    default: return raw;
+  }
+}
+
+export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; fmt: (v: number) => string }
+
+export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatMetricConfig[]): ParsedCustomMetric[] {
+  const r = records?.[0];
+  if (!r) return [];
+  return metrics
+    .map((m, i) => ({
+      label: m.label,
+      timeline: parseMetricTimeline(arr(r, `m${i}`), m.displayUnit),
+      isTraffic: m.isTraffic,
+      fmt: makeMetricFmt(m.displayUnit),
+    }))
+    .filter((pm) => pm.timeline.length > 1);
 }

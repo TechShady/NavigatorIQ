@@ -729,12 +729,15 @@ function buildNarrative(
 
 // ─── Main entry point ──────────────────────────────────────────────────────
 
+export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; fmt: (v: number) => string }
+
 export function computeAssessment(
   cur: AllQueryResults,
   prev: AllQueryResults,
   persona: PersonaId,
   partialThresholds: Partial<ThresholdConfig>,
-  tf: TimeframeInfo
+  tf: TimeframeInfo,
+  customMetrics?: CustomHeatMetric[]
 ): Assessment {
   const t: ThresholdConfig = { ...DEFAULT_THRESHOLDS, ...partialThresholds };
 
@@ -778,7 +781,12 @@ export function computeAssessment(
   let heatScores: number[] = [];
   let bucketDetails: HeatBucketDetail[] = [];
 
-  const fmtMs2 = (v: number) => ms(v);
+  const fmtMs2 = (v: number) => {
+    if (v >= 1000) return `${(v / 1000).toFixed(1)}s`;
+    if (v >= 10) return `${Math.round(v)}ms`;
+    if (v > 0) return `${v.toFixed(2)}ms`;
+    return "0ms";
+  };
   const fmtPct2 = (v: number) => `${v.toFixed(2)}%`;
   const fmtInt = (v: number) => Math.round(v).toLocaleString();
 
@@ -787,17 +795,25 @@ export function computeAssessment(
     case "sre":
     case "devops": {
       if (sh) {
-        const errRateTl = sh.requestTimeline.map((req, i) =>
-          req > 0 ? ((sh.errorTimeline[i] ?? 0) / req) * 100 : 0
-        );
-        const timelineSet = persona === "sre" ? [errRateTl] : [errRateTl, sh.rtTimeline];
-        heatScores = computeHeat(timelineSet);
-        const defs: MetricDef[] = [
-          { label: "Requests", timeline: sh.requestTimeline, isTraffic: true, fmt: fmtInt },
-          { label: "Error Rate", timeline: errRateTl, fmt: fmtPct2 },
-          ...(persona !== "sre" ? [{ label: "Response Time", timeline: sh.rtTimeline, fmt: fmtMs2 } as MetricDef] : []),
-        ];
-        bucketDetails = buildBucketDetails(heatScores, defs);
+        const heatTls: number[][] = [];
+        if (sh.errorTimeline.length > 1) heatTls.push(sh.errorTimeline);
+        if (persona !== "sre" && sh.rtTimeline.length > 1) heatTls.push(sh.rtTimeline);
+        if (heatTls.length > 0) {
+          heatScores = computeHeat(heatTls);
+          const hasReqData = sh.requestTimeline.length > 1 && sh.requestTimeline.some((v) => v > 0);
+          const defs: MetricDef[] = [];
+          if (hasReqData) {
+            defs.push({ label: "Requests", timeline: sh.requestTimeline, isTraffic: true, fmt: fmtInt });
+            const errRateTl = sh.requestTimeline.map((req, i) => req > 0 ? ((sh.errorTimeline[i] ?? 0) / req) * 100 : 0);
+            defs.push({ label: "Error Rate", timeline: errRateTl, fmt: fmtPct2 });
+          } else {
+            defs.push({ label: "Error Count", timeline: sh.errorTimeline, fmt: fmtInt });
+          }
+          if (persona !== "sre" && sh.rtTimeline.length > 1) {
+            defs.push({ label: "Response Time", timeline: sh.rtTimeline, fmt: fmtMs2 });
+          }
+          bucketDetails = buildBucketDetails(heatScores, defs);
+        }
       }
       break;
     }
@@ -832,6 +848,20 @@ export function computeAssessment(
       break;
     default:
       break;
+  }
+
+  // Override with custom metrics if configured and they returned data
+  if (customMetrics && customMetrics.length > 0) {
+    const validCustom = customMetrics.filter((m) => m.timeline.length > 1);
+    if (validCustom.length > 0) {
+      heatScores = computeHeat(validCustom.map((m) => m.timeline));
+      bucketDetails = buildBucketDetails(heatScores, validCustom.map((m) => ({
+        label: m.label,
+        timeline: m.timeline,
+        isTraffic: m.isTraffic,
+        fmt: m.fmt,
+      })));
+    }
   }
 
   const overallHealth: Severity = redItems.length > 0 ? "red" : yellowItems.length > 0 ? "yellow" : "green";

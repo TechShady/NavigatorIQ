@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
-import type { PersonaId, AppLink, ThresholdConfig, SavedSettings } from "../types";
-import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_THRESHOLDS } from "../constants";
+import type { PersonaId, AppLink, ThresholdConfig, SavedSettings, HeatMetricConfig, MetricDisplayUnit } from "../types";
+import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_THRESHOLDS, DEFAULT_HEAT_METRICS } from "../constants";
 
 interface SettingsPanelProps {
   settings: SavedSettings;
@@ -8,7 +8,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = "applinks" | "thresholds" | "general";
+type SettingsTab = "applinks" | "thresholds" | "hotness" | "general";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "rgba(255,255,255,0.06)",
@@ -62,6 +62,73 @@ function AppLinkRow({ link, index, onChange, onRemove }: { link: AppLink; index:
         <div>
           <label style={LABEL_STYLE}>Docs URL</label>
           <input value={link.docsUrl} onChange={(e) => onChange(index, { ...link, docsUrl: e.target.value })} placeholder="https://docs.dynatrace.com/..." style={INPUT_STYLE} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const AGG_OPTIONS = [
+  { value: "avg", label: "avg" },
+  { value: "sum", label: "sum" },
+];
+
+const UNIT_OPTIONS: { value: MetricDisplayUnit; label: string }[] = [
+  { value: "raw", label: "Raw value" },
+  { value: "ns->ms", label: "Nanoseconds → ms" },
+  { value: "µs->ms", label: "Microseconds → ms" },
+  { value: "pct", label: "Percent (%)" },
+  { value: "count", label: "Count / Integer" },
+];
+
+function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetricConfig; index: number; onChange: (i: number, m: HeatMetricConfig) => void; onRemove: (i: number) => void }) {
+  return (
+    <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            title={metric.isTraffic ? "Traffic (neutral)" : "Performance metric"}
+            onClick={() => onChange(index, { ...metric, isTraffic: !metric.isTraffic })}
+            style={{ width: 10, height: 10, borderRadius: 2, background: metric.isTraffic ? "#4589FF" : "#FF8C42", cursor: "pointer", flexShrink: 0 }}
+          />
+          <input
+            value={metric.label}
+            onChange={(e) => onChange(index, { ...metric, label: e.target.value })}
+            placeholder="Metric Label"
+            style={{ ...INPUT_STYLE, fontWeight: 600, fontSize: 13 }}
+          />
+        </div>
+        <button onClick={() => onRemove(index)} style={{ background: "rgba(194,25,48,0.15)", border: "1px solid rgba(194,25,48,0.3)", color: "#ff6b7a", borderRadius: 4, padding: "3px 8px", fontSize: 11, cursor: "pointer", marginLeft: 8 }}>Remove</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 140px", gap: 8 }}>
+        <div>
+          <label style={LABEL_STYLE}>Grail Metric Key</label>
+          <input
+            value={metric.metricKey}
+            onChange={(e) => onChange(index, { ...metric, metricKey: e.target.value })}
+            placeholder="dt.service.request.response_time"
+            style={INPUT_STYLE}
+          />
+        </div>
+        <div>
+          <label style={LABEL_STYLE}>Aggregation</label>
+          <select
+            value={metric.aggregation}
+            onChange={(e) => onChange(index, { ...metric, aggregation: e.target.value as "avg" | "sum" })}
+            style={{ ...INPUT_STYLE, cursor: "pointer" }}
+          >
+            {AGG_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={LABEL_STYLE}>Display Unit</label>
+          <select
+            value={metric.displayUnit ?? "raw"}
+            onChange={(e) => onChange(index, { ...metric, displayUnit: e.target.value as MetricDisplayUnit })}
+            style={{ ...INPUT_STYLE, cursor: "pointer" }}
+          >
+            {UNIT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
         </div>
       </div>
     </div>
@@ -122,6 +189,29 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
       personas: { ...prev.personas, [personaId]: { ...prev.personas[personaId], thresholds: {} } },
     }));
     markDirty();
+  };
+
+  const getPersonaHeatMetrics = (personaId: PersonaId): HeatMetricConfig[] =>
+    draft.personas[personaId]?.heatMetrics ?? DEFAULT_HEAT_METRICS[personaId] ?? [];
+
+  const updatePersonaHeatMetrics = (personaId: PersonaId, metrics: HeatMetricConfig[]) => {
+    setDraft((prev) => ({
+      ...prev,
+      personas: {
+        ...prev.personas,
+        [personaId]: { ...prev.personas[personaId], heatMetrics: metrics },
+      },
+    }));
+    markDirty();
+  };
+
+  const addHeatMetric = (personaId: PersonaId) => {
+    const metrics = [...getPersonaHeatMetrics(personaId), { label: "New Metric", metricKey: "", aggregation: "avg" as const, displayUnit: "raw" as MetricDisplayUnit }];
+    updatePersonaHeatMetrics(personaId, metrics);
+  };
+
+  const resetPersonaHeatMetrics = (personaId: PersonaId) => {
+    updatePersonaHeatMetrics(personaId, [...(DEFAULT_HEAT_METRICS[personaId] ?? [])]);
   };
 
   const handleSave = () => {
@@ -187,6 +277,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         <div style={{ padding: "12px 28px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 8, flexShrink: 0 }}>
           <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
           <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Thresholds</button>
+          <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>🔥 Hotness</button>
           <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
         </div>
 
@@ -286,6 +377,55 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                   <ThresholdRow label="LCP — Red threshold" field="lcpRedMs" value={thresholds.lcpRedMs} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="ms" step={100} />
                   <ThresholdRow label="LCP — Yellow threshold" field="lcpYellowMs" value={thresholds.lcpYellowMs} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="ms" step={100} />
                 </div>
+              </div>
+            )}
+
+            {activeTab === "hotness" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Heat Metrics</h3>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+                      Grail metrics used for hotness Z-score computation. Hotness is purely statistical — deviation from each metric's own mean across buckets.
+                      {activePersona === "digital" && <strong style={{ color: "#FF8C42" }}> Digital uses RUM event data (not configurable via Grail metrics).</strong>}
+                    </p>
+                  </div>
+                  {activePersona !== "digital" && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => resetPersonaHeatMetrics(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
+                      <button onClick={() => addHeatMetric(activePersona)} style={{ background: "rgba(255,120,30,0.1)", border: "1px solid rgba(255,120,30,0.3)", borderRadius: 6, color: "#FF8C42", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>+ Add Metric</button>
+                    </div>
+                  )}
+                </div>
+                {activePersona === "digital" ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
+                    Digital Experience uses RUM user event data for hotness (error rate, duration, LCP, TTFB per bucket). This is not configurable via Grail metric keys.
+                  </div>
+                ) : (
+                  <>
+                    {getPersonaHeatMetrics(activePersona).map((metric, i) => (
+                      <HeatMetricRow
+                        key={i}
+                        metric={metric}
+                        index={i}
+                        onChange={(idx, updated) => { const next = [...getPersonaHeatMetrics(activePersona)]; next[idx] = updated; updatePersonaHeatMetrics(activePersona, next); }}
+                        onRemove={(idx) => { const next = getPersonaHeatMetrics(activePersona).filter((_, j) => j !== idx); updatePersonaHeatMetrics(activePersona, next); }}
+                      />
+                    ))}
+                    {getPersonaHeatMetrics(activePersona).length === 0 && (
+                      <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
+                        No heat metrics configured. Click "+ Add Metric" to add one, or "Reset to defaults" to restore the built-in metrics.
+                      </div>
+                    )}
+                    <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(255,120,30,0.06)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)" }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#FF8C42", marginBottom: 6 }}>How Heat Metrics Work</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
+                        Each metric is queried as a timeseries over the selected timeframe. For each bucket, the Z-score is computed as (value − mean) ÷ std. The highest Z-score across all metrics becomes that bucket's heat.<br />
+                        The <strong style={{ color: "#4589FF" }}>blue indicator</strong> marks traffic metrics (neutral — higher is not worse). Use <strong>Nanoseconds → ms</strong> for Dynatrace latency metrics like <code style={{ color: "#FF8C42" }}>dt.service.request.response_time</code>.
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

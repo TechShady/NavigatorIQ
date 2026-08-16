@@ -1,6 +1,6 @@
-import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo } from "./types";
+import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.3.3";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -137,6 +137,36 @@ export const CUSTOM_APPS = {
   userJourney: { label: "User Journey & Experience", appPath: "my.user.journey.app" },
   servicesOverview: { label: "Services Overview", appPath: "my.services.overview.app" },
   frontendOverview: { label: "Frontend Overview", appPath: "my.frontend.overview.app" },
+};
+
+export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
+  developer: [
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+    { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
+  ],
+  sre: [
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
+  ],
+  platform: [
+    { label: "CPU Usage", metricKey: "dt.host.cpu.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct" },
+    { label: "Memory Usage", metricKey: "dt.host.memory.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct" },
+  ],
+  dba: [
+    { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+  ],
+  digital: [],
+  network: [
+    { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+  ],
+  security: [
+    { label: "Security Events", metricKey: "dt.security.attack.count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+  ],
+  devops: [
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+  ],
 };
 
 export const DEFAULT_THRESHOLDS: ThresholdConfig = {

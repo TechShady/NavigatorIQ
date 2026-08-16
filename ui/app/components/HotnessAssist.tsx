@@ -156,14 +156,14 @@ function AnimatedSummary({ text }: { text: string }) {
 
 function MiniHotnessChart({ scores, worstIdx, bestIdx }: { scores: number[]; worstIdx: number; bestIdx: number }) {
   if (scores.length < 2) return null;
-  const W = 640, H = 72;
+  const W = 640, H = 72, LH = 14;
   const maxZ = Math.max(...scores, 1);
   const barW = Math.max(2, W / scores.length - 1);
   const color = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const xOf = (i: number) => (i / Math.max(scores.length - 1, 1)) * (W - barW);
   const bH = (z: number) => Math.max(3, (z / maxZ) * H);
   return (
-    <svg width={W} height={H} style={{ display: "block", borderRadius: 6, background: "rgba(255,255,255,0.03)" }}>
+    <svg width={W} height={H + LH} style={{ display: "block", borderRadius: 6, background: "rgba(255,255,255,0.03)" }}>
       {scores.map((z, i) => (
         <rect key={i} x={xOf(i)} y={H - bH(z)} width={barW} height={bH(z)} fill={color(z)} opacity={0.85} rx={1} />
       ))}
@@ -173,8 +173,8 @@ function MiniHotnessChart({ scores, worstIdx, bestIdx }: { scores: number[]; wor
         const cx = xOf(i) + barW / 2;
         return (
           <g key={`marker-${i}`}>
-            <line x1={cx} y1={0} x2={cx} y2={H} stroke={isWorst ? "#FF073A" : "#10B981"} strokeWidth={1.2} strokeDasharray="3,2" opacity={0.6} />
-            <text x={cx} y={10} textAnchor="middle" fill={isWorst ? "#FF073A" : "#10B981"} fontSize={9} fontWeight="bold">{isWorst ? "▲worst" : "▽best"}</text>
+            <line x1={cx} y1={0} x2={cx} y2={H} stroke={isWorst ? "#FF073A" : "#10B981"} strokeWidth={1} strokeDasharray="3,2" opacity={0.5} />
+            <text x={cx} y={H + LH - 2} textAnchor="middle" fill={isWorst ? "#FF073A" : "#10B981"} fontSize={9} fontWeight="bold">{isWorst ? "▲worst" : "▽best"}</text>
           </g>
         );
       })}

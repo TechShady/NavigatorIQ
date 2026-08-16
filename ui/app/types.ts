@@ -63,9 +63,20 @@ export interface ThresholdConfig {
   deploymentFailuresYellow: number;
 }
 
+export type MetricDisplayUnit = "raw" | "ns->ms" | "µs->ms" | "pct" | "count";
+
+export interface HeatMetricConfig {
+  label: string;
+  metricKey: string;
+  aggregation: "avg" | "sum";
+  isTraffic?: boolean;
+  displayUnit?: MetricDisplayUnit;
+}
+
 export interface PersonaSettings {
   appLinks: AppLink[];
   thresholds: Partial<ThresholdConfig>;
+  heatMetrics?: HeatMetricConfig[];
 }
 
 export interface GlobalSettings {

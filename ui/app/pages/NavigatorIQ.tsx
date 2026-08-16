@@ -9,6 +9,7 @@ import {
   APP_VERSION,
   IQ_WHATS_NEW,
   TIMEFRAME_TABS,
+  DEFAULT_HEAT_METRICS,
 } from "../constants";
 import {
   serviceHealthQuery, parseServiceHealth,
@@ -22,8 +23,10 @@ import {
   deploymentQuery, workflowQuery, parseDeployments,
   digitalTimelapseQuery, parseDigitalTimelapse,
   platformTimelineQuery, parsePlatformTimeline,
+  buildCustomHeatQuery, parseCustomHeat,
 } from "../queries";
 import { computeAssessment } from "../intelligence";
+import type { CustomHeatMetric } from "../intelligence";
 import { PersonaPickerModal } from "../components/PersonaPickerModal";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { AssessmentPanel } from "../components/AssessmentPanel";
@@ -87,6 +90,17 @@ export function NavigatorIQ() {
   // ─── Timeframe info for current & previous period ───────────────────────
   const tf = useMemo(() => getTimeframeInfo(tab), [tab]);
   const isTabLoaded = visitedTabs.has(tab);
+
+  const personaSettings = settings.personas[persona];
+  const heatMetrics = personaSettings?.heatMetrics ?? DEFAULT_HEAT_METRICS[persona] ?? [];
+  const customHeatQ = useMemo(
+    () => (isTabLoaded && heatMetrics.length > 0 && persona !== "digital")
+      ? withSeed(buildCustomHeatQuery(heatMetrics, tf.from, tf.to, tf.interval), refreshSeed)
+      : withSeed(NOOP_QUERY, refreshSeed),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isTabLoaded, JSON.stringify(heatMetrics), persona, tf.from, tf.to, tf.interval, refreshSeed]
+  );
+  const customHeatR = useDql({ query: customHeatQ });
 
   const handleTabChange = (newTab: TimeframeTab) => {
     setTab(newTab);
@@ -189,13 +203,17 @@ export function NavigatorIQ() {
   }), [svcPrevR.data, logPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data, dxTlPR.data, ptlPR.data]);
 
   // ─── Loading state ──────────────────────────────────────────────────────
-  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR].some((r) => r.isLoading);
+  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, customHeatR].some((r) => r.isLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
   const assessment = useMemo(
-    () => computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf),
-    [curResults, prevResults, persona, personaThresholds, tf]
+    () => {
+      const customMetrics: CustomHeatMetric[] = parseCustomHeat(recs(customHeatR), persona !== "digital" ? heatMetrics : []);
+      return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data]
   );
 
   // ─── Forecast helpers ───────────────────────────────────────────────────
