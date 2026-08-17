@@ -328,20 +328,20 @@ export function buildCustomHeatQuery(metrics: HeatMetricConfig[], from: string, 
   return `timeseries\n${fields},\n  interval:${interval}, from:${from}, to:${to}`;
 }
 
+const fmtMs = (v: number) => {
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}s`;
+  if (v >= 10) return `${Math.round(v)}ms`;
+  if (v > 0) return `${v.toFixed(2)}ms`;
+  return "0ms";
+};
+
 export function makeMetricFmt(unit?: MetricDisplayUnit): (v: number) => string {
   switch (unit) {
+    case "ms":      return fmtMs;
     case "ns->ms":
-    case "µs->ms":
-      return (v: number) => {
-        if (v >= 1000) return `${(v / 1000).toFixed(1)}s`;
-        if (v >= 10) return `${Math.round(v)}ms`;
-        if (v > 0) return `${v.toFixed(2)}ms`;
-        return "0ms";
-      };
-    case "pct":
-      return (v: number) => `${v.toFixed(2)}%`;
-    default:
-      return (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : Math.round(v).toLocaleString();
+    case "µs->ms":  return fmtMs;
+    case "pct":     return (v: number) => `${v.toFixed(2)}%`;
+    default:        return (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : Math.round(v).toLocaleString();
   }
 }
 
@@ -349,7 +349,7 @@ function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] 
   switch (unit) {
     case "ns->ms": return raw.map((v) => v / 1000000);
     case "µs->ms": return raw.map((v) => v / 1000);
-    default: return raw;
+    default: return raw;  // "ms", "raw", "pct", "count" — value already in correct scale
   }
 }
 

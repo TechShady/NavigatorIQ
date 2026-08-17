@@ -75,6 +75,7 @@ const AGG_OPTIONS: { value: "avg" | "sum"; label: string }[] = [
 
 const UNIT_OPTIONS: { value: MetricDisplayUnit; label: string }[] = [
   { value: "raw", label: "Raw value" },
+  { value: "ms", label: "Milliseconds (no conversion)" },
   { value: "ns->ms", label: "Nanoseconds → ms" },
   { value: "µs->ms", label: "Microseconds → ms" },
   { value: "pct", label: "Percent (%)" },

@@ -63,7 +63,7 @@ export interface ThresholdConfig {
   deploymentFailuresYellow: number;
 }
 
-export type MetricDisplayUnit = "raw" | "ns->ms" | "µs->ms" | "pct" | "count";
+export type MetricDisplayUnit = "raw" | "ms" | "ns->ms" | "µs->ms" | "pct" | "count";
 
 export interface HeatMetricConfig {
   label: string;
