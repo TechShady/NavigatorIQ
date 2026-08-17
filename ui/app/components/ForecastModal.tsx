@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 
 // ─── Linear regression forecast ───
 export function linearForecast(data: number[], forecastBuckets: number): number[] {
@@ -362,6 +362,7 @@ function formatDate(ts: number, short = false): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
+// Kept for reference but no longer used — replaced by FmSelect below
 const SELECT_STYLE: React.CSSProperties = {
   background: "#1a1e38", color: "#fff", border: "1px solid rgba(128,128,128,0.4)", borderRadius: 6,
   padding: "4px 8px", fontSize: 12, cursor: "pointer", appearance: "none", WebkitAppearance: "none",
@@ -369,6 +370,40 @@ const SELECT_STYLE: React.CSSProperties = {
   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M3 5l3 3 3-3'/%3E%3C/svg%3E")`,
   backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center",
 };
+
+function FmSelect<T extends string | number>({ value, onChange, options }: {
+  value: T; onChange: (val: T) => void; options: { value: T; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ background: "#1a1e38", color: "#fff", border: "1px solid rgba(128,128,128,0.4)", borderRadius: 6, padding: "4px 10px 4px 8px", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+      >
+        <span>{selected?.label ?? String(value)}</span>
+        <span style={{ fontSize: 8, opacity: 0.5 }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 8, padding: 4, zIndex: 10000, boxShadow: "0 8px 32px rgba(0,0,0,0.7)", minWidth: "100%" }}>
+          {options.map((o) => (
+            <button key={String(o.value)} onClick={() => { onChange(o.value); setOpen(false); }}
+              style={{ display: "block", width: "100%", padding: "6px 10px", background: o.value === value ? "rgba(69,137,255,0.15)" : "transparent", border: "none", borderRadius: 6, color: o.value === value ? "#7ab4ff" : "rgba(255,255,255,0.82)", fontSize: 12, fontWeight: o.value === value ? 600 : 400, cursor: "pointer", textAlign: "left", whiteSpace: "nowrap" }}
+            >{o.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, getRequeryData }: ForecastModalProps) {
   const [method, setMethod] = useState<ForecastMethod>("prophet");
@@ -501,37 +536,43 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{formatDate(activeFromMs)} → {formatDate(activeToMs + appliedForecastDays * 24 * 3600 * 1000)}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select value={method} onChange={(e) => setMethod(e.target.value as ForecastMethod)} style={SELECT_STYLE}>
-              <option value="holt-winters" style={{ background: "#1a1e38", color: "#fff" }}>Holt-Winters</option>
-              <option value="triple-exp" style={{ background: "#1a1e38", color: "#fff" }}>Triple Exp. Smoothing</option>
-              <option value="prophet" style={{ background: "#1a1e38", color: "#fff" }}>Prophet</option>
-              <option value="arima" style={{ background: "#1a1e38", color: "#fff" }}>ARIMA</option>
-              <option value="sarima" style={{ background: "#1a1e38", color: "#fff" }}>SARIMA</option>
-              <option value="linear" style={{ background: "#1a1e38", color: "#fff" }}>Linear Regression</option>
-            </select>
+            <FmSelect<ForecastMethod>
+              value={method} onChange={setMethod}
+              options={[
+                { value: "holt-winters", label: "Holt-Winters" },
+                { value: "triple-exp", label: "Triple Exp. Smoothing" },
+                { value: "prophet", label: "Prophet" },
+                { value: "arima", label: "ARIMA" },
+                { value: "sarima", label: "SARIMA" },
+                { value: "linear", label: "Linear Regression" },
+              ]}
+            />
             <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", color: "#fff", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>✕ Close</button>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 6, border: "1px solid rgba(128,128,128,0.12)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Analyze</span>
-            <select value={pendingAnalyzeDays} onChange={(e) => setPendingAnalyzeDays(Number(e.target.value))} style={SELECT_STYLE}>
-              {ANALYZE_OPTIONS.map((d) => <option key={d} value={d} style={{ background: "#1a1e38", color: "#fff" }}>{d} days</option>)}
-            </select>
+            <FmSelect<number>
+              value={pendingAnalyzeDays} onChange={setPendingAnalyzeDays}
+              options={ANALYZE_OPTIONS.map((d) => ({ value: d, label: `${d} days` }))}
+            />
           </div>
           <div style={{ width: 1, height: 20, background: "rgba(128,128,128,0.25)" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Datapoints</span>
-            <select value={pendingDatapoints} onChange={(e) => setPendingDatapoints(Number(e.target.value))} style={SELECT_STYLE}>
-              {DATAPOINT_OPTIONS.map((m) => <option key={m} value={m} style={{ background: "#1a1e38", color: "#fff" }}>{datapointLabel(m)}</option>)}
-            </select>
+            <FmSelect<number>
+              value={pendingDatapoints} onChange={setPendingDatapoints}
+              options={DATAPOINT_OPTIONS.map((m) => ({ value: m, label: datapointLabel(m) }))}
+            />
           </div>
           <div style={{ width: 1, height: 20, background: "rgba(128,128,128,0.25)" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Forecast</span>
-            <select value={pendingForecastDays} onChange={(e) => setPendingForecastDays(Number(e.target.value))} style={SELECT_STYLE}>
-              {FORECAST_OPTIONS.map((d) => <option key={d} value={d} style={{ background: "#1a1e38", color: "#fff" }}>{d} days</option>)}
-            </select>
+            <FmSelect<number>
+              value={pendingForecastDays} onChange={setPendingForecastDays}
+              options={FORECAST_OPTIONS.map((d) => ({ value: d, label: `${d} days` }))}
+            />
           </div>
           {isDirty && <button onClick={handleApply} disabled={isRequerying} style={{ marginLeft: 4, background: isRequerying ? "rgba(69,137,255,0.3)" : "rgba(69,137,255,0.85)", color: "#fff", border: "1px solid rgba(69,137,255,0.6)", borderRadius: 6, padding: "5px 16px", fontSize: 12, cursor: isRequerying ? "not-allowed" : "pointer", fontWeight: 600 }}>{isRequerying ? "Loading…" : "Apply"}</button>}
           {requeryError && <span style={{ fontSize: 11, color: "#FF9040", marginLeft: 4 }}>{requeryError}</span>}

@@ -68,7 +68,7 @@ function AppLinkRow({ link, index, onChange, onRemove }: { link: AppLink; index:
   );
 }
 
-const AGG_OPTIONS = [
+const AGG_OPTIONS: { value: "avg" | "sum"; label: string }[] = [
   { value: "avg", label: "avg" },
   { value: "sum", label: "sum" },
 ];
@@ -152,23 +152,19 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
         </div>
         <div>
           <label style={LABEL_STYLE}>Aggregation</label>
-          <select
+          <CustomSelect<"avg" | "sum">
             value={metric.aggregation}
-            onChange={(e) => onChange(index, { ...metric, aggregation: e.target.value as "avg" | "sum" })}
-            style={{ ...INPUT_STYLE, cursor: "pointer" }}
-          >
-            {AGG_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+            onChange={(val) => onChange(index, { ...metric, aggregation: val })}
+            options={AGG_OPTIONS}
+          />
         </div>
         <div>
           <label style={LABEL_STYLE}>Display Unit</label>
-          <select
+          <CustomSelect<string>
             value={metric.displayUnit ?? "raw"}
-            onChange={(e) => onChange(index, { ...metric, displayUnit: e.target.value as MetricDisplayUnit })}
-            style={{ ...INPUT_STYLE, cursor: "pointer" }}
-          >
-            {UNIT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+            onChange={(val) => onChange(index, { ...metric, displayUnit: val as MetricDisplayUnit })}
+            options={UNIT_OPTIONS}
+          />
         </div>
       </div>
     </div>
