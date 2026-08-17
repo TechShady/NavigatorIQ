@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.8";
+export const APP_VERSION = "0.3.9";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -166,10 +166,7 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   network: [
     { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
   ],
-  security: [
-    { label: "Service Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
-    { label: "Service Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
-  ],
+  security: [],
   devops: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
     { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
@@ -218,31 +215,12 @@ export function getTimeframeInfo(tab: TimeframeTab): TimeframeInfo {
       return { tab, label: "Last 30 Min", from: "now()-30m", to: "now()", prevFrom: "now()-60m", prevTo: "now()-30m", prevLabel: "prior 30 min", interval: "1m", bucketLabel: "1-min" };
     case "2h":
       return { tab, label: "Last 2 Hours", from: "now()-2h", to: "now()", prevFrom: "now()-4h", prevTo: "now()-2h", prevLabel: "prior 2 hours", interval: "5m", bucketLabel: "5-min" };
-    case "today": {
-      // Use epoch ms for midnight UTC — `now()/d` truncation is not reliably supported by the
-      // DQL `timeseries` metric command, which only accepts duration expressions or absolute timestamps.
-      const now = new Date();
-      const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const startOfYesterday = new Date(startOfDay.getTime() - 86400000);
-      return {
-        tab, label: "Today",
-        from: String(startOfDay.getTime()), to: "now()",
-        prevFrom: String(startOfYesterday.getTime()), prevTo: String(startOfDay.getTime()),
-        prevLabel: "yesterday", interval: "10m", bucketLabel: "10-min",
-      };
-    }
-    case "yesterday": {
-      const now = new Date();
-      const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
-      const startOfDayBefore = new Date(startOfYesterday.getTime() - 86400000);
-      return {
-        tab, label: "Yesterday",
-        from: String(startOfYesterday.getTime()), to: String(startOfToday.getTime()),
-        prevFrom: String(startOfDayBefore.getTime()), prevTo: String(startOfYesterday.getTime()),
-        prevLabel: "day before", interval: "10m", bucketLabel: "10-min",
-      };
-    }
+    case "today":
+      // "last 24h" instead of "since UTC midnight" — avoids now()/d which is unsupported
+      // by the DQL timeseries metric command (works only with fetch, not timeseries)
+      return { tab, label: "Today", from: "now()-24h", to: "now()", prevFrom: "now()-48h", prevTo: "now()-24h", prevLabel: "yesterday", interval: "10m", bucketLabel: "10-min" };
+    case "yesterday":
+      return { tab, label: "Yesterday", from: "now()-48h", to: "now()-24h", prevFrom: "now()-72h", prevTo: "now()-48h", prevLabel: "day before", interval: "10m", bucketLabel: "10-min" };
     case "7d":
       return { tab, label: "Last 7 Days", from: "now()-7d", to: "now()", prevFrom: "now()-14d", prevTo: "now()-7d", prevLabel: "prior 7 days", interval: "1h", bucketLabel: "1-hour" };
   }

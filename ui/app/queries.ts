@@ -130,23 +130,13 @@ export function deploymentQuery(from: string, to: string): string {
 }
 
 // Per-bucket RUM timelapse — drives Digital Experience heat strip
-// Uses makeTimeseries so all time buckets are populated (no missing-bucket gaps)
-// Each metric uses the correct event filter via conditional fieldsAdd
-export function digitalTimelapseQuery(from: string, to: string, interval = "auto"): string {
-  const ivl = interval !== "auto" ? `interval:${interval}, ` : "";
+// Pattern copied directly from Frontend Overview / User Journey apps (user-confirmed working queries)
+export function digitalTimelapseQuery(from: string, to: string, _interval = "auto"): string {
   return `fetch user.events, from:${from}, to:${to}, scanLimitGBytes:500
 | filterOut dt.rum.user_type == "synthetic" OR isNull(dt.rum.user_type)
-| fieldsAdd
-    lcp_ms = if(characteristics.has_page_summary OR characteristics.has_w3c_navigation_timings, web_vitals.largest_contentful_paint / 1000000, else: null),
-    ttfb_ms = if(characteristics.has_w3c_navigation_timings, web_vitals.time_to_first_byte / 1000000, else: null),
-    dur_ms = if(characteristics.has_user_action == true, duration / 1000000, else: null)
-| makeTimeseries ${ivl}{
-    lcpP75 = percentile(lcp_ms, 75),
-    ttfbP75 = percentile(ttfb_ms, 75),
-    durP75 = percentile(dur_ms, 75),
-    errorCount = countIf(characteristics.has_error == true),
-    eventCount = count()
-  }`;
+| filter characteristics.has_page_summary OR characteristics.has_w3c_navigation_timings
+| fieldsAdd lcp_ms = web_vitals.largest_contentful_paint / 1000000
+| makeTimeseries { timeseries = percentile(lcp_ms, 75), eventCount = count() }`;
 }
 
 // Per-bucket host CPU/mem timelapse (no by: → truly temporal) — drives Platform heat strip
@@ -277,16 +267,17 @@ export function parseDigitalExp(dxRecords: DqlRecord[] | undefined, synthRecords
 export function parseDigitalTimelapse(records: DqlRecord[] | undefined): DigitalTimelapseResult | null {
   const r = records?.[0];
   if (!r) return null;
-  const lcpTimeline = arr(r, "lcpP75");
-  const ttfbTimeline = arr(r, "ttfbP75");
-  const durationTimeline = arr(r, "durP75");
-  const errorCountTl = arr(r, "errorCount");
+  // Field name "timeseries" matches the makeTimeseries output field in the proven query pattern
+  const lcpTimeline = arr(r, "timeseries");
   const eventCountTl = arr(r, "eventCount");
-  if (lcpTimeline.length === 0 && durationTimeline.length === 0 && eventCountTl.length === 0) return null;
-  const errorRateTimeline = eventCountTl.map((total, i) =>
-    total > 0 ? ((errorCountTl[i] ?? 0) / total) * 100 : 0
-  );
-  return { errorRateTimeline, durationTimeline, lcpTimeline, ttfbTimeline, eventsTimeline: eventCountTl };
+  if (lcpTimeline.length < 2) return null;
+  return {
+    errorRateTimeline: [],
+    durationTimeline: [],
+    lcpTimeline,
+    ttfbTimeline: [],
+    eventsTimeline: eventCountTl,
+  };
 }
 
 export function parsePlatformTimeline(records: DqlRecord[] | undefined): PlatformTimelineResult | null {
