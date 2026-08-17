@@ -387,45 +387,39 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                     <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Heat Metrics</h3>
                     <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
                       Grail metrics used for hotness Z-score computation. Hotness is purely statistical — deviation from each metric's own mean across buckets.
-                      {activePersona === "digital" && <strong style={{ color: "#FF8C42" }}> Digital uses RUM event data (not configurable via Grail metrics).</strong>}
+                      {activePersona === "digital" && <span style={{ color: "rgba(255,180,60,0.9)" }}> Digital also uses RUM event data as a fallback when no Grail metrics return results.</span>}
+                      {activePersona === "security" && <span style={{ color: "rgba(255,180,60,0.9)" }}> Security also uses attack event data as a fallback when no Grail metrics return results.</span>}
                     </p>
                   </div>
-                  {activePersona !== "digital" && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => resetPersonaHeatMetrics(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
-                      <button onClick={() => addHeatMetric(activePersona)} style={{ background: "rgba(255,120,30,0.1)", border: "1px solid rgba(255,120,30,0.3)", borderRadius: 6, color: "#FF8C42", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>+ Add Metric</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => resetPersonaHeatMetrics(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
+                    <button onClick={() => addHeatMetric(activePersona)} style={{ background: "rgba(255,120,30,0.1)", border: "1px solid rgba(255,120,30,0.3)", borderRadius: 6, color: "#FF8C42", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>+ Add Metric</button>
+                  </div>
+                </div>
+                <>
+                  {getPersonaHeatMetrics(activePersona).map((metric, i) => (
+                    <HeatMetricRow
+                      key={i}
+                      metric={metric}
+                      index={i}
+                      onChange={(idx, updated) => { const next = [...getPersonaHeatMetrics(activePersona)]; next[idx] = updated; updatePersonaHeatMetrics(activePersona, next); }}
+                      onRemove={(idx) => { const next = getPersonaHeatMetrics(activePersona).filter((_, j) => j !== idx); updatePersonaHeatMetrics(activePersona, next); }}
+                    />
+                  ))}
+                  {getPersonaHeatMetrics(activePersona).length === 0 && (
+                    <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
+                      No heat metrics configured. Click "+ Add Metric" to add one, or "Reset to defaults" to restore the built-in metrics.
                     </div>
                   )}
-                </div>
-                {activePersona === "digital" ? (
-                  <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
-                    Digital Experience uses RUM user event data for hotness (error rate, duration, LCP, TTFB per bucket). This is not configurable via Grail metric keys.
-                  </div>
-                ) : (
-                  <>
-                    {getPersonaHeatMetrics(activePersona).map((metric, i) => (
-                      <HeatMetricRow
-                        key={i}
-                        metric={metric}
-                        index={i}
-                        onChange={(idx, updated) => { const next = [...getPersonaHeatMetrics(activePersona)]; next[idx] = updated; updatePersonaHeatMetrics(activePersona, next); }}
-                        onRemove={(idx) => { const next = getPersonaHeatMetrics(activePersona).filter((_, j) => j !== idx); updatePersonaHeatMetrics(activePersona, next); }}
-                      />
-                    ))}
-                    {getPersonaHeatMetrics(activePersona).length === 0 && (
-                      <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
-                        No heat metrics configured. Click "+ Add Metric" to add one, or "Reset to defaults" to restore the built-in metrics.
-                      </div>
-                    )}
-                    <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(255,120,30,0.06)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)" }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#FF8C42", marginBottom: 6 }}>How Heat Metrics Work</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-                        Each metric is queried as a timeseries over the selected timeframe. For each bucket, the Z-score is computed as (value − mean) ÷ std. The highest Z-score across all metrics becomes that bucket's heat.<br />
-                        The <strong style={{ color: "#4589FF" }}>blue indicator</strong> marks traffic metrics (neutral — higher is not worse). Use <strong>Nanoseconds → ms</strong> for Dynatrace latency metrics like <code style={{ color: "#FF8C42" }}>dt.service.request.response_time</code>.
-                      </div>
+                  <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(255,120,30,0.06)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#FF8C42", marginBottom: 6 }}>How Heat Metrics Work</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
+                      Each metric is queried as a timeseries over the selected timeframe. For each bucket, the Z-score is computed as (value − mean) ÷ std. The highest Z-score across all metrics becomes that bucket's heat.<br />
+                      The <strong style={{ color: "#4589FF" }}>blue indicator</strong> marks traffic metrics (neutral — higher is not worse). Use <strong>Nanoseconds → ms</strong> for Dynatrace latency metrics like <code style={{ color: "#FF8C42" }}>dt.service.request.response_time</code>.
+                      {activePersona === "digital" && <><br />Digital defaults use <code style={{ color: "#FF8C42" }}>ext:app.web.*</code> RUM metrics — update keys if they differ in your environment.</>}
                     </div>
-                  </>
-                )}
+                  </div>
+                </>
               </div>
             )}
 

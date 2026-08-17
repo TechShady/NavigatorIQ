@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.4";
+export const APP_VERSION = "0.3.5";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -156,11 +156,19 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   dba: [
     { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
   ],
-  digital: [],
+  digital: [
+    { label: "Session Error Rate", metricKey: "ext:app.web.errors", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "User Action Duration", metricKey: "ext:app.web.action.duration", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "Largest Contentful Paint", metricKey: "ext:app.web.vitals.lcp", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "Time to First Byte", metricKey: "ext:app.web.vitals.ttfb", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+  ],
   network: [
     { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
   ],
-  security: [],
+  security: [
+    { label: "Service Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Service Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+  ],
   devops: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
     { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
@@ -210,9 +218,9 @@ export function getTimeframeInfo(tab: TimeframeTab): TimeframeInfo {
     case "2h":
       return { tab, label: "Last 2 Hours", from: "now()-2h", to: "now()", prevFrom: "now()-4h", prevTo: "now()-2h", prevLabel: "prior 2 hours", interval: "5m", bucketLabel: "5-min" };
     case "today":
-      return { tab, label: "Today", from: "now()/d", to: "now()", prevFrom: "now()-1d/d", prevTo: "now()/d", prevLabel: "yesterday", interval: "30m", bucketLabel: "30-min" };
+      return { tab, label: "Today", from: "now()/d", to: "now()", prevFrom: "now()-1d/d", prevTo: "now()/d", prevLabel: "yesterday", interval: "10m", bucketLabel: "10-min" };
     case "yesterday":
-      return { tab, label: "Yesterday", from: "now()-1d/d", to: "now()/d", prevFrom: "now()-2d/d", prevTo: "now()-1d/d", prevLabel: "day before", interval: "15m", bucketLabel: "15-min" };
+      return { tab, label: "Yesterday", from: "now()-1d/d", to: "now()/d", prevFrom: "now()-2d/d", prevTo: "now()-1d/d", prevLabel: "day before", interval: "10m", bucketLabel: "10-min" };
     case "7d":
       return { tab, label: "Last 7 Days", from: "now()-7d", to: "now()", prevFrom: "now()-14d", prevTo: "now()-7d", prevLabel: "prior 7 days", interval: "1h", bucketLabel: "1-hour" };
   }

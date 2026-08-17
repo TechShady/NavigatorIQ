@@ -95,7 +95,7 @@ export function NavigatorIQ() {
   const personaSettings = settings.personas[persona];
   const heatMetrics = personaSettings?.heatMetrics ?? DEFAULT_HEAT_METRICS[persona] ?? [];
   const customHeatQ = useMemo(
-    () => (isTabLoaded && heatMetrics.length > 0 && persona !== "digital")
+    () => (isTabLoaded && heatMetrics.length > 0)
       ? withSeed(buildCustomHeatQuery(heatMetrics, tf.from, tf.to, tf.interval), refreshSeed)
       : withSeed(NOOP_QUERY, refreshSeed),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,7 +213,7 @@ export function NavigatorIQ() {
   const personaThresholds = settings.personas[persona]?.thresholds;
   const assessment = useMemo(
     () => {
-      const customMetrics: CustomHeatMetric[] = parseCustomHeat(recs(customHeatR), persona !== "digital" ? heatMetrics : []);
+      const customMetrics: CustomHeatMetric[] = parseCustomHeat(recs(customHeatR), heatMetrics);
       return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
