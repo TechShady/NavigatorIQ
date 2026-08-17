@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useDql, useUserAppState, useSetUserAppState } from "@dynatrace-sdk/react-hooks";
+import { useDql, useAppState, useSetAppState } from "@dynatrace-sdk/react-hooks";
 import { queryExecutionClient } from "@dynatrace-sdk/client-query";
 import type { PersonaId, TimeframeTab, SavedSettings, AssessmentItem } from "../types";
 import {
@@ -71,13 +71,18 @@ export function NavigatorIQ() {
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [forecastItem, setForecastItem] = useState<AssessmentItem | null>(null);
-  // ─── Settings from user-app-state ──────────────────────────────────────
-  const settingsState = useUserAppState({ key: SETTINGS_KEY });
-  const { execute: saveSettingsRaw } = useSetUserAppState();
-  const settings = useMemo(() => parseSettings(settingsState.data?.value as string | undefined), [settingsState.data?.value]);
+  // ─── Settings from app-state (global/shared across all users) ──────────
+  const settingsState = useAppState({ key: SETTINGS_KEY });
+  const { execute: saveSettingsRaw } = useSetAppState();
+  const [localSettings, setLocalSettings] = useState<SavedSettings | null>(null);
+  const settings = useMemo(
+    () => localSettings ?? parseSettings(settingsState.data?.value as string | undefined),
+    [localSettings, settingsState.data?.value]
+  );
 
   const handleSaveSettings = useCallback((s: SavedSettings) => {
     saveSettingsRaw({ key: SETTINGS_KEY, body: { value: JSON.stringify(s) } });
+    setLocalSettings(s);
   }, [saveSettingsRaw]);
 
   // ─── Auto-refresh ───────────────────────────────────────────────────────

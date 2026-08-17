@@ -1,5 +1,14 @@
 * { box-sizing: border-box; }
 
+/* Force dark native UI for all select dropdowns (Chrome/Chromium) */
+select {
+  color-scheme: dark;
+}
+select option {
+  background-color: #0f1422;
+  color: #ffffff;
+}
+
 body {
   margin: 0;
   font-family: "Inter", system-ui, -apple-system, sans-serif;

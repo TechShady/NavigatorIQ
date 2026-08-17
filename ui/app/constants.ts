@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.5";
+export const APP_VERSION = "0.3.6";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -157,10 +157,10 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
   ],
   digital: [
-    { label: "Session Error Rate", metricKey: "ext:app.web.errors", aggregation: "sum", isTraffic: false, displayUnit: "count" },
-    { label: "User Action Duration", metricKey: "ext:app.web.action.duration", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "Largest Contentful Paint", metricKey: "ext:app.web.vitals.lcp", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "Time to First Byte", metricKey: "ext:app.web.vitals.ttfb", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "User Action Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "Largest Contentful Paint", metricKey: "dt.frontend.user_action.lcp", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "Time to First Byte", metricKey: "dt.frontend.user_action.ttfb", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "Error Count", metricKey: "dt.frontend.user_action.error_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
   ],
   network: [
     { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
