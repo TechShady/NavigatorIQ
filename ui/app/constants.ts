@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.13";
+export const APP_VERSION = "0.3.14";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -36,13 +36,6 @@ export const PERSONAS: PersonaDef[] = [
     icon: "⚙️",
     description: "Hosts, containers & infrastructure",
     tabSummary: "Host CPU/memory health, K8s pod restarts, node readiness. Recommendations link to Infrastructure & Operations, Kubernetes, and Hosts apps.",
-  },
-  {
-    id: "security",
-    label: "Security / AppSec",
-    icon: "🔒",
-    description: "Vulnerabilities & attack detection",
-    tabSummary: "Open vulnerabilities by severity, active attack detections. Recommendations link to Application Security, Vulnerabilities, and Attacks apps.",
   },
   {
     id: "dba",
