@@ -23,6 +23,7 @@ import {
   deploymentQuery, workflowQuery, parseDeployments,
   digitalTimelapseQuery, parseDigitalTimelapse,
   platformTimelineQuery, parsePlatformTimeline,
+  securityTimelapseQuery, parseSecurityTimelapse,
   buildCustomHeatQuery, parseCustomHeat,
 } from "../queries";
 import { computeAssessment } from "../intelligence";
@@ -139,6 +140,7 @@ export function NavigatorIQ() {
   const dxTlPQ   = isTabLoaded ? withSeed(digitalTimelapseQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
   const ptlQ     = isTabLoaded ? withSeed(platformTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
   const ptlPQ    = isTabLoaded ? withSeed(platformTimelineQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
+  const secTlQ   = isTabLoaded ? withSeed(securityTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
   const svcR      = useDql({ query: svcQ });
@@ -171,6 +173,7 @@ export function NavigatorIQ() {
   const dxTlPR    = useDql({ query: dxTlPQ });
   const ptlR      = useDql({ query: ptlQ });
   const ptlPR     = useDql({ query: ptlPQ });
+  const secTlR    = useDql({ query: secTlQ });
 
   // ─── Parse results ──────────────────────────────────────────────────────
 
@@ -186,7 +189,8 @@ export function NavigatorIQ() {
     deployments:      parseDeployments(recs(deplR), recs(wfR)),
     digitalTimelapse: parseDigitalTimelapse(recs(dxTlR)),
     platformTimeline: parsePlatformTimeline(recs(ptlR)),
-  }), [svcR.data, logR.data, hostR.data, k8sR.data, secR.data, atkR.data, dbR.data, netErrR.data, netConR.data, dxR.data, synthR.data, deplR.data, wfR.data, dxTlR.data, ptlR.data]);
+    securityTimelapse: parseSecurityTimelapse(recs(secTlR)),
+  }), [svcR.data, logR.data, hostR.data, k8sR.data, secR.data, atkR.data, dbR.data, netErrR.data, netConR.data, dxR.data, synthR.data, deplR.data, wfR.data, dxTlR.data, ptlR.data, secTlR.data]);
 
   const prevResults = useMemo(() => ({
     serviceHealth:    parseServiceHealth(recs(svcPrevR)),
@@ -203,7 +207,7 @@ export function NavigatorIQ() {
   }), [svcPrevR.data, logPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data, dxTlPR.data, ptlPR.data]);
 
   // ─── Loading state ──────────────────────────────────────────────────────
-  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, customHeatR].some((r) => r.isLoading);
+  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, customHeatR].some((r) => r.isLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
@@ -286,6 +290,7 @@ export function NavigatorIQ() {
     height: 56,
     flexShrink: 0,
     backdropFilter: "blur(8px)",
+    zIndex: 200,
   };
 
   return (
@@ -346,7 +351,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
+          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />

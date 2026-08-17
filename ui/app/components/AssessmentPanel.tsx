@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import type { Assessment, AssessmentItem, Trend, HeatBucketDetail } from "../types";
+import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId } from "../types";
 import { HotnessAssistButton, HotnessAssistPanel } from "./HotnessAssist";
 import { HotnessForecastPanel } from "./HotnessForecastPanel";
 
@@ -10,6 +10,7 @@ interface AssessmentPanelProps {
   isLoading: boolean;
   onForecast?: (item: AssessmentItem) => void;
   bucketMs?: number;
+  persona?: PersonaId;
 }
 
 // ─── Drag hook ─────────────────────────────────────────────────────────────
@@ -170,6 +171,7 @@ function ClickableHeatStrip({
   onSelectBucket: (i: number | null) => void;
   onAssist: () => void;
   onForecast: () => void;
+  persona?: PersonaId;
 }) {
   if (scores.length < 2) return null;
   const maxZ = Math.max(...scores, 1);
@@ -207,7 +209,7 @@ function ClickableHeatStrip({
       </div>
 
       {/* Bars */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 36, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "3px 3px", cursor: "pointer" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 180, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: "pointer" }}>
         {scores.map((z, i) => {
           const sel = selectedBucket === i;
           return (
@@ -368,7 +370,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000 }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -471,6 +473,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           heatScores={assessment.heatScores}
           bucketDetails={assessment.bucketDetails}
           bucketLabel={assessment.bucketLabel}
+          persona={persona}
           pos={assistDrag.pos}
           onDragStart={assistDrag.onDragStart}
           onClose={() => setAssistOpen(false)}

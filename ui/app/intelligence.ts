@@ -825,6 +825,16 @@ export function computeAssessment(
         ]);
       }
       break;
+    case "security": {
+      const atl = cur.securityTimelapse;
+      if (atl && atl.attackTimeline.length > 1) {
+        heatScores = computeHeat([atl.attackTimeline]);
+        bucketDetails = buildBucketDetails(heatScores, [
+          { label: "Attack Events", timeline: atl.attackTimeline, fmt: fmtInt },
+        ]);
+      }
+      break;
+    }
     case "digital":
       if (dtl) {
         heatScores = computeHeat([dtl.errorRateTimeline, dtl.lcpTimeline, dtl.durationTimeline]);

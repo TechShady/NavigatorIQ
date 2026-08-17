@@ -1,6 +1,52 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import type { HeatBucketDetail, HeatBucketMetric } from "../types";
+import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
+import type { HeatBucketDetail, HeatBucketMetric, PersonaId } from "../types";
+
+const PERSONA_EXPLORE_LINKS: Partial<Record<PersonaId, Array<{ label: string; appPath: string }>>> = {
+  developer: [
+    { label: "Distributed Traces", appPath: "dynatrace.distributedtracing" },
+    { label: "Services", appPath: "dynatrace.services" },
+    { label: "Logs", appPath: "dynatrace.logs" },
+    { label: "Services Overview", appPath: "my.services.overview.app" },
+  ],
+  sre: [
+    { label: "Problems", appPath: "dynatrace.davis.problems" },
+    { label: "SLOs", appPath: "dynatrace.slos" },
+    { label: "Anomaly Detection", appPath: "dynatrace.davis.anomaly.detection" },
+    { label: "Services Overview", appPath: "my.services.overview.app" },
+  ],
+  platform: [
+    { label: "Infrastructure & Operations", appPath: "dynatrace.infraops" },
+    { label: "Kubernetes", appPath: "dynatrace.kubernetes" },
+    { label: "Hosts", appPath: "dynatrace.infraops" },
+  ],
+  dba: [
+    { label: "Databases", appPath: "dynatrace.database.overview" },
+    { label: "Distributed Traces", appPath: "dynatrace.distributedtracing" },
+    { label: "Logs", appPath: "dynatrace.logs" },
+  ],
+  network: [
+    { label: "Network Monitoring", appPath: "dynatrace.classic.network" },
+    { label: "Infrastructure & Operations", appPath: "dynatrace.infraops" },
+    { label: "Problems", appPath: "dynatrace.davis.problems" },
+  ],
+  security: [
+    { label: "Attacks", appPath: "dynatrace.security.attacks" },
+    { label: "Application Security", appPath: "dynatrace.security.analytics" },
+    { label: "Vulnerabilities", appPath: "dynatrace.security.vulnerabilities" },
+  ],
+  digital: [
+    { label: "Digital Experience", appPath: "dynatrace.rum.overview" },
+    { label: "Session Replay", appPath: "dynatrace.session.replay" },
+    { label: "User Journey", appPath: "my.user.journey.app" },
+  ],
+  devops: [
+    { label: "Workflows", appPath: "dynatrace.automations" },
+    { label: "Releases", appPath: "dynatrace.releases" },
+    { label: "Services Overview", appPath: "my.services.overview.app" },
+  ],
+};
 
 // ─── Analysis ─────────────────────────────────────────────────────────────
 
@@ -247,6 +293,7 @@ export interface HotnessAssistPanelProps {
   heatScores: number[];
   bucketDetails: HeatBucketDetail[];
   bucketLabel: string;
+  persona?: PersonaId;
   pos: { x: number; y: number };
   onDragStart: (e: React.MouseEvent<HTMLDivElement>) => void;
   onClose: () => void;
@@ -256,7 +303,7 @@ const INSIGHT_COLORS: Record<HotnessAnalysis["insights"][0]["severity"], string>
   critical: "#FF073A", warning: "#FFF04D", info: "#4589FF", good: "#10B981",
 };
 
-export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
+export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
   const burstLabels: Record<HotnessAnalysis["burstType"], string> = {
     stable: "Stable — no elevated activity",
@@ -365,6 +412,27 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, pos
                 <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)", lineHeight: 1.55 }}>{ins.text}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Explore links */}
+        {persona && PERSONA_EXPLORE_LINKS[persona] && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Explore in Dynatrace</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {PERSONA_EXPLORE_LINKS[persona]!.map((link) => (
+                <button
+                  key={link.appPath + link.label}
+                  onClick={() => {
+                    try { window.open(`${getEnvironmentUrl()}/ui/apps/${link.appPath}`, "_blank"); }
+                    catch { window.open(`/ui/apps/${link.appPath}`, "_blank"); }
+                  }}
+                  style={{ background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.28)", borderRadius: 6, color: "#7ab4ff", fontSize: 11, fontWeight: 600, padding: "5px 10px", cursor: "pointer" }}
+                >
+                  ↗ {link.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

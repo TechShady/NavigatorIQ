@@ -213,6 +213,10 @@ export interface PlatformTimelineResult {
   memTimeline: number[];
 }
 
+export interface SecurityTimelapseResult {
+  attackTimeline: number[];
+}
+
 export interface AllQueryResults {
   serviceHealth: ServiceHealthResult | null;
   logErrors: LogErrorsResult | null;
@@ -225,6 +229,7 @@ export interface AllQueryResults {
   deployments: DeploymentResult | null;
   digitalTimelapse: DigitalTimelapseResult | null;
   platformTimeline: PlatformTimelineResult | null;
+  securityTimelapse?: SecurityTimelapseResult | null;
 }
 
 export interface TimeframeInfo {

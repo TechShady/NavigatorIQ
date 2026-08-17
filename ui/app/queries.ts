@@ -10,6 +10,7 @@ import type {
   DeploymentResult,
   DigitalTimelapseResult,
   PlatformTimelineResult,
+  SecurityTimelapseResult,
   HeatMetricConfig,
   MetricDisplayUnit,
 } from "./types";
@@ -299,6 +300,22 @@ export function parseDeployments(deployRecords: DqlRecord[] | undefined, workflo
     workflowFailures: num(w, "workflowFailures"),
     releaseEvents: num(d, "totalDeployments"),
   };
+}
+
+// ─── Security timelapse (attack events per bucket) ─────────────────────────
+
+export function securityTimelapseQuery(from: string, to: string, interval = "auto"): string {
+  return `fetch events, from:${from}, to:${to}
+| filter event.type == "ATTACK_CANDIDATE_EVENT" or event.type == "SECURITY_ATTACK_DETECTION_EVENT"
+| fieldsAdd event_ts = coalesce(start_time, timestamp)
+| fieldsAdd bucket_ts = bin(event_ts, ${interval})
+| summarize attackCount=count(), by: {bucket_ts}
+| sort bucket_ts asc`;
+}
+
+export function parseSecurityTimelapse(records: DqlRecord[] | undefined): SecurityTimelapseResult | null {
+  if (!records || records.length < 2) return null;
+  return { attackTimeline: records.map((r) => num(r, "attackCount")) };
 }
 
 // ─── Custom Heat Metrics Query ─────────────────────────────────────────────
