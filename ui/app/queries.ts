@@ -130,13 +130,14 @@ export function deploymentQuery(from: string, to: string): string {
 }
 
 // Per-bucket RUM timelapse — drives Digital Experience heat strip
-// Pattern copied directly from Frontend Overview / User Journey apps (user-confirmed working queries)
+// Query is verbatim from user-confirmed working Frontend Overview / User Journey app queries.
+// Only addition: from:/to: on the fetch line. Field names, spacing, and overwrite pattern preserved.
 export function digitalTimelapseQuery(from: string, to: string, _interval = "auto"): string {
-  return `fetch user.events, from:${from}, to:${to}, scanLimitGBytes:500
+  return `fetch user.events, from:${from}, to:${to}, scanLimitGBytes: 500
 | filterOut dt.rum.user_type == "synthetic" OR isNull(dt.rum.user_type)
-| filter characteristics.has_page_summary OR characteristics.has_w3c_navigation_timings
-| fieldsAdd lcp_ms = web_vitals.largest_contentful_paint / 1000000
-| makeTimeseries { timeseries = percentile(lcp_ms, 75), eventCount = count() }`;
+| filter characteristics.has_page_summary or characteristics.has_w3c_navigation_timings
+| fieldsAdd web_vitals.largest_contentful_paint = web_vitals.largest_contentful_paint / 1000000
+| makeTimeseries { timeseries = percentile(web_vitals.largest_contentful_paint, 75), value = percentile(web_vitals.largest_contentful_paint, 75, scalar: true) }`;
 }
 
 // Per-bucket host CPU/mem timelapse (no by: → truly temporal) — drives Platform heat strip
@@ -302,18 +303,21 @@ export function parseDeployments(deployRecords: DqlRecord[] | undefined, workflo
 
 // ─── Security timelapse (attack events per bucket) ─────────────────────────
 
-export function securityTimelapseQuery(from: string, to: string, interval = "auto"): string {
+// makeTimeseries always produces a full timeline for the time range (zero-filled when no attacks),
+// so the heat strip correctly shows flat/normal when quiet and spikes during actual attack bursts
+export function securityTimelapseQuery(from: string, to: string, _interval = "auto"): string {
   return `fetch events, from:${from}, to:${to}
 | filter event.type == "ATTACK_CANDIDATE_EVENT" or event.type == "SECURITY_ATTACK_DETECTION_EVENT"
-| fieldsAdd event_ts = coalesce(start_time, timestamp)
-| fieldsAdd bucket_ts = bin(event_ts, ${interval})
-| summarize attackCount=count(), by: {bucket_ts}
-| sort bucket_ts asc`;
+| fieldsAdd _c = 1.0
+| makeTimeseries { timeseries = sum(_c) }`;
 }
 
 export function parseSecurityTimelapse(records: DqlRecord[] | undefined): SecurityTimelapseResult | null {
-  if (!records || records.length < 2) return null;
-  return { attackTimeline: records.map((r) => num(r, "attackCount")) };
+  const r = records?.[0];
+  if (!r) return null;
+  const attackTimeline = arr(r, "timeseries");
+  if (attackTimeline.length < 2) return null;
+  return { attackTimeline };
 }
 
 // ─── Custom Heat Metrics Query ─────────────────────────────────────────────
