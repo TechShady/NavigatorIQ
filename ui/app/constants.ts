@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.7";
+export const APP_VERSION = "0.3.8";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -157,10 +157,11 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
   ],
   digital: [
+    { label: "LCP (Largest Contentful Paint)", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "TTFB (Time to First Byte)", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
     { label: "User Action Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "Largest Contentful Paint", metricKey: "dt.frontend.user_action.lcp", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "Time to First Byte", metricKey: "dt.frontend.user_action.ttfb", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "Error Count", metricKey: "dt.frontend.user_action.error_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Frontend Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "User Actions (traffic)", metricKey: "dt.frontend.user_action.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
   ],
   network: [
     { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
@@ -217,10 +218,31 @@ export function getTimeframeInfo(tab: TimeframeTab): TimeframeInfo {
       return { tab, label: "Last 30 Min", from: "now()-30m", to: "now()", prevFrom: "now()-60m", prevTo: "now()-30m", prevLabel: "prior 30 min", interval: "1m", bucketLabel: "1-min" };
     case "2h":
       return { tab, label: "Last 2 Hours", from: "now()-2h", to: "now()", prevFrom: "now()-4h", prevTo: "now()-2h", prevLabel: "prior 2 hours", interval: "5m", bucketLabel: "5-min" };
-    case "today":
-      return { tab, label: "Today", from: "now()/d", to: "now()", prevFrom: "now()-1d/d", prevTo: "now()/d", prevLabel: "yesterday", interval: "10m", bucketLabel: "10-min" };
-    case "yesterday":
-      return { tab, label: "Yesterday", from: "now()-1d/d", to: "now()/d", prevFrom: "now()-2d/d", prevTo: "now()-1d/d", prevLabel: "day before", interval: "10m", bucketLabel: "10-min" };
+    case "today": {
+      // Use epoch ms for midnight UTC — `now()/d` truncation is not reliably supported by the
+      // DQL `timeseries` metric command, which only accepts duration expressions or absolute timestamps.
+      const now = new Date();
+      const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const startOfYesterday = new Date(startOfDay.getTime() - 86400000);
+      return {
+        tab, label: "Today",
+        from: String(startOfDay.getTime()), to: "now()",
+        prevFrom: String(startOfYesterday.getTime()), prevTo: String(startOfDay.getTime()),
+        prevLabel: "yesterday", interval: "10m", bucketLabel: "10-min",
+      };
+    }
+    case "yesterday": {
+      const now = new Date();
+      const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
+      const startOfDayBefore = new Date(startOfYesterday.getTime() - 86400000);
+      return {
+        tab, label: "Yesterday",
+        from: String(startOfYesterday.getTime()), to: String(startOfToday.getTime()),
+        prevFrom: String(startOfDayBefore.getTime()), prevTo: String(startOfYesterday.getTime()),
+        prevLabel: "day before", interval: "10m", bucketLabel: "10-min",
+      };
+    }
     case "7d":
       return { tab, label: "Last 7 Days", from: "now()-7d", to: "now()", prevFrom: "now()-14d", prevTo: "now()-7d", prevLabel: "prior 7 days", interval: "1h", bucketLabel: "1-hour" };
   }
