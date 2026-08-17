@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { PersonaId, AppLink, ThresholdConfig, SavedSettings, HeatMetricConfig, MetricDisplayUnit } from "../types";
-import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_THRESHOLDS, DEFAULT_HEAT_METRICS } from "../constants";
+import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_THRESHOLDS, DEFAULT_HEAT_METRICS, APP_VERSION } from "../constants";
 
 interface SettingsPanelProps {
   settings: SavedSettings;
@@ -80,6 +80,46 @@ const UNIT_OPTIONS: { value: MetricDisplayUnit; label: string }[] = [
   { value: "pct", label: "Percent (%)" },
   { value: "count", label: "Count / Integer" },
 ];
+
+function CustomSelect<T extends string | number>({ value, onChange, options }: {
+  value: T;
+  onChange: (val: T) => void;
+  options: { value: T; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ ...INPUT_STYLE, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected?.label ?? String(value)}</span>
+        <span style={{ fontSize: 9, opacity: 0.55, flexShrink: 0 }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 8, padding: 4, zIndex: 10000, boxShadow: "0 8px 32px rgba(0,0,0,0.7)", minWidth: "100%" }}>
+          {options.map((o) => (
+            <button
+              key={String(o.value)}
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              style={{ display: "block", width: "100%", padding: "7px 10px", background: o.value === value ? "rgba(69,137,255,0.15)" : "transparent", border: "none", borderRadius: 6, color: o.value === value ? "#7ab4ff" : "rgba(255,255,255,0.82)", fontSize: 12, fontWeight: o.value === value ? 600 : 400, cursor: "pointer", textAlign: "left" }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetricConfig; index: number; onChange: (i: number, m: HeatMetricConfig) => void; onRemove: (i: number) => void }) {
   return (
@@ -429,27 +469,25 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div>
                     <label style={{ ...LABEL_STYLE, fontSize: 12, marginBottom: 6 }}>Default Persona</label>
-                    <select
+                    <CustomSelect<PersonaId>
                       value={draft.global?.defaultPersona ?? "developer"}
-                      onChange={(e) => { setDraft((prev) => ({ ...prev, global: { ...prev.global, defaultPersona: e.target.value as PersonaId } })); markDirty(); }}
-                      style={{ ...INPUT_STYLE, cursor: "pointer" }}
-                    >
-                      {PERSONAS.map((p) => <option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
-                    </select>
+                      onChange={(val) => { setDraft((prev) => ({ ...prev, global: { ...prev.global, defaultPersona: val } })); markDirty(); }}
+                      options={PERSONAS.map((p) => ({ value: p.id, label: `${p.icon} ${p.label}` }))}
+                    />
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 6 }}>Shown pre-selected in the persona picker on new sessions.</div>
                   </div>
                   <div>
                     <label style={{ ...LABEL_STYLE, fontSize: 12, marginBottom: 6 }}>Auto-refresh Interval</label>
-                    <select
+                    <CustomSelect<number>
                       value={draft.global?.refreshIntervalMs ?? 0}
-                      onChange={(e) => { setDraft((prev) => ({ ...prev, global: { ...prev.global, refreshIntervalMs: Number(e.target.value) } })); markDirty(); }}
-                      style={{ ...INPUT_STYLE, cursor: "pointer" }}
-                    >
-                      <option value={0}>Off</option>
-                      <option value={30000}>30 seconds</option>
-                      <option value={60000}>1 minute</option>
-                      <option value={300000}>5 minutes</option>
-                    </select>
+                      onChange={(val) => { setDraft((prev) => ({ ...prev, global: { ...prev.global, refreshIntervalMs: val } })); markDirty(); }}
+                      options={[
+                        { value: 0, label: "Off" },
+                        { value: 30000, label: "30 seconds" },
+                        { value: 60000, label: "1 minute" },
+                        { value: 300000, label: "5 minutes" },
+                      ]}
+                    />
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 6 }}>How often to re-run all DQL queries.</div>
                   </div>
                 </div>
@@ -458,7 +496,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                   <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>About NavigatorIQ</div>
                   <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
                     NavigatorIQ is an unofficial community app for Dynatrace. It is not supported by Dynatrace.<br />
-                    App version: <strong style={{ color: "rgba(255,255,255,0.7)" }}>{draft.global ? "0.1.0" : "0.1.0"}</strong><br />
+                    App version: <strong style={{ color: "rgba(255,255,255,0.7)" }}>{APP_VERSION}</strong><br />
                     <a href="https://github.com/TechShady/NavigatorIQ" target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF" }}>GitHub Repository</a>
                   </div>
                 </div>
