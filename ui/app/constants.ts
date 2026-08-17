@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.12";
+export const APP_VERSION = "0.3.13";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -157,11 +157,12 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
   ],
   digital: [
-    { label: "LCP (Largest Contentful Paint)", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "TTFB (Time to First Byte)", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "User Action Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms" },
-    { label: "Frontend Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
-    { label: "User Actions (traffic)", metricKey: "dt.frontend.user_action.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
+    { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms" },
+    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
+    { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "raw" },
+    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "raw" },
   ],
   network: [
     { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
