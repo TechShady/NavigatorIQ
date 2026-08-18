@@ -235,7 +235,7 @@ export function NavigatorIQ() {
       return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data]
+    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dqlMetrics]
   );
 
   // ─── Forecast helpers ───────────────────────────────────────────────────

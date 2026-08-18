@@ -500,7 +500,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         recommendation: errSev !== "green"
           ? "Open Session Replay to investigate error sessions. Drill into User Journey → Errors tab for impacted funnels."
           : "Session error rate is healthy.",
-        builtinAppPath: "dynatrace.session.replay",
+        builtinAppPath: "dynatrace.experience.vitals",
         builtinAppLabel: "Session Replay",
         customApp: errSev !== "green" ? { ...CUSTOM_APPS.userJourney, tab: "Errors" } : undefined,
       });

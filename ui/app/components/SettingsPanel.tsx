@@ -129,12 +129,12 @@ const TYPE_MODES = [
 ] as const;
 
 const DQL_EXAMPLE = `fetch user.events, from:\${from}, to:\${to}
-| filter view.detected_name == "/" or view.detected_name == "/your-conversion-page"
+| filter view.detected_name == "/" or view.detected_name == "/orange-booking-payment.jsf"
 | fieldsAdd slot = bin(start_time, \${interval})
 | summarize steps = collectDistinct(view.detected_name), by: {dt.rum.session.id, slot}
 | summarize
     total = countIf(iAny(steps[] == "/")),
-    conv  = countIf(iAny(steps[] == "/your-conversion-page")),
+    conv  = countIf(iAny(steps[] == "/orange-booking-payment.jsf")),
     by: {slot}
 | fieldsAdd value = if(total > 0, toDouble(conv) / toDouble(total) * 100.0, else: 0.0)
 | sort slot asc`;

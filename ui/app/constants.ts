@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.20";
+export const APP_VERSION = "0.3.21";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -112,10 +112,10 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
   ],
   digital: [
     { label: "Digital Experience", appPath: "dynatrace.experience.vitals", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience", enabled: true },
-    { label: "Session Replay", appPath: "dynatrace.session.replay", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience/session-replay", enabled: true },
+    { label: "Session Replay", appPath: "dynatrace.experience.vitals", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience/session-replay", enabled: true },
     { label: "Synthetic Monitoring", appPath: "dynatrace.synthetic", docsUrl: "https://docs.dynatrace.com/docs/observe/synthetic-monitoring", enabled: true },
     { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
-    { label: "Business Analytics", appPath: "dynatrace.business.analytics", docsUrl: "https://docs.dynatrace.com/docs/observe/business-analytics", enabled: true },
+    { label: "Business Analytics", appPath: "dynatrace.biz.explore", docsUrl: "https://docs.dynatrace.com/docs/observe/business-analytics", enabled: true },
   ],
   devops: [
     { label: "Workflows", appPath: "dynatrace.automations", docsUrl: "https://docs.dynatrace.com/docs/deliver/workflows", enabled: true },

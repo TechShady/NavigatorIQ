@@ -38,7 +38,7 @@ const PERSONA_EXPLORE_LINKS: Partial<Record<PersonaId, Array<{ label: string; ap
   ],
   digital: [
     { label: "Digital Experience", appPath: "dynatrace.experience.vitals" },
-    { label: "Session Replay", appPath: "dynatrace.session.replay" },
+    { label: "Session Replay", appPath: "dynatrace.experience.vitals" },
     { label: "User Journey", appPath: "my.user.journey.app" },
   ],
   devops: [
