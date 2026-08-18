@@ -98,7 +98,7 @@ export function NavigatorIQ() {
 
   const personaSettings = settings.personas[persona];
   const heatMetrics = personaSettings?.heatMetrics ?? DEFAULT_HEAT_METRICS[persona] ?? [];
-  const dqlMetrics = useMemo(() => heatMetrics.filter((m) => m.type === "dql"), [JSON.stringify(heatMetrics)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dqlMetrics = useMemo(() => heatMetrics.filter((m) => m.type === "dql" || Boolean(m.dqlQuery?.trim())), [JSON.stringify(heatMetrics)]); // eslint-disable-line react-hooks/exhaustive-deps
   const customHeatQ = useMemo(
     () => (isTabLoaded && heatMetrics.length > 0)
       ? withSeed(buildCustomHeatQuery(heatMetrics, tf.from, tf.to, tf.interval), refreshSeed)

@@ -323,7 +323,7 @@ export function parseSecurityTimelapse(records: DqlRecord[] | undefined): Securi
 // ─── Custom Heat Metrics Query ─────────────────────────────────────────────
 
 export function buildCustomHeatQuery(metrics: HeatMetricConfig[], from: string, to: string, interval: string): string {
-  const standard = metrics.filter((m) => m.type !== "dql");
+  const standard = metrics.filter((m) => m.type !== "dql" && !m.dqlQuery?.trim());
   if (standard.length === 0) return "fetch logs | limit 0";
   const fields = standard.flatMap((m, i) => {
     if (m.type === "ratio" && m.denominatorKey) {
@@ -394,7 +394,7 @@ export interface ParsedCustomMetric { label: string; timeline: number[]; isTraff
 export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatMetricConfig[]): ParsedCustomMetric[] {
   const r = records?.[0];
   if (!r) return [];
-  const standard = metrics.filter((m) => m.type !== "dql");
+  const standard = metrics.filter((m) => m.type !== "dql" && !m.dqlQuery?.trim());
   return standard
     .map((m, i) => {
       if (m.type === "ratio" && m.denominatorKey) {

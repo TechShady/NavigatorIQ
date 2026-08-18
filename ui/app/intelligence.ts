@@ -766,7 +766,8 @@ export function computeAssessment(
 
   // When no data came back from any query for this timeframe, show a helpful "quiet" item
   const hasAnyData = Object.values(cur).some((v) => v !== null);
-  if (!hasAnyData || (redItems.length === 0 && yellowItems.length === 0 && greenItems.length === 0)) {
+  const hasActiveCustomMetrics = customMetrics && customMetrics.some((m) => m.timeline.length > 1);
+  if (!hasAnyData && !hasActiveCustomMetrics) {
     greenItems = [{
       severity: "green",
       title: "No Activity in This Timeframe",
@@ -775,6 +776,26 @@ export function computeAssessment(
       builtinAppPath: "dynatrace.infraops",
       builtinAppLabel: "Infrastructure & Operations",
     }];
+  } else if (redItems.length === 0 && yellowItems.length === 0 && greenItems.length === 0) {
+    if (hasActiveCustomMetrics) {
+      greenItems = [{
+        severity: "green",
+        title: "Custom Metrics Active",
+        detail: `${customMetrics!.length} custom metric(s) are monitoring this persona. All values are within normal ranges. Check the heat strip for time-based anomaly patterns.`,
+        recommendation: `Review the heat strip to identify time buckets with elevated activity. Adjust thresholds in Settings if you want alert-level notifications.`,
+        builtinAppPath: "dynatrace.notebooks",
+        builtinAppLabel: "Notebooks",
+      }];
+    } else {
+      greenItems = [{
+        severity: "green",
+        title: "No Activity in This Timeframe",
+        detail: `No significant events or metrics were detected in ${tf.label}. This may indicate a quiet monitoring period, no traffic in the selected window, or that specific metric types are not yet available in this environment.`,
+        recommendation: `Try a longer timeframe (Today, Yesterday, or Last 7 Days) to see activity patterns. Check Infrastructure & Operations to verify agents are reporting.`,
+        builtinAppPath: "dynatrace.infraops",
+        builtinAppLabel: "Infrastructure & Operations",
+      }];
+    }
   }
 
   // ─── Heat scores + per-bucket detail from persona-specific metric timelines ──
