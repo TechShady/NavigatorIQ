@@ -8,7 +8,7 @@ export type PersonaId =
   | "digital"
   | "devops";
 
-export type TimeframeTab = "30min" | "2h" | "today" | "yesterday" | "7d";
+export type TimeframeTab = "2h" | "today" | "yesterday" | "7d";
 
 export type Severity = "red" | "yellow" | "green";
 

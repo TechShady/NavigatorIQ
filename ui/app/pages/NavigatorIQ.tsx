@@ -56,7 +56,6 @@ function recs(r: any): DqlRecord[] | undefined {
 }
 
 const TAB_LABELS: Record<TimeframeTab, string> = {
-  "30min": "Last 30 Min",
   "2h":    "Last 2 Hours",
   today:   "Today",
   yesterday: "Yesterday",
@@ -66,8 +65,8 @@ const TAB_LABELS: Record<TimeframeTab, string> = {
 export function NavigatorIQ() {
   // ─── Active persona & tab ───────────────────────────────────────────────
   const [persona, setPersona] = useState<PersonaId>("developer");
-  const [tab, setTab] = useState<TimeframeTab>("30min");
-  const [visitedTabs, setVisitedTabs] = useState<Set<TimeframeTab>>(new Set(["30min"]));
+  const [tab, setTab] = useState<TimeframeTab>("2h");
+  const [visitedTabs, setVisitedTabs] = useState<Set<TimeframeTab>>(new Set(["2h"]));
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [forecastItem, setForecastItem] = useState<AssessmentItem | null>(null);
@@ -243,7 +242,7 @@ export function NavigatorIQ() {
     })();
     const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
     const nowMs = Date.now();
-    const durationMs: Record<TimeframeTab, number> = { "30min": 30 * 60000, "2h": 2 * 3600000, today: Date.now() % 86400000, yesterday: 86400000, "7d": 7 * 86400000 };
+    const durationMs: Record<TimeframeTab, number> = { "2h": 2 * 3600000, today: Date.now() % 86400000, yesterday: 86400000, "7d": 7 * 86400000 };
     setForecastSparkline(sparkline);
     setForecastLabel(item.title);
     setForecastColor(colors[item.severity]);

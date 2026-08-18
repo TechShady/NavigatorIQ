@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.15";
+export const APP_VERSION = "0.3.16";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -201,12 +201,10 @@ export const DEFAULT_THRESHOLDS: ThresholdConfig = {
   deploymentFailuresYellow: 1,
 };
 
-export const TIMEFRAME_TABS: TimeframeTab[] = ["30min", "2h", "today", "yesterday", "7d"];
+export const TIMEFRAME_TABS: TimeframeTab[] = ["2h", "today", "yesterday", "7d"];
 
 export function getTimeframeInfo(tab: TimeframeTab): TimeframeInfo {
   switch (tab) {
-    case "30min":
-      return { tab, label: "Last 30 Min", from: "now()-30m", to: "now()", prevFrom: "now()-60m", prevTo: "now()-30m", prevLabel: "prior 30 min", interval: "1m", bucketLabel: "1-min" };
     case "2h":
       return { tab, label: "Last 2 Hours", from: "now()-2h", to: "now()", prevFrom: "now()-4h", prevTo: "now()-2h", prevLabel: "prior 2 hours", interval: "5m", bucketLabel: "5-min" };
     case "today":

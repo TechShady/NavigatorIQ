@@ -22,16 +22,20 @@ import { DEFAULT_THRESHOLDS, CUSTOM_APPS } from "./constants";
 function computeHeat(timelines: number[][]): number[] {
   const nonEmpty = timelines.filter((t) => t.length > 1);
   if (nonEmpty.length === 0) return [];
-  const len = Math.max(...nonEmpty.map((t) => t.length));
+  // Drop the last bucket — it's always partially filled (incomplete sessions/transactions)
+  // and generates false spikes. Mean/std are computed on the trimmed set too so the
+  // dropped bucket doesn't skew the baseline.
+  const trimmed = nonEmpty.map((t) => t.slice(0, -1));
+  const len = Math.max(...trimmed.map((t) => t.length));
   return Array.from({ length: len }, (_, i) => {
     let maxZ = 0;
-    for (const timeline of nonEmpty) {
-      const mean = timeline.reduce((a, b) => a + b, 0) / timeline.length;
+    for (const tl of trimmed) {
+      const mean = tl.reduce((a, b) => a + b, 0) / tl.length;
       const std = Math.max(
-        Math.sqrt(timeline.reduce((a, b) => a + (b - mean) ** 2, 0) / timeline.length),
+        Math.sqrt(tl.reduce((a, b) => a + (b - mean) ** 2, 0) / tl.length),
         0.001
       );
-      const v = timeline[i] ?? mean;
+      const v = tl[i] ?? mean;
       maxZ = Math.max(maxZ, (v - mean) / std);
     }
     return Math.max(0, maxZ);
