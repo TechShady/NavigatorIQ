@@ -128,9 +128,21 @@ const TYPE_MODES = [
   { value: "dql",    label: "DQL" },
 ] as const;
 
+const DQL_EXAMPLE = `fetch user.events, from:\${from}, to:\${to}
+| filter view.detected_name == "/" or view.detected_name == "/your-conversion-page"
+| fieldsAdd slot = bin(start_time, \${interval})
+| summarize steps = collectDistinct(view.detected_name), by: {dt.rum.session.id, slot}
+| summarize
+    total = countIf(iAny(steps[] == "/")),
+    conv  = countIf(iAny(steps[] == "/your-conversion-page")),
+    by: {slot}
+| fieldsAdd value = if(total > 0, toDouble(conv) / toDouble(total) * 100.0, else: 0.0)
+| sort slot asc`;
+
 function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetricConfig; index: number; onChange: (i: number, m: HeatMetricConfig) => void; onRemove: (i: number) => void }) {
   const mode = metric.type ?? "single";
   const setMode = (t: "single" | "ratio" | "dql") => onChange(index, { ...metric, type: t });
+  const [showDqlHelp, setShowDqlHelp] = useState(false);
   return (
     <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 8 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", marginBottom: 8 }}>
@@ -160,18 +172,33 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
 
       {mode === "dql" ? (
         <div>
-          <label style={LABEL_STYLE}>DQL Query</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <label style={{ ...LABEL_STYLE, marginBottom: 0 }}>DQL Query</label>
+            <button
+              onClick={() => setShowDqlHelp((v) => !v)}
+              title="Show conversion rate example"
+              style={{ background: showDqlHelp ? "rgba(69,137,255,0.15)" : "rgba(255,255,255,0.06)", border: `1px solid ${showDqlHelp ? "rgba(69,137,255,0.4)" : "rgba(255,255,255,0.12)"}`, borderRadius: "50%", color: showDqlHelp ? "#4589FF" : "rgba(255,255,255,0.4)", fontSize: 10, width: 16, height: 16, cursor: "pointer", lineHeight: "14px", padding: 0, flexShrink: 0 }}>?</button>
+          </div>
+          {showDqlHelp && (
+            <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(69,137,255,0.2)", borderRadius: 6, padding: "8px 10px", marginBottom: 6 }}>
+              <div style={{ fontSize: 10, color: "rgba(69,137,255,0.8)", marginBottom: 4, fontWeight: 600 }}>Conversion Rate Example</div>
+              <pre style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.65)", fontFamily: "monospace", lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{DQL_EXAMPLE}</pre>
+              <button
+                onClick={() => { onChange(index, { ...metric, dqlQuery: DQL_EXAMPLE }); setShowDqlHelp(false); }}
+                style={{ marginTop: 6, background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 4, color: "#4589FF", fontSize: 10, padding: "3px 8px", cursor: "pointer" }}>
+                Use this example
+              </button>
+            </div>
+          )}
           <textarea
             value={metric.dqlQuery ?? ""}
             onChange={(e) => onChange(index, { ...metric, dqlQuery: e.target.value })}
-            placeholder={`fetch user.events, from:\${from}, to:\${to}\n| filter event.name == "/home" or event.name == "/checkout"\n| fieldsAdd slot = bin(start_time, \${interval})\n| summarize steps = collectDistinct(event.name), by: {dt.rum.session.id, slot}\n| summarize\n    total = countIf(iAny(steps[] == "/home")),\n    conv  = countIf(iAny(steps[] == "/checkout")),\n    by: {slot}\n| fieldsAdd value = if(total > 0, toDouble(conv) / toDouble(total) * 100.0, else: 0.0)\n| sort slot asc`}
+            placeholder="Write a DQL query that outputs records with a 'value' field ordered by time. Use ${from}, ${to}, ${interval} as placeholders."
             rows={7}
             style={{ ...INPUT_STYLE, fontFamily: "monospace", fontSize: 11, resize: "vertical", lineHeight: 1.5 }}
           />
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
-            Use <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{from}"}</code>, <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{to}"}</code>, <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{interval}"}</code> as placeholders.
-            Query must output records with a <code style={{ color: "rgba(255,180,80,0.7)" }}>value</code> field ordered by time,
-            or a single record where <code style={{ color: "rgba(255,180,80,0.7)" }}>value</code> is an array (makeTimeseries).
+            Placeholders: <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{from}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{to}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{interval}"}</code> — output must have a <code style={{ color: "rgba(255,180,80,0.7)" }}>value</code> field per row ordered by time.
           </div>
         </div>
       ) : (
