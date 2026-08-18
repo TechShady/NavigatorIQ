@@ -12,7 +12,7 @@ const PERSONA_EXPLORE_LINKS: Partial<Record<PersonaId, Array<{ label: string; ap
   ],
   sre: [
     { label: "Problems", appPath: "dynatrace.davis.problems" },
-    { label: "SLOs", appPath: "dynatrace.slos" },
+    { label: "SLOs", appPath: "dynatrace.service.level.objectives" },
     { label: "Anomaly Detection", appPath: "dynatrace.davis.anomaly.detection" },
     { label: "Services Overview", appPath: "my.services.overview.app" },
   ],
@@ -27,7 +27,7 @@ const PERSONA_EXPLORE_LINKS: Partial<Record<PersonaId, Array<{ label: string; ap
     { label: "Logs", appPath: "dynatrace.logs" },
   ],
   network: [
-    { label: "Network Monitoring", appPath: "dynatrace.classic.network" },
+    { label: "Network Monitoring", appPath: "dynatrace.infraops/explorer/Network" },
     { label: "Infrastructure & Operations", appPath: "dynatrace.infraops" },
     { label: "Problems", appPath: "dynatrace.davis.problems" },
   ],
@@ -37,13 +37,13 @@ const PERSONA_EXPLORE_LINKS: Partial<Record<PersonaId, Array<{ label: string; ap
     { label: "Vulnerabilities", appPath: "dynatrace.security.vulnerabilities" },
   ],
   digital: [
-    { label: "Digital Experience", appPath: "dynatrace.rum.overview" },
+    { label: "Digital Experience", appPath: "dynatrace.experience.vitals" },
     { label: "Session Replay", appPath: "dynatrace.session.replay" },
     { label: "User Journey", appPath: "my.user.journey.app" },
   ],
   devops: [
     { label: "Workflows", appPath: "dynatrace.automations" },
-    { label: "Releases", appPath: "dynatrace.releases" },
+    { label: "Releases", appPath: "dynatrace.site.reliability.guardian" },
     { label: "Services Overview", appPath: "my.services.overview.app" },
   ],
 };

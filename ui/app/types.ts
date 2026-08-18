@@ -71,6 +71,8 @@ export interface HeatMetricConfig {
   aggregation: "avg" | "sum";
   isTraffic?: boolean;
   displayUnit?: MetricDisplayUnit;
+  type?: "single" | "ratio";
+  denominatorKey?: string;
 }
 
 export interface PersonaSettings {

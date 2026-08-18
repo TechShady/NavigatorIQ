@@ -206,7 +206,7 @@ function assessSre(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdConf
       recommendation: sloProxy !== "green"
         ? "Open SLOs to inspect error budget burn rate. Cross-reference with Services to identify failing operations."
         : "Error rates are within healthy range. Review SLOs to confirm budget consumption.",
-      builtinAppPath: "dynatrace.slos",
+      builtinAppPath: "dynatrace.service.level.objectives",
       builtinAppLabel: "SLOs",
       customApp: sloProxy !== "green" ? { ...CUSTOM_APPS.servicesOverview, tab: "Errors" } : undefined,
     });
@@ -520,7 +520,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         recommendation: durSev !== "green"
           ? "Open User Journey to identify slow pages and actions. Check for slow backend calls in Distributed Traces."
           : "Average user interaction duration is within healthy range.",
-        builtinAppPath: "dynatrace.rum.overview",
+        builtinAppPath: "dynatrace.experience.vitals",
         builtinAppLabel: "Digital Experience",
         customApp: { ...CUSTOM_APPS.userJourney, tab: "Performance" },
       });
@@ -559,7 +559,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         recommendation: fcpSev !== "green"
           ? "Check for render-blocking scripts and stylesheets. Use Waterfall view in Digital Experience."
           : "First Contentful Paint is in the good range.",
-        builtinAppPath: "dynatrace.rum.overview",
+        builtinAppPath: "dynatrace.experience.vitals",
         builtinAppLabel: "Digital Experience",
         customApp: { ...CUSTOM_APPS.userJourney, tab: "Web Vitals" },
       });
@@ -579,7 +579,7 @@ function assessDigital(cur: AllQueryResults, prev: AllQueryResults, t: Threshold
         recommendation: lcpSev !== "green"
           ? "Open User Journey → Web Vitals tab. Check render-blocking resources and server response times."
           : "LCP is in the good range.",
-        builtinAppPath: "dynatrace.rum.overview",
+        builtinAppPath: "dynatrace.experience.vitals",
         builtinAppLabel: "Digital Experience",
         customApp: { ...CUSTOM_APPS.userJourney, tab: "Web Vitals" },
       });
@@ -627,7 +627,7 @@ function assessDevops(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdC
         : dep.totalDeployments > 0
         ? "Recent deployments completed successfully. Open Releases to verify post-deploy metrics."
         : "No deployments in this period. This may be expected.",
-      builtinAppPath: failSev !== "green" ? "dynatrace.automations" : "dynatrace.releases",
+      builtinAppPath: failSev !== "green" ? "dynatrace.automations" : "dynatrace.site.reliability.guardian",
       builtinAppLabel: failSev !== "green" ? "Workflows" : "Releases",
     });
   }
@@ -645,7 +645,7 @@ function assessDevops(cur: AllQueryResults, prev: AllQueryResults, t: ThresholdC
         previousValue: psh?.errorRatePct,
         ...errTrend,
         recommendation: "Cross-reference deployment timestamps with error spikes in Services Overview. Consider rollback if errors persist.",
-        builtinAppPath: "dynatrace.releases",
+        builtinAppPath: "dynatrace.site.reliability.guardian",
         builtinAppLabel: "Releases",
         customApp: { ...CUSTOM_APPS.servicesOverview, tab: "Errors" },
       });

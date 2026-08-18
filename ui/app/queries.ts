@@ -324,7 +324,12 @@ export function parseSecurityTimelapse(records: DqlRecord[] | undefined): Securi
 
 export function buildCustomHeatQuery(metrics: HeatMetricConfig[], from: string, to: string, interval: string): string {
   if (metrics.length === 0) return "fetch logs | limit 0";
-  const fields = metrics.map((m, i) => `  m${i}=${m.aggregation}(${m.metricKey})`).join(",\n");
+  const fields = metrics.flatMap((m, i) => {
+    if (m.type === "ratio" && m.denominatorKey) {
+      return [`  m${i}_n=${m.aggregation}(${m.metricKey})`, `  m${i}_d=${m.aggregation}(${m.denominatorKey})`];
+    }
+    return [`  m${i}=${m.aggregation}(${m.metricKey})`];
+  }).join(",\n");
   return `timeseries\n${fields},\n  interval:${interval}, from:${from}, to:${to}`;
 }
 
@@ -359,11 +364,22 @@ export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatM
   const r = records?.[0];
   if (!r) return [];
   return metrics
-    .map((m, i) => ({
-      label: m.label,
-      timeline: parseMetricTimeline(arr(r, `m${i}`), m.displayUnit),
-      isTraffic: m.isTraffic,
-      fmt: makeMetricFmt(m.displayUnit),
-    }))
+    .map((m, i) => {
+      if (m.type === "ratio" && m.denominatorKey) {
+        const numRaw = arr(r, `m${i}_n`);
+        const denRaw = arr(r, `m${i}_d`);
+        const timeline = numRaw.map((num, j) => {
+          const den = denRaw[j] ?? 0;
+          return den > 0 ? (num / den) * 100 : 0;
+        });
+        return { label: m.label, timeline, isTraffic: m.isTraffic, fmt: makeMetricFmt("pct") };
+      }
+      return {
+        label: m.label,
+        timeline: parseMetricTimeline(arr(r, `m${i}`), m.displayUnit),
+        isTraffic: m.isTraffic,
+        fmt: makeMetricFmt(m.displayUnit),
+      };
+    })
     .filter((pm) => pm.timeline.length > 1);
 }

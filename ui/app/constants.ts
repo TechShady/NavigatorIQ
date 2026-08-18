@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.16";
+export const APP_VERSION = "0.3.18";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -77,7 +77,7 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
   ],
   sre: [
     { label: "Problems", appPath: "dynatrace.davis.problems", docsUrl: "https://docs.dynatrace.com/docs/discover-dynatrace/platform/davis-ai/root-cause-analysis/davis-problems-app", enabled: true },
-    { label: "SLOs", appPath: "dynatrace.slos", docsUrl: "https://docs.dynatrace.com/docs/observe/service-level-objectives", enabled: true },
+    { label: "SLOs", appPath: "dynatrace.service.level.objectives", docsUrl: "https://docs.dynatrace.com/docs/observe/service-level-objectives", enabled: true },
     { label: "Anomaly Detection", appPath: "dynatrace.davis.anomaly.detection", docsUrl: "https://docs.dynatrace.com/docs/observe/davis-ai/anomaly-detection", enabled: true },
     { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
     { label: "Workflows", appPath: "dynatrace.automations", docsUrl: "https://docs.dynatrace.com/docs/deliver/workflows", enabled: true },
@@ -86,7 +86,7 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
     { label: "Infrastructure & Operations", appPath: "dynatrace.infraops", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring", enabled: true },
     { label: "Hosts", appPath: "dynatrace.infraops", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring/hosts", enabled: true },
     { label: "Kubernetes", appPath: "dynatrace.kubernetes", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring/container-platform-monitoring/kubernetes", enabled: true },
-    { label: "OpenPipeline", appPath: "dynatrace.openpipeline", docsUrl: "https://docs.dynatrace.com/docs/manage/openpipeline", enabled: true },
+    { label: "OpenPipeline", appPath: "dynatrace.settings/settings/process-openpipeline", docsUrl: "https://docs.dynatrace.com/docs/manage/openpipeline", enabled: true },
     { label: "Extensions", appPath: "dynatrace.extensions", docsUrl: "https://docs.dynatrace.com/docs/extend-dynatrace/extensions20", enabled: true },
   ],
   security: [
@@ -104,14 +104,14 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
     { label: "Problems", appPath: "dynatrace.davis.problems", docsUrl: "https://docs.dynatrace.com/docs/discover-dynatrace/platform/davis-ai/root-cause-analysis/davis-problems-app", enabled: true },
   ],
   network: [
-    { label: "Network Monitoring", appPath: "dynatrace.classic.network", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring/network-monitoring", enabled: true },
+    { label: "Network Monitoring", appPath: "dynatrace.infraops/explorer/Network", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring/network-monitoring", enabled: true },
     { label: "Infrastructure & Operations", appPath: "dynatrace.infraops", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring", enabled: true },
     { label: "Problems", appPath: "dynatrace.davis.problems", docsUrl: "https://docs.dynatrace.com/docs/discover-dynatrace/platform/davis-ai/root-cause-analysis/davis-problems-app", enabled: true },
     { label: "Distributed Tracing", appPath: "dynatrace.distributedtracing", docsUrl: "https://docs.dynatrace.com/docs/observe/application-observability/distributed-tracing", enabled: true },
     { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
   ],
   digital: [
-    { label: "Digital Experience", appPath: "dynatrace.rum.overview", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience", enabled: true },
+    { label: "Digital Experience", appPath: "dynatrace.experience.vitals", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience", enabled: true },
     { label: "Session Replay", appPath: "dynatrace.session.replay", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience/session-replay", enabled: true },
     { label: "Synthetic Monitoring", appPath: "dynatrace.synthetic", docsUrl: "https://docs.dynatrace.com/docs/observe/synthetic-monitoring", enabled: true },
     { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
@@ -119,8 +119,8 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
   ],
   devops: [
     { label: "Workflows", appPath: "dynatrace.automations", docsUrl: "https://docs.dynatrace.com/docs/deliver/workflows", enabled: true },
-    { label: "Releases", appPath: "dynatrace.releases", docsUrl: "https://docs.dynatrace.com/docs/deliver/release-monitoring", enabled: true },
-    { label: "OpenPipeline", appPath: "dynatrace.openpipeline", docsUrl: "https://docs.dynatrace.com/docs/manage/openpipeline", enabled: true },
+    { label: "Releases", appPath: "dynatrace.site.reliability.guardian", docsUrl: "https://docs.dynatrace.com/docs/deliver/release-monitoring", enabled: true },
+    { label: "OpenPipeline", appPath: "dynatrace.settings/settings/process-openpipeline", docsUrl: "https://docs.dynatrace.com/docs/manage/openpipeline", enabled: true },
     { label: "Kubernetes", appPath: "dynatrace.kubernetes", docsUrl: "https://docs.dynatrace.com/docs/observe/infrastructure-monitoring/container-platform-monitoring/kubernetes", enabled: true },
     { label: "Notebooks", appPath: "dynatrace.notebooks", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/notebooks", enabled: true },
   ],

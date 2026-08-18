@@ -123,9 +123,11 @@ function CustomSelect<T extends string | number>({ value, onChange, options }: {
 }
 
 function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetricConfig; index: number; onChange: (i: number, m: HeatMetricConfig) => void; onRemove: (i: number) => void }) {
+  const isRatio = metric.type === "ratio";
+  const toggleRatio = () => onChange(index, { ...metric, type: isRatio ? "single" : "ratio" });
   return (
     <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div
             title={metric.isTraffic ? "Traffic (neutral)" : "Performance metric"}
@@ -139,15 +141,20 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
             style={{ ...INPUT_STYLE, fontWeight: 600, fontSize: 13 }}
           />
         </div>
-        <button onClick={() => onRemove(index)} style={{ background: "rgba(194,25,48,0.15)", border: "1px solid rgba(194,25,48,0.3)", color: "#ff6b7a", borderRadius: 4, padding: "3px 8px", fontSize: 11, cursor: "pointer", marginLeft: 8 }}>Remove</button>
+        <button
+          onClick={toggleRatio}
+          title={isRatio ? "Switch to single metric" : "Switch to ratio (A÷B)"}
+          style={{ background: isRatio ? "rgba(69,137,255,0.15)" : "rgba(255,255,255,0.06)", border: `1px solid ${isRatio ? "rgba(69,137,255,0.4)" : "rgba(255,255,255,0.12)"}`, borderRadius: 4, color: isRatio ? "#4589FF" : "rgba(255,255,255,0.45)", fontSize: 11, padding: "3px 8px", cursor: "pointer", marginLeft: 8, whiteSpace: "nowrap" as const }}
+        >{isRatio ? "A÷B" : "Single"}</button>
+        <button onClick={() => onRemove(index)} style={{ background: "rgba(194,25,48,0.15)", border: "1px solid rgba(194,25,48,0.3)", color: "#ff6b7a", borderRadius: 4, padding: "3px 8px", fontSize: 11, cursor: "pointer", marginLeft: 4 }}>Remove</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 140px", gap: 8 }}>
         <div>
-          <label style={LABEL_STYLE}>Grail Metric Key</label>
+          <label style={LABEL_STYLE}>{isRatio ? "Numerator Key" : "Grail Metric Key"}</label>
           <input
             value={metric.metricKey}
             onChange={(e) => onChange(index, { ...metric, metricKey: e.target.value })}
-            placeholder="dt.service.request.response_time"
+            placeholder="dt.service.request.failure_count"
             style={INPUT_STYLE}
           />
         </div>
@@ -168,6 +175,18 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
           />
         </div>
       </div>
+      {isRatio && (
+        <div style={{ marginTop: 8 }}>
+          <label style={LABEL_STYLE}>Denominator Key</label>
+          <input
+            value={metric.denominatorKey ?? ""}
+            onChange={(e) => onChange(index, { ...metric, denominatorKey: e.target.value })}
+            placeholder="dt.service.request.count"
+            style={INPUT_STYLE}
+          />
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>Result = (numerator ÷ denominator) × 100 — displayed as %</div>
+        </div>
+      )}
     </div>
   );
 }
