@@ -107,13 +107,22 @@ export function NavigatorIQ() {
     [isTabLoaded, JSON.stringify(heatMetrics), persona, tf.from, tf.to, tf.interval, refreshSeed]
   );
   const customHeatR = useDql({ query: customHeatQ });
-  // DQL heat metric slots — fixed hooks (React rules); noop when slot unused
-  const dql0Q = useMemo(() => isTabLoaded && dqlMetrics[0] ? withSeed(buildDqlHeatQuery(dqlMetrics[0], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[0]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql1Q = useMemo(() => isTabLoaded && dqlMetrics[1] ? withSeed(buildDqlHeatQuery(dqlMetrics[1], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[1]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql2Q = useMemo(() => isTabLoaded && dqlMetrics[2] ? withSeed(buildDqlHeatQuery(dqlMetrics[2], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[2]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql0R = useDql({ query: dql0Q });
-  const dql1R = useDql({ query: dql1Q });
-  const dql2R = useDql({ query: dql2Q });
+  // DQL heat metrics run via queryExecutionClient (same path as forecast — known to work)
+  type DqlRecs = Record<string, unknown>[];
+  const [dqlHeatRecs, setDqlHeatRecs] = useState<[DqlRecs | null, DqlRecs | null, DqlRecs | null]>([null, null, null]);
+  const [dqlHeatLoading, setDqlHeatLoading] = useState(false);
+  useEffect(() => {
+    if (!isTabLoaded || dqlMetrics.length === 0) { setDqlHeatRecs([null, null, null]); return; }
+    setDqlHeatLoading(true);
+    const slots = [0, 1, 2].map((i) =>
+      dqlMetrics[i]
+        ? queryExecutionClient.queryExecute({ body: { query: buildDqlHeatQuery(dqlMetrics[i], tf.from, tf.to, tf.interval), requestTimeoutMilliseconds: 60000 } })
+            .then((res) => ((res.result as any)?.records ?? []) as DqlRecs)
+            .catch(() => null as DqlRecs | null)
+        : Promise.resolve(null as DqlRecs | null)
+    );
+    Promise.all(slots).then(([r0, r1, r2]) => { setDqlHeatRecs([r0, r1, r2]); setDqlHeatLoading(false); });
+  }, [isTabLoaded, JSON.stringify(dqlMetrics), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTabChange = (newTab: TimeframeTab) => {
     setTab(newTab);
@@ -219,7 +228,7 @@ export function NavigatorIQ() {
   }), [svcPrevR.data, logPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data, dxTlPR.data, ptlPR.data]);
 
   // ─── Loading state ──────────────────────────────────────────────────────
-  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, customHeatR, dql0R, dql1R, dql2R].some((r) => r.isLoading);
+  const isLoading = isTabLoaded && ([svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, customHeatR].some((r) => r.isLoading) || dqlHeatLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
@@ -227,15 +236,15 @@ export function NavigatorIQ() {
     () => {
       const standardMetrics: CustomHeatMetric[] = parseCustomHeat(recs(customHeatR), heatMetrics);
       const dqlResults = [
-        dqlMetrics[0] ? parseDqlHeatResult(recs(dql0R), dqlMetrics[0]) : null,
-        dqlMetrics[1] ? parseDqlHeatResult(recs(dql1R), dqlMetrics[1]) : null,
-        dqlMetrics[2] ? parseDqlHeatResult(recs(dql2R), dqlMetrics[2]) : null,
+        dqlMetrics[0] ? parseDqlHeatResult(dqlHeatRecs[0] ?? undefined, dqlMetrics[0]) : null,
+        dqlMetrics[1] ? parseDqlHeatResult(dqlHeatRecs[1] ?? undefined, dqlMetrics[1]) : null,
+        dqlMetrics[2] ? parseDqlHeatResult(dqlHeatRecs[2] ?? undefined, dqlMetrics[2]) : null,
       ].filter(Boolean) as CustomHeatMetric[];
       const customMetrics = [...standardMetrics, ...dqlResults];
       return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dqlMetrics]
+    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dqlHeatRecs, dqlMetrics]
   );
 
   // ─── Forecast helpers ───────────────────────────────────────────────────
