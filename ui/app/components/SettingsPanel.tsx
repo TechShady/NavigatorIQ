@@ -198,7 +198,8 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
             style={{ ...INPUT_STYLE, fontFamily: "monospace", fontSize: 11, resize: "vertical", lineHeight: 1.5 }}
           />
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
-            Placeholders: <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{from}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{to}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{interval}"}</code> — output must have a <code style={{ color: "rgba(255,180,80,0.7)" }}>value</code> field per row ordered by time.
+            Placeholders <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{from}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{to}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{interval}"}</code> are substituted automatically — <code style={{ color: "rgba(255,180,80,0.7)" }}>from:</code>/<code style={{ color: "rgba(255,180,80,0.7)" }}>to:</code> are also injected on the <code style={{ color: "rgba(255,180,80,0.7)" }}>fetch</code> line if omitted.
+            Output must have a <code style={{ color: "rgba(255,180,80,0.7)" }}>value</code> field per row ordered by time. If the metric doesn't appear, test in a Notebook first to confirm the query returns rows.
           </div>
         </div>
       ) : (

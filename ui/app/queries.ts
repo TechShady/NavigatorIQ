@@ -336,10 +336,20 @@ export function buildCustomHeatQuery(metrics: HeatMetricConfig[], from: string, 
 
 export function buildDqlHeatQuery(metric: HeatMetricConfig, from: string, to: string, interval: string): string {
   if (!metric.dqlQuery?.trim()) return "fetch logs | limit 0";
-  return metric.dqlQuery
+  // 1. Substitute any placeholders the user included
+  let query = metric.dqlQuery
     .replace(/\$\{from\}/g, from)
     .replace(/\$\{to\}/g, to)
     .replace(/\$\{interval\}/g, interval);
+  // 2. On every fetch line, inject from/to if not already present
+  query = query.split("\n").map((line) => {
+    if (!/^\s*fetch\s/.test(line)) return line;
+    let result = line.trimEnd();
+    if (!result.includes("from:")) result += `, from:${from}`;
+    if (!result.includes("to:")) result += `, to:${to}`;
+    return result;
+  }).join("\n");
+  return query;
 }
 
 export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: HeatMetricConfig): ParsedCustomMetric | null {
