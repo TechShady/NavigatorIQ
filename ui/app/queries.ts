@@ -323,14 +323,35 @@ export function parseSecurityTimelapse(records: DqlRecord[] | undefined): Securi
 // ─── Custom Heat Metrics Query ─────────────────────────────────────────────
 
 export function buildCustomHeatQuery(metrics: HeatMetricConfig[], from: string, to: string, interval: string): string {
-  if (metrics.length === 0) return "fetch logs | limit 0";
-  const fields = metrics.flatMap((m, i) => {
+  const standard = metrics.filter((m) => m.type !== "dql");
+  if (standard.length === 0) return "fetch logs | limit 0";
+  const fields = standard.flatMap((m, i) => {
     if (m.type === "ratio" && m.denominatorKey) {
       return [`  m${i}_n=${m.aggregation}(${m.metricKey})`, `  m${i}_d=${m.aggregation}(${m.denominatorKey})`];
     }
     return [`  m${i}=${m.aggregation}(${m.metricKey})`];
   }).join(",\n");
   return `timeseries\n${fields},\n  interval:${interval}, from:${from}, to:${to}`;
+}
+
+export function buildDqlHeatQuery(metric: HeatMetricConfig, from: string, to: string, interval: string): string {
+  if (!metric.dqlQuery?.trim()) return "fetch logs | limit 0";
+  return metric.dqlQuery
+    .replace(/\$\{from\}/g, from)
+    .replace(/\$\{to\}/g, to)
+    .replace(/\$\{interval\}/g, interval);
+}
+
+export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: HeatMetricConfig): ParsedCustomMetric | null {
+  if (!records || records.length === 0) return null;
+  let timeline: number[];
+  if (records.length === 1 && Array.isArray(records[0]["value"])) {
+    timeline = arr(records[0], "value");
+  } else {
+    timeline = records.map((r) => { const v = r["value"]; const n = Number(v); return isFinite(n) ? n : 0; });
+  }
+  if (timeline.length < 2) return null;
+  return { label: metric.label, timeline, isTraffic: metric.isTraffic, fmt: makeMetricFmt(metric.displayUnit) };
 }
 
 const fmtMs = (v: number) => {
@@ -363,7 +384,8 @@ export interface ParsedCustomMetric { label: string; timeline: number[]; isTraff
 export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatMetricConfig[]): ParsedCustomMetric[] {
   const r = records?.[0];
   if (!r) return [];
-  return metrics
+  const standard = metrics.filter((m) => m.type !== "dql");
+  return standard
     .map((m, i) => {
       if (m.type === "ratio" && m.denominatorKey) {
         const numRaw = arr(r, `m${i}_n`);
