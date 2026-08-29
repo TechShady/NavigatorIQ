@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
-import type { PersonaId, AppLink, ThresholdConfig, SavedSettings, HeatMetricConfig, MetricDisplayUnit } from "../types";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import type { PersonaId, AppLink, ThresholdConfig, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings } from "../types";
 import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_THRESHOLDS, DEFAULT_HEAT_METRICS, APP_VERSION } from "../constants";
 
 interface SettingsPanelProps {
@@ -8,7 +8,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = "applinks" | "thresholds" | "hotness" | "general";
+type SettingsTab = "applinks" | "thresholds" | "hotness" | "personas" | "general";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "rgba(255,255,255,0.06)",
@@ -143,6 +143,8 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
   const mode = metric.type ?? "single";
   const setMode = (t: "single" | "ratio" | "dql") => onChange(index, { ...metric, type: t });
   const [showDqlHelp, setShowDqlHelp] = useState(false);
+  const isHourly = (metric.thresholdBucketHours ?? 0) > 0;
+
   return (
     <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 8 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", marginBottom: 8 }}>
@@ -201,6 +203,16 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
             Placeholders <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{from}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{to}"}</code> <code style={{ color: "rgba(255,180,80,0.7)" }}>${"{interval}"}</code> are substituted automatically — <code style={{ color: "rgba(255,180,80,0.7)" }}>from:</code>/<code style={{ color: "rgba(255,180,80,0.7)" }}>to:</code> are also injected on the <code style={{ color: "rgba(255,180,80,0.7)" }}>fetch</code> line if omitted.
             Output must have a <code style={{ color: "rgba(255,180,80,0.7)" }}>value</code> field per row ordered by time. If the metric doesn't appear, test in a Notebook first to confirm the query returns rows.
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            <label style={{ ...LABEL_STYLE, marginBottom: 0, whiteSpace: "nowrap" }}>Unit suffix</label>
+            <input
+              value={metric.displaySuffix ?? ""}
+              onChange={(e) => onChange(index, { ...metric, displaySuffix: e.target.value })}
+              placeholder="e.g. %  ms  req/s"
+              style={{ ...INPUT_STYLE, width: 100, marginBottom: 0 }}
+            />
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)" }}>Appended to displayed values (27 → 27%)</span>
+          </div>
         </div>
       ) : (
         <>
@@ -245,6 +257,60 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
           )}
         </>
       )}
+
+      {/* ── Thresholds & Next Steps Link ── */}
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Thresholds & Navigation</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div>
+            <label style={{ ...LABEL_STYLE, color: "rgba(245,158,11,0.7)" }}>⚠ Warning threshold</label>
+            <input
+              type="number"
+              value={metric.warningThreshold ?? ""}
+              min={0}
+              placeholder="e.g. 50"
+              onChange={(e) => onChange(index, { ...metric, warningThreshold: e.target.value === "" ? undefined : Number(e.target.value) })}
+              style={INPUT_STYLE}
+            />
+          </div>
+          <div>
+            <label style={{ ...LABEL_STYLE, color: "rgba(239,68,68,0.7)" }}>🔴 Critical threshold</label>
+            <input
+              type="number"
+              value={metric.criticalThreshold ?? ""}
+              min={0}
+              placeholder="e.g. 100"
+              onChange={(e) => onChange(index, { ...metric, criticalThreshold: e.target.value === "" ? undefined : Number(e.target.value) })}
+              style={INPUT_STYLE}
+            />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Explore App Path</label>
+            <input
+              value={metric.exploreAppPath ?? ""}
+              onChange={(e) => onChange(index, { ...metric, exploreAppPath: e.target.value || undefined })}
+              placeholder="dynatrace.distributedtracing"
+              style={INPUT_STYLE}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            onClick={() => onChange(index, { ...metric, thresholdBucketHours: isHourly ? undefined : 1 })}
+            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+          >
+            <div style={{ width: 28, height: 14, borderRadius: 7, background: isHourly ? "rgba(255,120,30,0.5)" : "rgba(255,255,255,0.1)", border: `1px solid ${isHourly ? "rgba(255,120,30,0.8)" : "rgba(255,255,255,0.2)"}`, position: "relative", transition: "all 0.15s", flexShrink: 0 }}>
+              <div style={{ position: "absolute", top: 2, left: isHourly ? 14 : 2, width: 8, height: 8, borderRadius: "50%", background: isHourly ? "#FF8C42" : "rgba(255,255,255,0.35)", transition: "left 0.15s" }} />
+            </div>
+            <span style={{ fontSize: 11, color: isHourly ? "#FF8C42" : "rgba(255,255,255,0.4)", fontWeight: isHourly ? 600 : 400 }}>Hourly count metric</span>
+          </div>
+          {isHourly && (
+            <span style={{ fontSize: 10, color: "rgba(255,180,60,0.8)", lineHeight: 1.4 }}>
+              Thresholds are defined per hour — auto-scaled for the active bucket interval (÷2 at 30 min, ÷12 at 5 min, etc.)
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -254,8 +320,44 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
   const [activePersona, setActivePersona] = useState<PersonaId>(PERSONAS[0].id);
   const [draft, setDraft] = useState<SavedSettings>(() => JSON.parse(JSON.stringify(settings)));
   const [hasChanges, setHasChanges] = useState(false);
+  const [newPersonaIcon, setNewPersonaIcon] = useState("👤");
+  const [newPersonaName, setNewPersonaName] = useState("");
+  const [newPersonaDesc, setNewPersonaDesc] = useState("");
 
   const markDirty = useCallback(() => setHasChanges(true), []);
+
+  const allPersonas = useMemo<PersonaDef[]>(
+    () => [...PERSONAS, ...(draft.customPersonas ?? [])],
+    [draft.customPersonas]
+  );
+
+  const addCustomPersona = () => {
+    if (!newPersonaName.trim()) return;
+    const id = `custom_${Date.now()}`;
+    const def: PersonaDef = {
+      id,
+      label: newPersonaName.trim(),
+      icon: newPersonaIcon.trim() || "👤",
+      description: newPersonaDesc.trim() || newPersonaName.trim(),
+      tabSummary: newPersonaDesc.trim() || `${newPersonaName.trim()} persona`,
+    };
+    setDraft((prev) => ({ ...prev, customPersonas: [...(prev.customPersonas ?? []), def] }));
+    setNewPersonaIcon("👤");
+    setNewPersonaName("");
+    setNewPersonaDesc("");
+    markDirty();
+  };
+
+  const removeCustomPersona = (id: string) => {
+    setDraft((prev) => {
+      const customPersonas = (prev.customPersonas ?? []).filter((p) => p.id !== id);
+      const personas = { ...prev.personas };
+      delete personas[id];
+      return { ...prev, customPersonas, personas };
+    });
+    if (activePersona === id) setActivePersona(PERSONAS[0].id);
+    markDirty();
+  };
 
   const getPersonaLinks = (personaId: PersonaId): AppLink[] =>
     draft.personas[personaId]?.appLinks ?? DEFAULT_APP_LINKS[personaId] ?? [];
@@ -268,7 +370,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
       ...prev,
       personas: {
         ...prev.personas,
-        [personaId]: { ...prev.personas[personaId], appLinks: links },
+        [personaId]: { ...prev.personas[personaId], appLinks: links } as PersonaSettings,
       },
     }));
     markDirty();
@@ -282,7 +384,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         [personaId]: {
           ...prev.personas[personaId],
           thresholds: { ...prev.personas[personaId]?.thresholds, [field]: val },
-        },
+        } as PersonaSettings,
       },
     }));
     markDirty();
@@ -294,13 +396,13 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
   };
 
   const resetPersonaLinks = (personaId: PersonaId) => {
-    updatePersonaLinks(personaId, [...DEFAULT_APP_LINKS[personaId]]);
+    updatePersonaLinks(personaId, [...(DEFAULT_APP_LINKS[personaId] ?? [])]);
   };
 
   const resetPersonaThresholds = (personaId: PersonaId) => {
     setDraft((prev) => ({
       ...prev,
-      personas: { ...prev.personas, [personaId]: { ...prev.personas[personaId], thresholds: {} } },
+      personas: { ...prev.personas, [personaId]: { ...prev.personas[personaId], thresholds: {} } as PersonaSettings },
     }));
     markDirty();
   };
@@ -313,7 +415,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
       ...prev,
       personas: {
         ...prev.personas,
-        [personaId]: { ...prev.personas[personaId], heatMetrics: metrics },
+        [personaId]: { ...prev.personas[personaId], heatMetrics: metrics } as PersonaSettings,
       },
     }));
     markDirty();
@@ -364,7 +466,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
 
   const links = getPersonaLinks(activePersona);
   const thresholds = getPersonaThresholds(activePersona);
-  const activePersonaDef = PERSONAS.find((p) => p.id === activePersona)!;
+  const activePersonaDef = allPersonas.find((p) => p.id === activePersona) ?? PERSONAS[0];
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 99997, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
@@ -392,15 +494,16 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
           <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
           <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Thresholds</button>
           <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>🔥 Hotness</button>
+          <button style={tabStyle("personas")} onClick={() => setActiveTab("personas")}>👤 Personas</button>
           <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-          {activeTab !== "general" && (
+          {activeTab !== "general" && activeTab !== "personas" && (
             <div style={{ width: 160, borderRight: "1px solid rgba(255,255,255,0.06)", padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, overflowY: "auto" }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "4px 10px", marginBottom: 4 }}>Persona</div>
-              {PERSONAS.map((p) => (
+              {allPersonas.map((p) => (
                 <button key={p.id} style={personaTabStyle(p.id)} onClick={() => setActivePersona(p.id)}>
                   <span>{p.icon}</span>
                   <span>{p.label}</span>
@@ -537,6 +640,95 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
               </div>
             )}
 
+            {activeTab === "personas" && (
+              <div>
+                <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: "#fff" }}>Manage Personas</h3>
+                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their App Links, Thresholds, and Hotness metrics in the other tabs.</p>
+
+                {/* Built-in */}
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Built-in Personas</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
+                  {PERSONAS.map((p) => (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px" }}>
+                      <span style={{ fontSize: 18 }}>{p.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{p.label}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{p.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Custom personas */}
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Custom Personas</div>
+                {(draft.customPersonas ?? []).length === 0 && (
+                  <div style={{ padding: "16px 0", fontSize: 13, color: "rgba(255,255,255,0.3)" }}>No custom personas yet. Create one below.</div>
+                )}
+                {(draft.customPersonas ?? []).map((p) => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+                    <span style={{ fontSize: 22 }}>{p.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{p.label}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{p.description}</div>
+                    </div>
+                    <button
+                      onClick={() => removeCustomPersona(p.id)}
+                      style={{ background: "rgba(194,25,48,0.15)", border: "1px solid rgba(194,25,48,0.3)", color: "#ff6b7a", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+
+                {/* Create form */}
+                <div style={{ marginTop: 20, padding: "16px 18px", background: "rgba(69,137,255,0.04)", border: "1px solid rgba(69,137,255,0.18)", borderRadius: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 14 }}>Create New Persona</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={LABEL_STYLE}>Icon (emoji)</label>
+                      <input
+                        value={newPersonaIcon}
+                        onChange={(e) => setNewPersonaIcon(e.target.value)}
+                        placeholder="👤"
+                        style={{ ...INPUT_STYLE, textAlign: "center", fontSize: 20 }}
+                        maxLength={4}
+                      />
+                    </div>
+                    <div>
+                      <label style={LABEL_STYLE}>Name <span style={{ color: "#ff6b7a" }}>*</span></label>
+                      <input
+                        value={newPersonaName}
+                        onChange={(e) => setNewPersonaName(e.target.value)}
+                        placeholder="e.g. FinOps Engineer"
+                        style={INPUT_STYLE}
+                        onKeyDown={(e) => { if (e.key === "Enter") addCustomPersona(); }}
+                      />
+                    </div>
+                    <div>
+                      <label style={LABEL_STYLE}>Description</label>
+                      <input
+                        value={newPersonaDesc}
+                        onChange={(e) => setNewPersonaDesc(e.target.value)}
+                        placeholder="e.g. Cost & resource efficiency"
+                        style={INPUT_STYLE}
+                        onKeyDown={(e) => { if (e.key === "Enter") addCustomPersona(); }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={addCustomPersona}
+                    disabled={!newPersonaName.trim()}
+                    style={{ background: newPersonaName.trim() ? "rgba(69,137,255,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${newPersonaName.trim() ? "rgba(69,137,255,0.4)" : "rgba(255,255,255,0.1)"}`, borderRadius: 6, color: newPersonaName.trim() ? "#7ab4ff" : "rgba(255,255,255,0.3)", fontSize: 13, fontWeight: 600, padding: "7px 20px", cursor: newPersonaName.trim() ? "pointer" : "default" }}
+                  >
+                    + Create Persona
+                  </button>
+                  <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.6 }}>
+                    After creating, switch to <strong style={{ color: "rgba(255,255,255,0.5)" }}>App Links</strong>, <strong style={{ color: "rgba(255,255,255,0.5)" }}>Thresholds</strong>, or <strong style={{ color: "rgba(255,255,255,0.5)" }}>Hotness</strong> tabs to configure the new persona.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === "general" && (
               <div>
                 <h3 style={{ margin: "0 0 20px", fontSize: 15, fontWeight: 700, color: "#fff" }}>General Settings</h3>
@@ -546,7 +738,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                     <CustomSelect<PersonaId>
                       value={draft.global?.defaultPersona ?? "developer"}
                       onChange={(val) => { setDraft((prev) => ({ ...prev, global: { ...prev.global, defaultPersona: val } })); markDirty(); }}
-                      options={PERSONAS.map((p) => ({ value: p.id, label: `${p.icon} ${p.label}` }))}
+                      options={allPersonas.map((p) => ({ value: p.id, label: `${p.icon} ${p.label}` }))}
                     />
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 6 }}>Shown pre-selected in the persona picker on new sessions.</div>
                   </div>

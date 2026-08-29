@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId } from "../types";
+import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, HeatMetricConfig } from "../types";
 import { HotnessAssistButton, HotnessAssistPanel } from "./HotnessAssist";
 import { HotnessForecastPanel } from "./HotnessForecastPanel";
 
@@ -11,6 +11,7 @@ interface AssessmentPanelProps {
   onForecast?: (item: AssessmentItem) => void;
   bucketMs?: number;
   persona?: PersonaId;
+  heatMetrics?: HeatMetricConfig[];
 }
 
 // ─── Drag hook ─────────────────────────────────────────────────────────────
@@ -370,7 +371,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -474,6 +475,8 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           bucketDetails={assessment.bucketDetails}
           bucketLabel={assessment.bucketLabel}
           persona={persona}
+          heatMetrics={heatMetrics}
+          intervalMinutes={Math.round(bucketMs / 60000)}
           pos={assistDrag.pos}
           onDragStart={assistDrag.onDragStart}
           onClose={() => setAssistOpen(false)}

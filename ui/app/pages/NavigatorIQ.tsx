@@ -296,7 +296,11 @@ export function NavigatorIQ() {
   }, []);
 
   // ─── Render ─────────────────────────────────────────────────────────────
-  const activePersonaDef = PERSONAS.find((p) => p.id === persona)!;
+  const allPersonas = useMemo(
+    () => [...PERSONAS, ...(settings.customPersonas ?? [])],
+    [settings.customPersonas]
+  );
+  const activePersonaDef = allPersonas.find((p) => p.id === persona) ?? PERSONAS[0];
   const personaLinks = settings.personas[persona]?.appLinks;
   const allItems = [...assessment.redItems, ...assessment.yellowItems, ...assessment.greenItems];
 
@@ -313,22 +317,12 @@ export function NavigatorIQ() {
     zIndex: 200,
   };
 
-  // ─── DQL debug overlay (temporary) ────────────────────────────────────────
-  const dqlDebug = dqlMetrics.length > 0
-    ? `DQL[${dqlMetrics.length}] q:${dql0Q === NOOP_QUERY || dql0Q === withSeed(NOOP_QUERY, refreshSeed) ? "noop" : "active"} | ${dql0R.isLoading ? "loading…" : dql0R.isError ? `ERR:${(dql0R.error as Error)?.message?.slice(0, 50)}` : `${recs(dql0R)?.length ?? 0} recs`}`
-    : null;
-
   return (
     <div className="iq-page">
-      {dqlDebug && (
-        <div style={{ position: "fixed", bottom: 10, left: 10, background: "rgba(10,14,30,0.92)", border: "1px solid rgba(69,137,255,0.4)", color: "#4589FF", fontSize: 11, padding: "4px 10px", borderRadius: 6, zIndex: 99999, fontFamily: "monospace", pointerEvents: "none" }}>
-          {dqlDebug}
-        </div>
-      )}
       <PersonaPickerModal
         appVersion={APP_VERSION}
         whatsNew={IQ_WHATS_NEW}
-        personas={PERSONAS}
+        personas={allPersonas}
         defaultPersonaId={(settings.global?.defaultPersona) ?? "developer"}
         onApply={handlePersonaApply}
       />
@@ -342,7 +336,7 @@ export function NavigatorIQ() {
         </div>
 
         {/* Persona chip */}
-        <PersonaChip persona={activePersonaDef} personas={PERSONAS} onSelect={setPersona} />
+        <PersonaChip persona={activePersonaDef} personas={allPersonas} onSelect={setPersona} />
 
         {/* Divider */}
         <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.12)", flexShrink: 0 }} />
@@ -381,7 +375,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
+          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />

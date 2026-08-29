@@ -1,12 +1,4 @@
-export type PersonaId =
-  | "developer"
-  | "sre"
-  | "platform"
-  | "security"
-  | "dba"
-  | "network"
-  | "digital"
-  | "devops";
+export type PersonaId = string;
 
 export type TimeframeTab = "2h" | "today" | "yesterday" | "7d";
 
@@ -72,8 +64,14 @@ export interface HeatMetricConfig {
   isTraffic?: boolean;
   displayUnit?: MetricDisplayUnit;
   type?: "single" | "ratio" | "dql";
+  displaySuffix?: string;
   denominatorKey?: string;
   dqlQuery?: string;
+  warningThreshold?: number;
+  criticalThreshold?: number;
+  exploreAppPath?: string;
+  /** When set, thresholds are calibrated for this many hours and auto-scale with bucket interval */
+  thresholdBucketHours?: number;
 }
 
 export interface PersonaSettings {
@@ -90,6 +88,7 @@ export interface GlobalSettings {
 export interface SavedSettings {
   personas: Partial<Record<PersonaId, PersonaSettings>>;
   global: Partial<GlobalSettings>;
+  customPersonas?: PersonaDef[];
 }
 
 export interface HeatBucketMetric {

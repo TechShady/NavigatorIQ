@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.27";
+export const APP_VERSION = "0.3.30";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -132,38 +132,48 @@ export const CUSTOM_APPS = {
   frontendOverview: { label: "Frontend Overview", appPath: "my.frontend.overview.app" },
 };
 
+const N1_DQL_QUERY = `fetch spans, from:\${from}, to:\${to}
+| filter db.system != "null"
+| fieldsAdd slot = bin(start_time, \${interval})
+| summarize c=count(), s=sum(aggregation.count),
+            c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count)),
+            by: {slot}
+| fieldsAdd value = toDouble(s1) - toDouble(c1)
+| sort slot asc`;
+
 export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   developer: [
-    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
-    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
+    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.distributedtracing" },
     { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
+    { label: "N+1 Queries", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: N1_DQL_QUERY, warningThreshold: 50, criticalThreshold: 100, thresholdBucketHours: 1, exploreAppPath: "dynatrace.distributedtracing" },
   ],
   sre: [
-    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
     { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
   ],
   platform: [
-    { label: "CPU Usage", metricKey: "dt.host.cpu.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct" },
-    { label: "Memory Usage", metricKey: "dt.host.memory.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct" },
+    { label: "CPU Usage", metricKey: "dt.host.cpu.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.infraops" },
+    { label: "Memory Usage", metricKey: "dt.host.memory.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 90, exploreAppPath: "dynatrace.infraops" },
   ],
   dba: [
-    { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+    { label: "DB Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 300, criticalThreshold: 1000, exploreAppPath: "dynatrace.database.overview" },
   ],
   digital: [
-    { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms" },
-    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms" },
-    { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "raw" },
-    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "raw" },
+    { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 2500, criticalThreshold: 4000, exploreAppPath: "dynatrace.experience.vitals" },
+    { label: "Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms", warningThreshold: 3000, criticalThreshold: 5000, exploreAppPath: "dynatrace.experience.vitals" },
+    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 800, criticalThreshold: 1800, exploreAppPath: "dynatrace.services" },
+    { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 200, criticalThreshold: 500, exploreAppPath: "dynatrace.experience.vitals" },
+    { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "raw", warningThreshold: 0.1, criticalThreshold: 0.25, exploreAppPath: "dynatrace.experience.vitals" },
+    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "raw", warningThreshold: 20, criticalThreshold: 100, exploreAppPath: "dynatrace.experience.vitals" },
   ],
   network: [
-    { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count" },
+    { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.infraops/explorer/Network" },
   ],
   security: [],
   devops: [
-    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count" },
-    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms" },
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
+    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.distributedtracing" },
   ],
 };
 

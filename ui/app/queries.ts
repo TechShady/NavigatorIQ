@@ -361,7 +361,11 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     timeline = records.map((r) => { const v = r["value"]; const n = Number(v); return isFinite(n) ? n : 0; });
   }
   if (timeline.length < 2) return null;
-  return { label: metric.label, timeline, isTraffic: metric.isTraffic, fmt: makeMetricFmt(metric.displayUnit) };
+  const suffix = metric.displaySuffix?.trim();
+  const fmt = suffix
+    ? (v: number) => (Number.isInteger(v) ? String(v) : parseFloat(v.toFixed(2)).toString()) + suffix
+    : makeMetricFmt(metric.displayUnit);
+  return { label: metric.label, timeline, isTraffic: metric.isTraffic, fmt };
 }
 
 const fmtMs = (v: number) => {

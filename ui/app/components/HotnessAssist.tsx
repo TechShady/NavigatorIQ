@@ -1,52 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
-import type { HeatBucketDetail, HeatBucketMetric, PersonaId } from "../types";
-
-const PERSONA_EXPLORE_LINKS: Partial<Record<PersonaId, Array<{ label: string; appPath: string }>>> = {
-  developer: [
-    { label: "Distributed Traces", appPath: "dynatrace.distributedtracing" },
-    { label: "Services", appPath: "dynatrace.services" },
-    { label: "Logs", appPath: "dynatrace.logs" },
-    { label: "Services Overview", appPath: "my.services.overview.app" },
-  ],
-  sre: [
-    { label: "Problems", appPath: "dynatrace.davis.problems" },
-    { label: "SLOs", appPath: "dynatrace.service.level.objectives" },
-    { label: "Anomaly Detection", appPath: "dynatrace.davis.anomaly.detection" },
-    { label: "Services Overview", appPath: "my.services.overview.app" },
-  ],
-  platform: [
-    { label: "Infrastructure & Operations", appPath: "dynatrace.infraops" },
-    { label: "Kubernetes", appPath: "dynatrace.kubernetes" },
-    { label: "Hosts", appPath: "dynatrace.infraops" },
-  ],
-  dba: [
-    { label: "Databases", appPath: "dynatrace.database.overview" },
-    { label: "Distributed Traces", appPath: "dynatrace.distributedtracing" },
-    { label: "Logs", appPath: "dynatrace.logs" },
-  ],
-  network: [
-    { label: "Network Monitoring", appPath: "dynatrace.infraops/explorer/Network" },
-    { label: "Infrastructure & Operations", appPath: "dynatrace.infraops" },
-    { label: "Problems", appPath: "dynatrace.davis.problems" },
-  ],
-  security: [
-    { label: "Attacks", appPath: "dynatrace.security.attacks" },
-    { label: "Application Security", appPath: "dynatrace.security.analytics" },
-    { label: "Vulnerabilities", appPath: "dynatrace.security.vulnerabilities" },
-  ],
-  digital: [
-    { label: "Digital Experience", appPath: "dynatrace.experience.vitals" },
-    { label: "Session Replay", appPath: "dynatrace.experience.vitals" },
-    { label: "User Journey", appPath: "my.user.journey.app" },
-  ],
-  devops: [
-    { label: "Workflows", appPath: "dynatrace.automations" },
-    { label: "Releases", appPath: "dynatrace.site.reliability.guardian" },
-    { label: "Services Overview", appPath: "my.services.overview.app" },
-  ],
-};
+import type { HeatBucketDetail, HeatBucketMetric, PersonaId, HeatMetricConfig } from "../types";
 
 // ─── Analysis ─────────────────────────────────────────────────────────────
 
@@ -294,16 +249,103 @@ export interface HotnessAssistPanelProps {
   bucketDetails: HeatBucketDetail[];
   bucketLabel: string;
   persona?: PersonaId;
+  heatMetrics?: HeatMetricConfig[];
+  intervalMinutes?: number;
   pos: { x: number; y: number };
   onDragStart: (e: React.MouseEvent<HTMLDivElement>) => void;
   onClose: () => void;
+}
+
+// ─── Next Steps logic ──────────────────────────────────────────────────────
+
+interface NextStepEntry {
+  label: string;
+  appPath: string;
+  severity: "critical" | "warning";
+  reason: string;
+}
+
+function formatThresholdDisplay(value: number, metric: HeatMetricConfig): string {
+  const suffix = metric.displaySuffix?.trim();
+  if (suffix) return `${Math.round(value * 100) / 100}${suffix}`;
+  switch (metric.displayUnit) {
+    case "pct": return `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
+    case "ms":
+    case "ns->ms":
+    case "µs->ms": {
+      if (value >= 1000) return `${(value / 1000).toFixed(1)}s`;
+      return `${Math.round(value)}ms`;
+    }
+    default: return String(Math.round(value * 100) / 100);
+  }
+}
+
+function buildNextSteps(
+  heatMetrics: HeatMetricConfig[],
+  bucketDetails: HeatBucketDetail[],
+  intervalMinutes: number,
+): NextStepEntry[] {
+  // Build peak value map: label → {value, displayValue}
+  const peaks: Record<string, { value: number; displayValue: string }> = {};
+  for (const detail of bucketDetails) {
+    for (const m of detail.metrics) {
+      if (!peaks[m.label] || m.value > peaks[m.label].value) {
+        peaks[m.label] = { value: m.value, displayValue: m.displayValue };
+      }
+    }
+  }
+
+  const entries: NextStepEntry[] = [];
+  for (const metric of heatMetrics) {
+    if (!metric.exploreAppPath || metric.isTraffic) continue;
+    if (metric.warningThreshold === undefined && metric.criticalThreshold === undefined) continue;
+
+    const peak = peaks[metric.label];
+    if (!peak) continue;
+
+    const scale = metric.thresholdBucketHours !== undefined && metric.thresholdBucketHours > 0
+      ? intervalMinutes / (metric.thresholdBucketHours * 60)
+      : 1;
+
+    const effectiveWarning = (metric.warningThreshold ?? Infinity) * scale;
+    const effectiveCritical = (metric.criticalThreshold ?? Infinity) * scale;
+
+    let severity: "critical" | "warning" | null = null;
+    let thresholdDisplay = "";
+
+    if (metric.criticalThreshold !== undefined && peak.value >= effectiveCritical) {
+      severity = "critical";
+      const raw = formatThresholdDisplay(metric.criticalThreshold, metric);
+      thresholdDisplay = metric.thresholdBucketHours
+        ? `${raw}/hr${scale < 1 ? ` (${formatThresholdDisplay(effectiveCritical, metric)} at ${intervalMinutes}-min interval)` : ""}`
+        : raw;
+    } else if (metric.warningThreshold !== undefined && peak.value >= effectiveWarning) {
+      severity = "warning";
+      const raw = formatThresholdDisplay(metric.warningThreshold, metric);
+      thresholdDisplay = metric.thresholdBucketHours
+        ? `${raw}/hr${scale < 1 ? ` (${formatThresholdDisplay(effectiveWarning, metric)} at ${intervalMinutes}-min interval)` : ""}`
+        : raw;
+    }
+
+    if (severity) {
+      entries.push({
+        label: metric.label,
+        appPath: metric.exploreAppPath,
+        severity,
+        reason: `Peak ${metric.label}: ${peak.displayValue} — exceeds ${severity} threshold of ${thresholdDisplay}`,
+      });
+    }
+  }
+
+  // Critical first, then warning
+  return entries.sort((a, b) => (a.severity === "critical" ? -1 : 1) - (b.severity === "critical" ? -1 : 1));
 }
 
 const INSIGHT_COLORS: Record<HotnessAnalysis["insights"][0]["severity"], string> = {
   critical: "#FF073A", warning: "#FFF04D", info: "#4589FF", good: "#10B981",
 };
 
-export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
+export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
   const burstLabels: Record<HotnessAnalysis["burstType"], string> = {
     stable: "Stable — no elevated activity",
@@ -415,26 +457,44 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
           </div>
         )}
 
-        {/* Explore links */}
-        {persona && PERSONA_EXPLORE_LINKS[persona] && (
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Explore in Dynatrace</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {PERSONA_EXPLORE_LINKS[persona]!.map((link) => (
-                <button
-                  key={link.appPath + link.label}
-                  onClick={() => {
-                    try { window.open(`${getEnvironmentUrl()}/ui/apps/${link.appPath}`, "_blank"); }
-                    catch { window.open(`/ui/apps/${link.appPath}`, "_blank"); }
-                  }}
-                  style={{ background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.28)", borderRadius: 6, color: "#7ab4ff", fontSize: 11, fontWeight: 600, padding: "5px 10px", cursor: "pointer" }}
-                >
-                  ↗ {link.label}
-                </button>
-              ))}
+        {/* Next Steps */}
+        {heatMetrics && heatMetrics.length > 0 && (() => {
+          const steps = buildNextSteps(heatMetrics, bucketDetails, intervalMinutes);
+          return (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Next Steps</div>
+              {steps.length === 0 ? (
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", padding: "8px 0" }}>
+                  All heat metrics are within configured thresholds — no specific actions required.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {steps.map((step, i) => {
+                    const isCrit = step.severity === "critical";
+                    const color = isCrit ? "#FF073A" : "#FFF04D";
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8 }}>
+                        <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{isCrit ? "🔴" : "⚠️"}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5, marginBottom: 6 }}>{step.reason}</div>
+                          <button
+                            onClick={() => {
+                              try { window.open(`${getEnvironmentUrl()}/ui/apps/${step.appPath}`, "_blank"); }
+                              catch { window.open(`/ui/apps/${step.appPath}`, "_blank"); }
+                            }}
+                            style={{ background: `${color}15`, border: `1px solid ${color}40`, borderRadius: 5, color, fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer" }}
+                          >
+                            ↗ Investigate {step.label}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>,
     document.body
