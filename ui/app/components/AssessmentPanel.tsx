@@ -72,15 +72,42 @@ function AppButton({ label, onClick, color = "#4589FF" }: { label: string; onCli
 // ─── Bucket Diagnosis Panel ─────────────────────────────────────────────────
 
 function BucketDiagPanel({
-  detail, bucketLabel, pos, onDragStart, onClose,
+  detail, bucketLabel, pos, onDragStart, onClose, heatMetrics, intervalMinutes,
 }: {
   detail: HeatBucketDetail; bucketLabel: string;
   pos: { x: number; y: number };
   onDragStart: (e: React.MouseEvent<HTMLDivElement>) => void;
   onClose: () => void;
+  heatMetrics?: HeatMetricConfig[];
+  intervalMinutes?: number;
 }) {
   const levelColor = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const levelLabel = (z: number) => z >= 2.5 ? "Critical Spike" : z >= 1.5 ? "Warm" : z >= 0.75 ? "Elevated" : "Normal";
+
+  // Severity rank: 0=normal, 1=elevated, 2=warm, 3=critical
+  const severityRank = (color: string) =>
+    color === "#FF073A" ? 3 : color === "#FF3D9A" ? 2 : color === "#FFF04D" ? 1 : 0;
+
+  const thresholdColor = (label: string, value: number): string | null => {
+    if (!heatMetrics || !intervalMinutes) return null;
+    const cfg = heatMetrics.find((m) => m.label === label);
+    if (!cfg) return null;
+    const scale = cfg.thresholdBucketHours ? intervalMinutes / (cfg.thresholdBucketHours * 60) : 1;
+    const warn = cfg.warningThreshold != null ? cfg.warningThreshold * scale : null;
+    const crit = cfg.criticalThreshold != null ? cfg.criticalThreshold * scale : null;
+    if (crit != null && value >= crit) return "#FF073A";
+    if (warn != null && value >= warn) return "#FFF04D";
+    return null;
+  };
+
+  const metricColor = (label: string, value: number, zScore: number, isTraffic?: boolean): string => {
+    if (isTraffic) return "#4589FF";
+    const zColor = zScore <= 0 ? "#10B981" : levelColor(zScore);
+    const tColor = thresholdColor(label, value);
+    if (!tColor) return zColor;
+    return severityRank(tColor) > severityRank(zColor) ? tColor : zColor;
+  };
+
   const lc = levelColor(detail.zScore);
   const perfMetrics = detail.metrics.filter((m) => !m.isTraffic && m.zScore > 0).sort((a, b) => b.zScore - a.zScore);
 
@@ -129,13 +156,7 @@ function BucketDiagPanel({
           </div>
         )}
         {detail.metrics.map((m, i) => {
-          const neutral = !!m.isTraffic;
-          const barColor = neutral
-            ? "#4589FF"
-            : m.zScore <= 0 ? "#10B981"
-            : m.zScore >= 2.5 ? "#FF073A"
-            : m.zScore >= 1.5 ? "#FF3D9A"
-            : m.zScore >= 0.75 ? "#FFF04D" : "#4589FF";
+          const barColor = metricColor(m.label, m.value, m.zScore, m.isTraffic);
           const barW = Math.min(100, Math.abs(m.zScore) / 3 * 100);
           return (
             <div key={i} style={{ marginBottom: 12 }}>
@@ -152,7 +173,7 @@ function BucketDiagPanel({
                 </span>
               </div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
-                {neutral ? "traffic volume vs avg" : m.zScore > 0 ? "↑ higher than avg — investigate" : "✓ within normal range"}
+                {m.isTraffic ? "traffic volume vs avg" : m.zScore > 0 ? "↑ higher than avg — investigate" : "✓ within normal range"}
               </div>
             </div>
           );
@@ -465,6 +486,8 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           pos={diagDrag.pos}
           onDragStart={diagDrag.onDragStart}
           onClose={() => { setDiagOpen(false); setSelectedBucket(null); }}
+          heatMetrics={heatMetrics}
+          intervalMinutes={Math.round(bucketMs / 60000)}
         />
       )}
 
