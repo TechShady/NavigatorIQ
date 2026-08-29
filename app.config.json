@@ -1,6 +1,6 @@
 {
   "$schema": "./.dt-app/app.config.schema.json",
-  "environmentUrl": "https://gu84124.live.dynatrace.com",
+  "environmentUrl": "https://guu84124.apps.dynatrace.com",
   "app": {
     "name": "NavigatorIQ",
     "version": "0.3.30",
