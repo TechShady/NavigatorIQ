@@ -365,7 +365,7 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
   const fmt = suffix
     ? (v: number) => (Number.isInteger(v) ? String(v) : parseFloat(v.toFixed(2)).toString()) + suffix
     : makeMetricFmt(metric.displayUnit);
-  return { label: metric.label, timeline, isTraffic: metric.isTraffic, fmt };
+  return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt };
 }
 
 const fmtMs = (v: number) => {
@@ -393,7 +393,11 @@ function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] 
   }
 }
 
-export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; fmt: (v: number) => string }
+export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
+
+function isInverted(m: HeatMetricConfig): boolean {
+  return m.warningThreshold !== undefined && m.criticalThreshold !== undefined && m.warningThreshold > m.criticalThreshold;
+}
 
 export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatMetricConfig[]): ParsedCustomMetric[] {
   const r = records?.[0];
@@ -408,12 +412,13 @@ export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatM
           const den = denRaw[j] ?? 0;
           return den > 0 ? (num / den) * 100 : 0;
         });
-        return { label: m.label, timeline, isTraffic: m.isTraffic, fmt: makeMetricFmt("pct") };
+        return { label: m.label, timeline, isTraffic: m.isTraffic, inverted: isInverted(m), fmt: makeMetricFmt("pct") };
       }
       return {
         label: m.label,
         timeline: parseMetricTimeline(arr(r, `m${i}`), m.displayUnit),
         isTraffic: m.isTraffic,
+        inverted: isInverted(m),
         fmt: makeMetricFmt(m.displayUnit),
       };
     })

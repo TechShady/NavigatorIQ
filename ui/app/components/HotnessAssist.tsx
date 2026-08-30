@@ -285,13 +285,13 @@ function buildNextSteps(
   bucketDetails: HeatBucketDetail[],
   intervalMinutes: number,
 ): NextStepEntry[] {
-  // Build peak value map: label → {value, displayValue}
+  // Build peak (max) and valley (min) maps per metric label
   const peaks: Record<string, { value: number; displayValue: string }> = {};
+  const valleys: Record<string, { value: number; displayValue: string }> = {};
   for (const detail of bucketDetails) {
     for (const m of detail.metrics) {
-      if (!peaks[m.label] || m.value > peaks[m.label].value) {
-        peaks[m.label] = { value: m.value, displayValue: m.displayValue };
-      }
+      if (!peaks[m.label] || m.value > peaks[m.label].value) peaks[m.label] = { value: m.value, displayValue: m.displayValue };
+      if (!valleys[m.label] || m.value < valleys[m.label].value) valleys[m.label] = { value: m.value, displayValue: m.displayValue };
     }
   }
 
@@ -300,40 +300,53 @@ function buildNextSteps(
     if (!metric.exploreAppPath || metric.isTraffic) continue;
     if (metric.warningThreshold === undefined && metric.criticalThreshold === undefined) continue;
 
-    const peak = peaks[metric.label];
-    if (!peak) continue;
+    // Convention: warningThreshold > criticalThreshold → high is good (inverted direction)
+    const inverted = metric.warningThreshold !== undefined && metric.criticalThreshold !== undefined
+      && metric.warningThreshold > metric.criticalThreshold;
 
-    const scale = metric.thresholdBucketHours !== undefined && metric.thresholdBucketHours > 0
+    const candidate = inverted ? valleys[metric.label] : peaks[metric.label];
+    if (!candidate) continue;
+
+    const scale = (!inverted && metric.thresholdBucketHours !== undefined && metric.thresholdBucketHours > 0)
       ? intervalMinutes / (metric.thresholdBucketHours * 60)
       : 1;
-
-    const effectiveWarning = (metric.warningThreshold ?? Infinity) * scale;
-    const effectiveCritical = (metric.criticalThreshold ?? Infinity) * scale;
 
     let severity: "critical" | "warning" | null = null;
     let thresholdDisplay = "";
 
-    if (metric.criticalThreshold !== undefined && peak.value >= effectiveCritical) {
-      severity = "critical";
-      const raw = formatThresholdDisplay(metric.criticalThreshold, metric);
-      thresholdDisplay = metric.thresholdBucketHours
-        ? `${raw}/hr${scale < 1 ? ` (${formatThresholdDisplay(effectiveCritical, metric)} at ${intervalMinutes}-min interval)` : ""}`
-        : raw;
-    } else if (metric.warningThreshold !== undefined && peak.value >= effectiveWarning) {
-      severity = "warning";
-      const raw = formatThresholdDisplay(metric.warningThreshold, metric);
-      thresholdDisplay = metric.thresholdBucketHours
-        ? `${raw}/hr${scale < 1 ? ` (${formatThresholdDisplay(effectiveWarning, metric)} at ${intervalMinutes}-min interval)` : ""}`
-        : raw;
-    }
-
-    if (severity) {
-      entries.push({
-        label: metric.label,
-        appPath: metric.exploreAppPath,
-        severity,
-        reason: `Peak ${metric.label}: ${peak.displayValue} — exceeds ${severity} threshold of ${thresholdDisplay}`,
-      });
+    if (inverted) {
+      // High is good — alert when value drops BELOW threshold
+      if (metric.criticalThreshold !== undefined && candidate.value <= metric.criticalThreshold) {
+        severity = "critical";
+        thresholdDisplay = formatThresholdDisplay(metric.criticalThreshold, metric);
+      } else if (metric.warningThreshold !== undefined && candidate.value <= metric.warningThreshold) {
+        severity = "warning";
+        thresholdDisplay = formatThresholdDisplay(metric.warningThreshold, metric);
+      }
+      if (severity) {
+        entries.push({ label: metric.label, appPath: metric.exploreAppPath!, severity,
+          reason: `Min ${metric.label}: ${candidate.displayValue} — drops below ${severity} threshold of ${thresholdDisplay}` });
+      }
+    } else {
+      const effectiveWarning = (metric.warningThreshold ?? Infinity) * scale;
+      const effectiveCritical = (metric.criticalThreshold ?? Infinity) * scale;
+      if (metric.criticalThreshold !== undefined && candidate.value >= effectiveCritical) {
+        severity = "critical";
+        const raw = formatThresholdDisplay(metric.criticalThreshold, metric);
+        thresholdDisplay = metric.thresholdBucketHours
+          ? `${raw}/hr${scale < 1 ? ` (${formatThresholdDisplay(effectiveCritical, metric)} at ${intervalMinutes}-min interval)` : ""}`
+          : raw;
+      } else if (metric.warningThreshold !== undefined && candidate.value >= effectiveWarning) {
+        severity = "warning";
+        const raw = formatThresholdDisplay(metric.warningThreshold, metric);
+        thresholdDisplay = metric.thresholdBucketHours
+          ? `${raw}/hr${scale < 1 ? ` (${formatThresholdDisplay(effectiveWarning, metric)} at ${intervalMinutes}-min interval)` : ""}`
+          : raw;
+      }
+      if (severity) {
+        entries.push({ label: metric.label, appPath: metric.exploreAppPath!, severity,
+          reason: `Peak ${metric.label}: ${candidate.displayValue} — exceeds ${severity} threshold of ${thresholdDisplay}` });
+      }
     }
   }
 

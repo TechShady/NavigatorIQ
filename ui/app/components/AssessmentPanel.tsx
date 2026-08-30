@@ -92,11 +92,18 @@ function BucketDiagPanel({
     if (!heatMetrics || !intervalMinutes) return null;
     const cfg = heatMetrics.find((m) => m.label === label);
     if (!cfg) return null;
-    const scale = cfg.thresholdBucketHours ? intervalMinutes / (cfg.thresholdBucketHours * 60) : 1;
-    const warn = cfg.warningThreshold != null ? cfg.warningThreshold * scale : null;
-    const crit = cfg.criticalThreshold != null ? cfg.criticalThreshold * scale : null;
-    if (crit != null && value >= crit) return "#FF073A";
-    if (warn != null && value >= warn) return "#FFF04D";
+    const inverted = cfg.warningThreshold !== undefined && cfg.criticalThreshold !== undefined && cfg.warningThreshold > cfg.criticalThreshold;
+    if (inverted) {
+      // High is good — alert when value falls BELOW threshold (no bucket-time scaling for non-count metrics)
+      if (cfg.criticalThreshold != null && value <= cfg.criticalThreshold) return "#FF073A";
+      if (cfg.warningThreshold != null && value <= cfg.warningThreshold) return "#FFF04D";
+    } else {
+      const scale = cfg.thresholdBucketHours ? intervalMinutes / (cfg.thresholdBucketHours * 60) : 1;
+      const warn = cfg.warningThreshold != null ? cfg.warningThreshold * scale : null;
+      const crit = cfg.criticalThreshold != null ? cfg.criticalThreshold * scale : null;
+      if (crit != null && value >= crit) return "#FF073A";
+      if (warn != null && value >= warn) return "#FFF04D";
+    }
     return null;
   };
 

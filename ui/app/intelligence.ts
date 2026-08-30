@@ -48,7 +48,7 @@ function zToLevel(z: number): HeatBucketDetail["level"] {
   return z >= 2.5 ? "spike" : z >= 1.5 ? "warm" : z >= 0.75 ? "elevated" : "normal";
 }
 
-interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; fmt: (v: number) => string }
+interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
 
 function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBucketDetail[] {
   const valid = metrics.filter((m) => m.timeline.length > 1);
@@ -64,7 +64,8 @@ function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBuc
     level: zToLevel(z),
     metrics: valid.map((m, mi): HeatBucketMetric => {
       const value = m.timeline[i] ?? stats[mi].mean;
-      return { label: m.label, value, displayValue: m.fmt(value), zScore: (value - stats[mi].mean) / stats[mi].std, isTraffic: m.isTraffic };
+      const rawZ = m.inverted ? (stats[mi].mean - value) / stats[mi].std : (value - stats[mi].mean) / stats[mi].std;
+      return { label: m.label, value, displayValue: m.fmt(value), zScore: rawZ, isTraffic: m.isTraffic };
     }),
   }));
 }
@@ -733,7 +734,7 @@ function buildNarrative(
 
 // ─── Main entry point ──────────────────────────────────────────────────────
 
-export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; fmt: (v: number) => string }
+export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
 
 export function computeAssessment(
   cur: AllQueryResults,
@@ -889,11 +890,14 @@ export function computeAssessment(
   if (customMetrics && customMetrics.length > 0) {
     const validCustom = customMetrics.filter((m) => m.timeline.length > 1);
     if (validCustom.length > 0) {
-      heatScores = computeHeat(validCustom.map((m) => m.timeline));
+      // For inverted metrics (high is good), negate the timeline so low values become hot
+      const heatTimelines = validCustom.map((m) => m.inverted ? m.timeline.map((v) => -v) : m.timeline);
+      heatScores = computeHeat(heatTimelines);
       bucketDetails = buildBucketDetails(heatScores, validCustom.map((m) => ({
         label: m.label,
         timeline: m.timeline,
         isTraffic: m.isTraffic,
+        inverted: m.inverted,
         fmt: m.fmt,
       })));
     }

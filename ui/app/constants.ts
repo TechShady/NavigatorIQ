@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.34";
+export const APP_VERSION = "0.3.35";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -190,10 +190,10 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   digital: [
     { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 2500, criticalThreshold: 4000, exploreAppPath: "dynatrace.experience.vitals" },
     { label: "Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms", warningThreshold: 3000, criticalThreshold: 5000, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 800, criticalThreshold: 1800, exploreAppPath: "dynatrace.services" },
+    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 800, criticalThreshold: 1800, exploreAppPath: "dynatrace.experience.vitals" },
     { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 200, criticalThreshold: 500, exploreAppPath: "dynatrace.experience.vitals" },
     { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "raw", warningThreshold: 0.1, criticalThreshold: 0.25, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "raw", warningThreshold: 20, criticalThreshold: 100, exploreAppPath: "dynatrace.experience.vitals" },
+    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector" },
   ],
   network: [
     { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.infraops/explorer/Network" },
