@@ -411,9 +411,20 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
     const saved = draft.personas[personaId]?.heatMetrics;
     const defaults = DEFAULT_HEAT_METRICS[personaId] ?? [];
     if (!saved) return defaults;
+    const defaultsByLabel = new Map(defaults.map((m) => [m.label, m]));
+    const merged = saved.map((m) => {
+      const def = defaultsByLabel.get(m.label);
+      if (!def) return m;
+      return {
+        ...m,
+        warningThreshold: m.warningThreshold ?? def.warningThreshold,
+        criticalThreshold: m.criticalThreshold ?? def.criticalThreshold,
+        exploreAppPath: m.exploreAppPath ?? def.exploreAppPath,
+      };
+    });
     const savedLabels = new Set(saved.map((m) => m.label));
     const incoming = defaults.filter((m) => (m.type === "dql" || Boolean(m.dqlQuery?.trim())) && !savedLabels.has(m.label));
-    return incoming.length > 0 ? [...saved, ...incoming] : saved;
+    return incoming.length > 0 ? [...merged, ...incoming] : merged;
   };
 
   const updatePersonaHeatMetrics = (personaId: PersonaId, metrics: HeatMetricConfig[]) => {

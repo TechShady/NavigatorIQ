@@ -101,10 +101,21 @@ export function NavigatorIQ() {
     const saved = personaSettings?.heatMetrics;
     const defaults = DEFAULT_HEAT_METRICS[persona] ?? [];
     if (!saved) return defaults;
-    // Append new default DQL metrics not yet in the saved list (auto-migrate on app update)
+    // Fill in missing threshold/link fields on existing metrics from defaults, then append new DQL metrics
+    const defaultsByLabel = new Map(defaults.map((m) => [m.label, m]));
+    const merged = saved.map((m) => {
+      const def = defaultsByLabel.get(m.label);
+      if (!def) return m;
+      return {
+        ...m,
+        warningThreshold: m.warningThreshold ?? def.warningThreshold,
+        criticalThreshold: m.criticalThreshold ?? def.criticalThreshold,
+        exploreAppPath: m.exploreAppPath ?? def.exploreAppPath,
+      };
+    });
     const savedLabels = new Set(saved.map((m) => m.label));
     const incoming = defaults.filter((m) => (m.type === "dql" || Boolean(m.dqlQuery?.trim())) && !savedLabels.has(m.label));
-    return incoming.length > 0 ? [...saved, ...incoming] : saved;
+    return incoming.length > 0 ? [...merged, ...incoming] : merged;
   }, [personaSettings, persona]); // eslint-disable-line react-hooks/exhaustive-deps
   const dqlMetrics = useMemo(() => heatMetrics.filter((m) => m.type === "dql" || Boolean(m.dqlQuery?.trim())), [JSON.stringify(heatMetrics)]); // eslint-disable-line react-hooks/exhaustive-deps
   const customHeatQ = useMemo(
