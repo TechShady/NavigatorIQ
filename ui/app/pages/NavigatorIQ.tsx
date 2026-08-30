@@ -97,7 +97,15 @@ export function NavigatorIQ() {
   const isTabLoaded = visitedTabs.has(tab);
 
   const personaSettings = settings.personas[persona];
-  const heatMetrics = personaSettings?.heatMetrics ?? DEFAULT_HEAT_METRICS[persona] ?? [];
+  const heatMetrics = useMemo(() => {
+    const saved = personaSettings?.heatMetrics;
+    const defaults = DEFAULT_HEAT_METRICS[persona] ?? [];
+    if (!saved) return defaults;
+    // Append new default DQL metrics not yet in the saved list (auto-migrate on app update)
+    const savedLabels = new Set(saved.map((m) => m.label));
+    const incoming = defaults.filter((m) => (m.type === "dql" || Boolean(m.dqlQuery?.trim())) && !savedLabels.has(m.label));
+    return incoming.length > 0 ? [...saved, ...incoming] : saved;
+  }, [personaSettings, persona]); // eslint-disable-line react-hooks/exhaustive-deps
   const dqlMetrics = useMemo(() => heatMetrics.filter((m) => m.type === "dql" || Boolean(m.dqlQuery?.trim())), [JSON.stringify(heatMetrics)]); // eslint-disable-line react-hooks/exhaustive-deps
   const customHeatQ = useMemo(
     () => (isTabLoaded && heatMetrics.length > 0)
