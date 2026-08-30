@@ -10,7 +10,7 @@ interface PersonaPickerModalProps {
   onApply: (personaId: PersonaId) => void;
 }
 
-const APP_NAME = "NavigatorIQ";
+const APP_NAME = "NavigatorIQ Launcher";
 const APP_DESC = "Persona-driven operational intelligence for Dynatrace. Select your role to get a tailored assessment of what matters, what needs attention, and where to go next.";
 const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 const BLUE = "#4589FF";
@@ -109,7 +109,7 @@ export function PersonaPickerModal({ appVersion, whatsNew, personas, defaultPers
                 {selected.tabSummary}
               </div>
               <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 6, border: "1px solid rgba(69,137,255,0.15)" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(69,137,255,0.9)", marginBottom: 4 }}>NavigatorIQ Assessment includes:</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(69,137,255,0.9)", marginBottom: 4 }}>NavigatorIQ Launcher Assessment includes:</div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
                   🔴 Critical issues requiring immediate action<br />
                   🟡 Areas to monitor and investigate<br />

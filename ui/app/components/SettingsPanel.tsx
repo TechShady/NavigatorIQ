@@ -491,7 +491,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         {/* Header */}
         <div style={{ padding: "20px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff" }}>⚙️ NavigatorIQ Settings</h2>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff" }}>⚙️ NavigatorIQ Launcher Settings</h2>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Customize app links, alert thresholds, and general preferences</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -535,7 +535,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                   <div>
                     <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — App Links</h3>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>These links appear in the NavigatorIQ App Links panel. Toggle the green dot to show/hide each app.</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>These links appear in the NavigatorIQ Launcher App Links panel. Toggle the green dot to show/hide each app.</p>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => resetPersonaLinks(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
@@ -776,9 +776,9 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                 </div>
 
                 <div style={{ marginTop: 28, padding: "16px 18px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>About NavigatorIQ</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>About NavigatorIQ Launcher</div>
                   <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
-                    NavigatorIQ is an unofficial community app for Dynatrace. It is not supported by Dynatrace.<br />
+                    NavigatorIQ Launcher is an unofficial community app for Dynatrace. It is not supported by Dynatrace.<br />
                     App version: <strong style={{ color: "rgba(255,255,255,0.7)" }}>{APP_VERSION}</strong><br />
                     <a href="https://github.com/TechShady/NavigatorIQ" target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF" }}>GitHub Repository</a>
                   </div>

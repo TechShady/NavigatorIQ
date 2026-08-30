@@ -56,7 +56,7 @@ export function DisclaimerModal() {
         </div>
         <div style={{ padding: "28px 32px" }}>
           <p style={{ margin: "0 0 20px", fontSize: 14.5, lineHeight: 1.7, color: "rgba(255,255,255,0.85)" }}>
-            <strong style={{ color: "#FFFFFF" }}>NavigatorIQ</strong> is not an official Dynatrace application and is not supported by Dynatrace. No support tickets can be opened for this app.
+            <strong style={{ color: "#FFFFFF" }}>NavigatorIQ Launcher</strong> is not an official Dynatrace application and is not supported by Dynatrace. No support tickets can be opened for this app.
           </p>
           <p style={{ margin: "0 0 8px", fontSize: 14.5, lineHeight: 1.7, color: "rgba(255,255,255,0.85)" }}>Report issues or request features on GitHub:</p>
           <a href="https://github.com/TechShady/NavigatorIQ" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: AMBER, textDecoration: "none", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 6, padding: "8px 14px", marginBottom: 20 }}>
@@ -72,7 +72,7 @@ export function DisclaimerModal() {
             <span style={{ fontSize: 14, color: checkHover || dontShow ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.7)", transition: "color 0.15s" }}>Don't show this again</span>
           </div>
           <button onClick={handleContinue} onMouseEnter={() => setBtnHover(true)} onMouseLeave={() => setBtnHover(false)} style={{ width: "100%", padding: "13px 24px", background: btnHover ? `linear-gradient(135deg,${AMBER} 0%,#E8920A 100%)` : `linear-gradient(135deg,${AMBER_DARK} 0%,#B45309 100%)`, border: `1px solid ${btnHover ? AMBER : AMBER_DARK}`, borderRadius: 8, color: "#0D1018", fontSize: 15, fontWeight: 700, cursor: "pointer", letterSpacing: "0.03em", boxShadow: btnHover ? "0 4px 20px rgba(245,158,11,0.5)" : "0 2px 10px rgba(245,158,11,0.25)", transition: "all 0.15s ease" }}>
-            Continue to NavigatorIQ
+            Continue to NavigatorIQ Launcher
           </button>
         </div>
       </div>

@@ -354,7 +354,7 @@ export function NavigatorIQ() {
         {/* Branding */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <span style={{ fontSize: 20 }}>🧭</span>
-          <span style={{ fontSize: 15, fontWeight: 800, color: "#fff", letterSpacing: "0.01em", whiteSpace: "nowrap" }}>NavigatorIQ</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: "#fff", letterSpacing: "0.01em", whiteSpace: "nowrap" }}>NavigatorIQ Launcher</span>
         </div>
 
         {/* Persona chip */}

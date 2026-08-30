@@ -292,7 +292,7 @@ function TypewriterNarrative({ text }: { text: string }) {
     <div style={{ background: "linear-gradient(135deg, rgba(69,137,255,0.07) 0%, rgba(124,58,237,0.04) 100%)", border: "1px solid rgba(69,137,255,0.2)", borderLeft: "3px solid #4589FF", borderRadius: "0 10px 10px 0", padding: "14px 18px", marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 13, color: "#7ab4ff", animation: done ? "none" : "iq-ai-star 2s ease-in-out infinite" }}>✦</span>
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7ab4ff" }}>NavigatorIQ Intelligence</span>
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7ab4ff" }}>NavigatorIQ Launcher Intelligence</span>
         {!done && (
           <span style={{ display: "flex", gap: 3, alignItems: "center", marginLeft: 4 }}>
             {[0, 1, 2].map((i) => (
@@ -452,7 +452,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
       {/* IQ Banner */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>NavigatorIQ Assessment</div>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>NavigatorIQ Launcher Assessment</div>
           <HealthBadge health={assessment.overallHealth} />
         </div>
         <div style={{ display: "flex", gap: 16 }}>
