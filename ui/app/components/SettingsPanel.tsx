@@ -407,8 +407,14 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
     markDirty();
   };
 
-  const getPersonaHeatMetrics = (personaId: PersonaId): HeatMetricConfig[] =>
-    draft.personas[personaId]?.heatMetrics ?? DEFAULT_HEAT_METRICS[personaId] ?? [];
+  const getPersonaHeatMetrics = (personaId: PersonaId): HeatMetricConfig[] => {
+    const saved = draft.personas[personaId]?.heatMetrics;
+    const defaults = DEFAULT_HEAT_METRICS[personaId] ?? [];
+    if (!saved) return defaults;
+    const savedLabels = new Set(saved.map((m) => m.label));
+    const incoming = defaults.filter((m) => (m.type === "dql" || Boolean(m.dqlQuery?.trim())) && !savedLabels.has(m.label));
+    return incoming.length > 0 ? [...saved, ...incoming] : saved;
+  };
 
   const updatePersonaHeatMetrics = (personaId: PersonaId, metrics: HeatMetricConfig[]) => {
     setDraft((prev) => ({
@@ -492,7 +498,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         {/* Tab bar */}
         <div style={{ padding: "12px 28px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 8, flexShrink: 0 }}>
           <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
-          <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Thresholds</button>
+          <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Assessment</button>
           <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>🔥 Hotness</button>
           <button style={tabStyle("personas")} onClick={() => setActiveTab("personas")}>👤 Personas</button>
           <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
@@ -554,7 +560,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                   <div>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Alert Thresholds</h3>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Assessment Thresholds</h3>
                     <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Values that determine Red (critical) and Yellow (warning) classifications in the assessment.</p>
                   </div>
                   <button onClick={() => resetPersonaThresholds(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
@@ -643,7 +649,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
             {activeTab === "personas" && (
               <div>
                 <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: "#fff" }}>Manage Personas</h3>
-                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their App Links, Thresholds, and Hotness metrics in the other tabs.</p>
+                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their App Links, Assessment thresholds, and Hotness metrics in the other tabs.</p>
 
                 {/* Built-in */}
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Built-in Personas</div>
@@ -723,7 +729,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                     + Create Persona
                   </button>
                   <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.6 }}>
-                    After creating, switch to <strong style={{ color: "rgba(255,255,255,0.5)" }}>App Links</strong>, <strong style={{ color: "rgba(255,255,255,0.5)" }}>Thresholds</strong>, or <strong style={{ color: "rgba(255,255,255,0.5)" }}>Hotness</strong> tabs to configure the new persona.
+                    After creating, switch to <strong style={{ color: "rgba(255,255,255,0.5)" }}>App Links</strong>, <strong style={{ color: "rgba(255,255,255,0.5)" }}>Assessment</strong>, or <strong style={{ color: "rgba(255,255,255,0.5)" }}>Hotness</strong> tabs to configure the new persona.
                   </div>
                 </div>
               </div>
