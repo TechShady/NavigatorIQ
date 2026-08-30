@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.3.31";
+export const APP_VERSION = "0.3.32";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -141,12 +141,40 @@ const N1_DQL_QUERY = `fetch spans, from:\${from}, to:\${to}
 | fieldsAdd value = toDouble(s1) - toDouble(c1)
 | sort slot asc`;
 
+const CHATTY_DQL_QUERY = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd slot = bin(start_time, \${interval}), svc = entityName(dt.entity.service)
+| summarize calls = count(), by: {slot, svc}
+| filter calls > 100
+| summarize value = count(), by: {slot}
+| sort slot asc`;
+
+const CIRCULAR_DQL_QUERY = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd slot = bin(start_time, \${interval}), svc = entityName(dt.entity.service), tid = toString(trace.id)
+| summarize appearances = count(), by: {slot, tid, svc}
+| filter appearances > 1
+| summarize value = countDistinct(svc), by: {slot}
+| sort slot asc`;
+
+const SLOW_DQL_QUERY = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd slot = bin(start_time, \${interval}), svc = entityName(dt.entity.service), dur_ms = toDouble(duration) / 1000000.0
+| summarize avg_dur = avg(dur_ms), p99_dur = percentile(dur_ms, 99), total_spans = count(), by: {slot, svc}
+| fieldsAdd variance_ratio = p99_dur / avg_dur
+| filter variance_ratio > 5 and total_spans > 10
+| summarize value = count(), by: {slot}
+| sort slot asc`;
+
 export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   developer: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
     { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.distributedtracing" },
     { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
     { label: "N+1 Queries", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: N1_DQL_QUERY, warningThreshold: 50, criticalThreshold: 100, thresholdBucketHours: 1, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "Chatty APIs", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: CHATTY_DQL_QUERY, warningThreshold: 5, criticalThreshold: 15, thresholdBucketHours: 1, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "Circular Deps", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: CIRCULAR_DQL_QUERY, warningThreshold: 3, criticalThreshold: 10, thresholdBucketHours: 1, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "Slow Consumers", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: SLOW_DQL_QUERY, warningThreshold: 5, criticalThreshold: 15, thresholdBucketHours: 1, exploreAppPath: "dynatrace.distributedtracing" },
   ],
   sre: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },

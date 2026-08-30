@@ -113,9 +113,11 @@ export function NavigatorIQ() {
   const dql0Q = useMemo(() => isTabLoaded && dqlMetrics[0] ? withSeed(buildDqlHeatQuery(dqlMetrics[0], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[0]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
   const dql1Q = useMemo(() => isTabLoaded && dqlMetrics[1] ? withSeed(buildDqlHeatQuery(dqlMetrics[1], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[1]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
   const dql2Q = useMemo(() => isTabLoaded && dqlMetrics[2] ? withSeed(buildDqlHeatQuery(dqlMetrics[2], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[2]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql3Q = useMemo(() => isTabLoaded && dqlMetrics[3] ? withSeed(buildDqlHeatQuery(dqlMetrics[3], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[3]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
   const dql0R = useDql({ query: dql0Q });
   const dql1R = useDql({ query: dql1Q });
   const dql2R = useDql({ query: dql2Q });
+  const dql3R = useDql({ query: dql3Q });
 
   const handleTabChange = (newTab: TimeframeTab) => {
     setTab(newTab);
@@ -221,7 +223,7 @@ export function NavigatorIQ() {
   }), [svcPrevR.data, logPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data, dxTlPR.data, ptlPR.data]);
 
   // ─── Loading state ──────────────────────────────────────────────────────
-  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, customHeatR, dql0R, dql1R, dql2R].some((r) => r.isLoading);
+  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, customHeatR, dql0R, dql1R, dql2R, dql3R].some((r) => r.isLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
@@ -232,12 +234,13 @@ export function NavigatorIQ() {
         dqlMetrics[0] ? parseDqlHeatResult(recs(dql0R), dqlMetrics[0]) : null,
         dqlMetrics[1] ? parseDqlHeatResult(recs(dql1R), dqlMetrics[1]) : null,
         dqlMetrics[2] ? parseDqlHeatResult(recs(dql2R), dqlMetrics[2]) : null,
+        dqlMetrics[3] ? parseDqlHeatResult(recs(dql3R), dqlMetrics[3]) : null,
       ].filter(Boolean) as CustomHeatMetric[];
       const customMetrics = [...standardMetrics, ...dqlResults];
       return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dqlMetrics]
+    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dql3R.data, dqlMetrics]
   );
 
   // ─── Forecast helpers ───────────────────────────────────────────────────
