@@ -275,6 +275,7 @@ export function NavigatorIQ() {
       if (item.title.toLowerCase().includes("cpu")) return curResults.hostHealth?.cpuTimeline ?? [];
       if (item.title.toLowerCase().includes("lcp") || item.title.toLowerCase().includes("experience")) return curResults.digitalExp?.lcpTimeline ?? [];
       if (item.title.toLowerCase().includes("database") || item.title.toLowerCase().includes("query")) return curResults.database?.rtTimeline ?? [];
+      if (item.title.toLowerCase().includes("log")) return curResults.logErrors?.logTimeline ?? [];
       if (item.title.toLowerCase().includes("error") && curResults.serviceHealth) return curResults.serviceHealth.errorTimeline;
       return [];
     })();
@@ -293,18 +294,22 @@ export function NavigatorIQ() {
     const from = `now()-${analyzeDays}d`;
     const to = "now()";
     const title = forecastItem?.title?.toLowerCase() ?? "";
-    const q = title.includes("response") || title.includes("latency")
-      ? serviceHealthQuery(from, to)
-      : title.includes("cpu")
-        ? hostHealthQuery(from, to)
-        : title.includes("lcp") || title.includes("experience")
-          ? digitalExpQuery(from, to)
-          : title.includes("database") || title.includes("query")
-            ? databaseQuery(from, to)
-            : serviceHealthQuery(from, to);
+    const isLog = title.includes("log");
+    const q = isLog
+      ? logErrorsQuery(from, to)
+      : title.includes("response") || title.includes("latency")
+        ? serviceHealthQuery(from, to)
+        : title.includes("cpu")
+          ? hostHealthQuery(from, to)
+          : title.includes("lcp") || title.includes("experience")
+            ? digitalExpQuery(from, to)
+            : title.includes("database") || title.includes("query")
+              ? databaseQuery(from, to)
+              : serviceHealthQuery(from, to);
     try {
       const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 } });
       const records = (res.result as any)?.records ?? [];
+      if (isLog) return parseLogErrors(records)?.logTimeline ?? [];
       const parsed = parseServiceHealth(records);
       return parsed?.rtTimeline ?? [];
     } catch {

@@ -33,7 +33,8 @@ export function serviceHealthQuery(from: string, to: string, interval = "auto"):
 export function logErrorsQuery(from: string, to: string): string {
   return `fetch logs, from:${from}, to:${to}
 | filter status == "ERROR" or status == "FATAL"
-| summarize totalLogErrors=count()`;
+| makeTimeseries logTimeline = count(), interval:auto
+| fieldsAdd totalLogErrors = arraySum(logTimeline)`;
 }
 
 export function hostHealthQuery(from: string, to: string): string {
@@ -188,7 +189,7 @@ export function parseServiceHealth(records: DqlRecord[] | undefined): ServiceHea
 export function parseLogErrors(records: DqlRecord[] | undefined): LogErrorsResult | null {
   const r = records?.[0];
   if (!r) return null;
-  return { totalLogErrors: num(r, "totalLogErrors") };
+  return { totalLogErrors: num(r, "totalLogErrors"), logTimeline: arr(r, "logTimeline") };
 }
 
 export function parseHostHealth(records: DqlRecord[] | undefined): HostHealthResult | null {

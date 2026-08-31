@@ -147,6 +147,7 @@ export interface ServiceHealthResult {
 
 export interface LogErrorsResult {
   totalLogErrors: number;
+  logTimeline: number[];
 }
 
 export interface HostHealthResult {
