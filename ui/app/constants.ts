@@ -199,7 +199,7 @@ const DB_SLOW_QUERIES_DQL = `fetch spans, from:\${from}, to:\${to}
 
 const DB_ERRORS_DQL = `fetch spans, from:\${from}, to:\${to}
 | filter isNotNull(db.system)
-| filter isNotNull(error.type)
+| filter otel.status_code == "ERROR"
 | makeTimeseries value=count(), interval:\${interval}`;
 
 export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
@@ -248,10 +248,10 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector" },
   ],
   network: [
-    { label: "Bytes Sent", metricKey: "dt.host.net.bytes_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.bytes_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
-    { label: "Bytes Received", metricKey: "dt.host.net.bytes_rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.bytes_rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
-    { label: "Packets Sent", metricKey: "dt.host.net.packets.tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.packets.tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
-    { label: "Packets Received", metricKey: "dt.host.net.packets.rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.packets.rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Bytes Sent", metricKey: "dt.process.network.bytes_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.bytes_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Bytes Received", metricKey: "dt.process.network.bytes_rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.bytes_rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Packets Sent", metricKey: "dt.process.network.packets.tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.packets.tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Packets Received", metricKey: "dt.process.network.packets.rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.packets.rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
     { label: "Retransmissions", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.packets.re_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.infraops/explorer/Network" },
   ],
   k8s: [
