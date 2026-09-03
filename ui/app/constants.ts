@@ -270,6 +270,11 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   devops: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
     { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.services" },
+    { label: "Error Rate", metricKey: "dt.service.request.failure_count", denominatorKey: "dt.service.request.count", aggregation: "sum", type: "ratio", isTraffic: false, displayUnit: "pct", warningThreshold: 5, criticalThreshold: 10, exploreAppPath: "dynatrace.services" },
+    { label: "CPU Usage", metricKey: "dt.host.cpu.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.host.cpu.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.infraops" },
+    { label: "Memory Usage", metricKey: "dt.host.memory.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.host.memory.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 90, exploreAppPath: "dynatrace.infraops" },
+    { label: "Log Errors", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: "fetch logs, from:${from}, to:${to}\n| filter status == \"ERROR\" or status == \"FATAL\"\n| makeTimeseries value=count(), interval:${interval}", isTraffic: false, displayUnit: "count", warningThreshold: 20, criticalThreshold: 100, exploreAppPath: "dynatrace.logs" },
   ],
 };
 

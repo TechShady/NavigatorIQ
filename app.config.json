@@ -3,7 +3,7 @@
   "environmentUrl": "https://guu84124.apps.dynatrace.com",
   "app": {
     "name": "NavigatorIQ Launcher",
-    "version": "0.3.62",
+    "version": "0.3.63",
     "icon": "icon.svg",
     "description": "Persona-driven operational intelligence for Dynatrace (community app)",
     "id": "my.navigator.iq.app",
