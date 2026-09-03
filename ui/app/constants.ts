@@ -180,6 +180,28 @@ const SLOW_DQL_QUERY = `fetch spans, from:\${from}, to:\${to}
 | summarize value = count(), by: {slot}
 | sort slot asc`;
 
+const DB_QUERY_VOLUME_DQL = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(db.system)
+| makeTimeseries value=count(), interval:\${interval}`;
+
+const DB_AVG_TIME_DQL = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(db.system)
+| makeTimeseries value=avg(toDouble(duration)/1000000.0), interval:\${interval}`;
+
+const DB_P99_TIME_DQL = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(db.system)
+| makeTimeseries value=percentile(toDouble(duration)/1000000.0, 99), interval:\${interval}`;
+
+const DB_SLOW_QUERIES_DQL = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(db.system)
+| filter duration > 500000000
+| makeTimeseries value=count(), interval:\${interval}`;
+
+const DB_ERRORS_DQL = `fetch spans, from:\${from}, to:\${to}
+| filter isNotNull(db.system)
+| filter isNotNull(error.type)
+| makeTimeseries value=count(), interval:\${interval}`;
+
 export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   developer: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
@@ -210,16 +232,12 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "Process Memory", metricKey: "dt.process.memory.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.process.memory.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops" },
   ],
   dba: [
-    { label: "DB Availability", metricKey: "dt.database.availability", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.availability), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 99, criticalThreshold: 95, exploreAppPath: "dynatrace.database.overview" },
-    { label: "Query Exec Time", metricKey: "dt.database.query.execution_time", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.query.execution_time), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 200, criticalThreshold: 1000, exploreAppPath: "dynatrace.database.overview" },
-    { label: "Query Count", metricKey: "dt.database.query.count", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.database.query.count), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.database.overview" },
-    { label: "Active Connections", metricKey: "dt.database.connections.active", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.connections.active), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "count", warningThreshold: 80, criticalThreshold: 150, exploreAppPath: "dynatrace.database.overview" },
-    { label: "Waiting Connections", metricKey: "dt.database.connections.waiting", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.connections.waiting), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "count", warningThreshold: 5, criticalThreshold: 20, exploreAppPath: "dynatrace.database.overview" },
-    { label: "DB CPU Usage", metricKey: "dt.database.cpu.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.cpu.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.database.overview" },
-    { label: "DB Memory Usage", metricKey: "dt.database.memory.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.memory.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 90, exploreAppPath: "dynatrace.database.overview" },
-    { label: "Buffer Pool Hit", metricKey: "dt.database.buffer_pool.hit_ratio", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.database.buffer_pool.hit_ratio), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 95, criticalThreshold: 85, exploreAppPath: "dynatrace.database.overview" },
-    { label: "I/O Reads", metricKey: "dt.database.io.reads", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.database.io.reads), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.database.overview" },
-    { label: "I/O Writes", metricKey: "dt.database.io.writes", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.database.io.writes), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.database.overview" },
+    { label: "Query Volume", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: DB_QUERY_VOLUME_DQL, isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.database.overview" },
+    { label: "Avg Query Time", metricKey: "", aggregation: "avg", type: "dql", dqlQuery: DB_AVG_TIME_DQL, isTraffic: false, displayUnit: "ms", warningThreshold: 200, criticalThreshold: 1000, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "P99 Query Time", metricKey: "", aggregation: "avg", type: "dql", dqlQuery: DB_P99_TIME_DQL, isTraffic: false, displayUnit: "ms", warningThreshold: 1000, criticalThreshold: 5000, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "Slow Queries", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: DB_SLOW_QUERIES_DQL, isTraffic: false, displayUnit: "count", warningThreshold: 10, criticalThreshold: 50, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "DB Errors", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: DB_ERRORS_DQL, isTraffic: false, displayUnit: "count", warningThreshold: 5, criticalThreshold: 20, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "N+1 Queries", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: N1_DQL_QUERY, isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 100, thresholdBucketHours: 1, exploreAppPath: "my.pattern.problems.app", repoUrl: "https://github.com/TechShady/pattern-problem-app" },
   ],
   digital: [
     { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 2500, criticalThreshold: 4000, exploreAppPath: "dynatrace.experience.vitals" },
@@ -230,7 +248,11 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector" },
   ],
   network: [
-    { label: "Network Packet Errors", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Bytes Sent", metricKey: "dt.host.net.bytes_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.bytes_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Bytes Received", metricKey: "dt.host.net.bytes_rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.bytes_rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Packets Sent", metricKey: "dt.host.net.packets.tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.packets.tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Packets Received", metricKey: "dt.host.net.packets.rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.host.net.packets.rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
+    { label: "Retransmissions", metricKey: "dt.process.network.packets.re_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.packets.re_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.infraops/explorer/Network" },
   ],
   k8s: [
     { label: "Container CPU Usage", metricKey: "dt.kubernetes.container.cpu_usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.kubernetes.container.cpu_usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 95, exploreAppPath: "dynatrace.kubernetes" },
