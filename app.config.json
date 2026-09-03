@@ -3,9 +3,15 @@
   "environmentUrl": "https://guu84124.apps.dynatrace.com",
   "app": {
     "name": "NavigatorIQ Launcher",
-    "version": "0.3.38",
+    "version": "0.3.60",
+    "icon": "icon.svg",
     "description": "Persona-driven operational intelligence for Dynatrace (community app)",
     "id": "my.navigator.iq.app",
+    "csp": {
+      "img-src": [
+        { "value": "https://guu84124.apps.dynatrace.com", "comment": "deployment status probe via icon.svg" }
+      ]
+    },
     "scopes": [
       { "name": "storage:logs:read", "comment": "read log data" },
       { "name": "storage:buckets:read", "comment": "read storage buckets" },

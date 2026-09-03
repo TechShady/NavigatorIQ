@@ -70,6 +70,8 @@ export interface HeatMetricConfig {
   warningThreshold?: number;
   criticalThreshold?: number;
   exploreAppPath?: string;
+  /** When set, the Investigate button checks if the app is deployed before navigating; shows repo link if not */
+  repoUrl?: string;
   /** When set, thresholds are calibrated for this many hours and auto-scale with bucket interval */
   thresholdBucketHours?: number;
 }

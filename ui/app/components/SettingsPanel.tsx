@@ -146,8 +146,9 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
   const isHourly = (metric.thresholdBucketHours ?? 0) > 0;
 
   return (
-    <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", alignItems: "center", marginBottom: 8 }}>
+    <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", alignItems: "center", marginBottom: 8 }}>
+        <div title="Drag to reorder" style={{ color: "rgba(255,255,255,0.2)", fontSize: 13, padding: "0 6px 0 0", cursor: "grab", userSelect: "none", letterSpacing: "-3px" }}>⋮⋮</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div
             title={metric.isTraffic ? "Traffic (neutral)" : "Performance metric"}
@@ -323,6 +324,8 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
   const [newPersonaIcon, setNewPersonaIcon] = useState("👤");
   const [newPersonaName, setNewPersonaName] = useState("");
   const [newPersonaDesc, setNewPersonaDesc] = useState("");
+  const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   const markDirty = useCallback(() => setHasChanges(true), []);
 
@@ -411,20 +414,30 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
     const saved = draft.personas[personaId]?.heatMetrics;
     const defaults = DEFAULT_HEAT_METRICS[personaId] ?? [];
     if (!saved) return defaults;
-    const defaultsByLabel = new Map(defaults.map((m) => [m.label, m]));
-    const merged = saved.map((m) => {
-      const def = defaultsByLabel.get(m.label);
-      if (!def) return m;
+    // Rebuild in defaults order so new default metrics appear at their natural position.
+    // Saved values override defaults; user-added custom metrics (not in defaults) go at end.
+    const savedByLabel = new Map(saved.map((m) => [m.label, m]));
+    const defaultLabels = new Set(defaults.map((m) => m.label));
+    const result = defaults.map((def) => {
+      const m = savedByLabel.get(def.label);
+      if (!m) return def;
       return {
         ...m,
+        metricKey: def.metricKey,
+        denominatorKey: def.denominatorKey,
+        type: def.type,
+        dqlQuery: def.dqlQuery,
+        aggregation: def.aggregation,
+        isTraffic: def.isTraffic,
+        displayUnit: def.displayUnit,
         warningThreshold: m.warningThreshold ?? def.warningThreshold,
         criticalThreshold: m.criticalThreshold ?? def.criticalThreshold,
         exploreAppPath: m.exploreAppPath ?? def.exploreAppPath,
+        repoUrl: m.repoUrl ?? def.repoUrl,
       };
     });
-    const savedLabels = new Set(saved.map((m) => m.label));
-    const incoming = defaults.filter((m) => (m.type === "dql" || Boolean(m.dqlQuery?.trim())) && !savedLabels.has(m.label));
-    return incoming.length > 0 ? [...merged, ...incoming] : merged;
+    const custom = saved.filter((m) => !defaultLabels.has(m.label));
+    return custom.length > 0 ? [...result, ...custom] : result;
   };
 
   const updatePersonaHeatMetrics = (personaId: PersonaId, metrics: HeatMetricConfig[]) => {
@@ -625,21 +638,53 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                       {activePersona === "security" && <span style={{ color: "rgba(255,180,60,0.9)" }}> Security also uses attack event data as a fallback when no Grail metrics return results.</span>}
                     </p>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", marginRight: 4 }}>⠿ drag to reorder</span>
                     <button onClick={() => resetPersonaHeatMetrics(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
                     <button onClick={() => addHeatMetric(activePersona)} style={{ background: "rgba(255,120,30,0.1)", border: "1px solid rgba(255,120,30,0.3)", borderRadius: 6, color: "#FF8C42", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>+ Add Metric</button>
                   </div>
                 </div>
                 <>
-                  {getPersonaHeatMetrics(activePersona).map((metric, i) => (
-                    <HeatMetricRow
-                      key={i}
-                      metric={metric}
-                      index={i}
-                      onChange={(idx, updated) => { const next = [...getPersonaHeatMetrics(activePersona)]; next[idx] = updated; updatePersonaHeatMetrics(activePersona, next); }}
-                      onRemove={(idx) => { const next = getPersonaHeatMetrics(activePersona).filter((_, j) => j !== idx); updatePersonaHeatMetrics(activePersona, next); }}
-                    />
-                  ))}
+                  {getPersonaHeatMetrics(activePersona).map((metric, i) => {
+                    const hm = getPersonaHeatMetrics(activePersona);
+                    const isOver = dragOverIdx === i && dragSrcIdx !== null && dragSrcIdx !== i;
+                    return (
+                      <div
+                        key={`${activePersona}-${i}`}
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDragSrcIdx(i); }}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverIdx !== i) setDragOverIdx(i); }}
+                        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (dragSrcIdx !== null && dragSrcIdx !== i) {
+                            const next = [...hm];
+                            const [removed] = next.splice(dragSrcIdx, 1);
+                            next.splice(i, 0, removed);
+                            updatePersonaHeatMetrics(activePersona, next);
+                          }
+                          setDragSrcIdx(null); setDragOverIdx(null);
+                        }}
+                        onDragEnd={() => { setDragSrcIdx(null); setDragOverIdx(null); }}
+                        style={{
+                          opacity: dragSrcIdx === i ? 0.4 : 1,
+                          outline: isOver ? "2px dashed rgba(69,137,255,0.6)" : "2px solid transparent",
+                          outlineOffset: 2,
+                          borderRadius: 10,
+                          marginBottom: 8,
+                          transition: "opacity 0.15s",
+                          cursor: "grab",
+                        }}
+                      >
+                        <HeatMetricRow
+                          metric={metric}
+                          index={i}
+                          onChange={(idx, updated) => { const next = [...hm]; next[idx] = updated; updatePersonaHeatMetrics(activePersona, next); }}
+                          onRemove={(idx) => { const next = hm.filter((_, j) => j !== idx); updatePersonaHeatMetrics(activePersona, next); }}
+                        />
+                      </div>
+                    );
+                  })}
                   {getPersonaHeatMetrics(activePersona).length === 0 && (
                     <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
                       No heat metrics configured. Click "+ Add Metric" to add one, or "Reset to defaults" to restore the built-in metrics.

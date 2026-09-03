@@ -178,23 +178,29 @@ export function HotnessForecastPanel({
     setAppliedForecast(pendingForecast);
   };
 
-  // SVG dimensions — doubled from original
-  const W = 1660, H = 520;
+  // SVG dimensions — viewBox-based for responsive scaling
+  const W = 1200, H = 460;
   const mL = 72, mR = 44, mT = 40, mB = 64;
   const cW = W - mL - mR, cH = H - mT - mB;
   const histLen = trainingData.length, fLen = forecastData.length;
-  const total   = histLen + fLen;
 
-  const allZ  = [...trainingData, ...forecastData, ...upper, ...lower].filter(isFinite);
-  const maxY  = Math.max(3, ...(allZ.length ? allZ : [3])) * 1.15;
-  const xOf   = (i: number) => (i / Math.max(total - 1, 1)) * cW;
-  const yOf   = (v: number) => cH - Math.max(0, Math.min(v, maxY)) / maxY * cH;
-  const barW  = Math.max(2, cW / Math.max(total, 1) - 1.5);
+  // Scale from actual data only — confidence band upper values are excluded so they don't crush the bars
+  const dataVals = [...trainingData, ...forecastData].filter(isFinite);
+  const dataMax  = dataVals.length ? Math.max(...dataVals) : 0;
+  const maxY     = dataMax > 2 ? Math.max(dataMax, 3) * 1.15 : Math.max(dataMax * 1.5, 1.0);
+  const yOf     = (v: number) => cH - Math.max(0, Math.min(v, maxY)) / maxY * cH;
+
+  // "Now" always at horizontal center — equal space for history and forecast
+  const halfW    = cW / 2;
+  const xHist    = (i: number) => (i / Math.max(histLen, 1)) * halfW;
+  const xFore    = (i: number) => halfW + (i / Math.max(fLen, 1)) * halfW;
+  const histBarW = Math.max(1.5, halfW / Math.max(histLen, 1) - 1);
+  const foreBarW = Math.max(1.5, halfW / Math.max(fLen, 1) - 1);
 
   const bandPts = upper.length > 0
     ? [
-        ...upper.map((v, i) => `${mL + xOf(histLen + i)},${mT + yOf(v)}`),
-        ...lower.slice().reverse().map((v, i) => `${mL + xOf(histLen + fLen - 1 - i)},${mT + yOf(v)}`),
+        ...upper.map((v, i) => `${mL + xFore(i) + foreBarW / 2},${mT + yOf(v)}`),
+        ...lower.slice().reverse().map((v, i) => `${mL + xFore(fLen - 1 - i) + foreBarW / 2},${mT + yOf(v)}`),
       ].join(" ")
     : "";
 
@@ -202,7 +208,7 @@ export function HotnessForecastPanel({
 
   return createPortal(
     <div style={{
-      position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: 1740,
+      position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: "min(1200px, calc(100vw - 40px))",
       background: "rgba(14,18,36,0.97)", border: "1px solid rgba(69,137,255,0.3)",
       borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.78)",
       fontFamily: '"Inter",system-ui,sans-serif', color: "#e8eeff",
@@ -264,11 +270,14 @@ export function HotnessForecastPanel({
 
       {/* Chart */}
       <div style={{ padding: "8px 20px 0" }}>
-        <svg width={W} height={H} style={{ display: "block", overflow: "visible" }}
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", overflow: "visible" }}
           onMouseLeave={() => setHoverIdx(null)}>
 
-          {/* Threshold lines */}
-          {([0, 0.75, 1.5, 2.5] as number[]).map(z => {
+          {/* Top-of-scale label */}
+          <text x={mL - 8} y={mT + 5} textAnchor="end" fill="rgba(255,255,255,0.28)" fontSize={11}>{maxY.toFixed(1)}</text>
+
+          {/* Threshold lines — only render levels within the current Y scale */}
+          {([0, 0.75, 1.5, 2.5] as number[]).filter(z => z < maxY * 0.95).map(z => {
             const y = mT + yOf(z);
             return (
               <g key={z}>
@@ -287,29 +296,26 @@ export function HotnessForecastPanel({
           {trainingData.map((v, i) => {
             const bH = Math.max(2, Math.min(v, maxY) / maxY * cH);
             return (
-              <rect key={i} x={mL + xOf(i)} y={mT + cH - bH} width={barW} height={bH}
+              <rect key={i} x={mL + xHist(i)} y={mT + cH - bH} width={histBarW} height={bH}
                 fill={hotnessColor(v)} opacity={hoverIdx === i ? 1 : 0.82}
                 onMouseEnter={() => setHoverIdx(i)} style={{ cursor: "crosshair" }} />
             );
           })}
 
-          {/* "Now" divider */}
-          {histLen > 0 && (() => {
-            const nx = mL + xOf(histLen - 1) + barW + 1;
-            return (
-              <>
-                <line x1={nx} y1={mT} x2={nx} y2={mT + cH}
-                  stroke="rgba(255,255,255,0.45)" strokeWidth={1.4} strokeDasharray="6,5" />
-                <text x={nx + 6} y={mT + 17} fill="rgba(255,255,255,0.55)" fontSize={13} fontWeight="bold">Now</text>
-              </>
-            );
-          })()}
+          {/* "Now" divider — always at horizontal center */}
+          {histLen > 0 && (
+            <>
+              <line x1={mL + halfW} y1={mT} x2={mL + halfW} y2={mT + cH}
+                stroke="rgba(255,255,255,0.45)" strokeWidth={1.4} strokeDasharray="6,5" />
+              <text x={mL + halfW + 6} y={mT + 17} fill="rgba(255,255,255,0.55)" fontSize={13} fontWeight="bold">Now</text>
+            </>
+          )}
 
           {/* Forecast bars */}
           {forecastData.map((v, i) => {
             const bH = Math.max(2, Math.min(v, maxY) / maxY * cH);
             return (
-              <rect key={i} x={mL + xOf(histLen + i)} y={mT + cH - bH} width={barW} height={bH}
+              <rect key={i} x={mL + xFore(i)} y={mT + cH - bH} width={foreBarW} height={bH}
                 fill={hotnessColor(v)} opacity={hoverIdx === histLen + i ? 0.9 : 0.32}
                 onMouseEnter={() => setHoverIdx(histLen + i)} style={{ cursor: "crosshair" }} />
             );
@@ -318,13 +324,13 @@ export function HotnessForecastPanel({
           {/* Forecast trend line */}
           {fLen > 1 && (
             <polyline
-              points={forecastData.map((v, i) => `${mL + xOf(histLen + i) + barW / 2},${mT + yOf(v)}`).join(" ")}
+              points={forecastData.map((v, i) => `${mL + xFore(i) + foreBarW / 2},${mT + yOf(v)}`).join(" ")}
               fill="none" stroke="rgba(100,160,255,0.75)" strokeWidth={2.2} strokeDasharray="8,5" />
           )}
 
           {/* Peak marker */}
           {peakIdx >= 0 && peakZ >= 0.75 && (() => {
-            const cx = mL + xOf(histLen + peakIdx) + barW / 2;
+            const cx = mL + xFore(peakIdx) + foreBarW / 2;
             const cy = mT + yOf(peakZ);
             return (
               <>
@@ -341,7 +347,9 @@ export function HotnessForecastPanel({
             const isForecast = hoverIdx >= histLen;
             const v = isForecast ? forecastData[hoverIdx - histLen] : trainingData[hoverIdx];
             if (v === undefined) return null;
-            const cx = mL + xOf(hoverIdx) + barW / 2;
+            const cx = isForecast
+              ? mL + xFore(hoverIdx - histLen) + foreBarW / 2
+              : mL + xHist(hoverIdx) + histBarW / 2;
             const cy = mT + yOf(v) - 14;
             return (
               <g>
@@ -362,7 +370,7 @@ export function HotnessForecastPanel({
           {/* X-axis labels */}
           <text x={mL} y={mT + cH + 18} textAnchor="middle" fill="rgba(255,255,255,0.38)" fontSize={12}>−{appliedLookback}d</text>
           {histLen > 0 && (
-            <text x={mL + xOf(histLen)} y={mT + cH + 18} textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize={12}>Now</text>
+            <text x={mL + halfW} y={mT + cH + 18} textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize={12}>Now</text>
           )}
           <text x={mL + cW} y={mT + cH + 18} textAnchor="end" fill="rgba(255,255,255,0.38)" fontSize={12}>+{appliedForecast}d</text>
           <text x={mL} y={mT + cH + 38} textAnchor="start" fill="rgba(255,255,255,0.22)" fontSize={11} fontStyle="italic">Hotness Z-score (σ)</text>

@@ -354,18 +354,21 @@ export function buildDqlHeatQuery(metric: HeatMetricConfig, from: string, to: st
 }
 
 export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: HeatMetricConfig): ParsedCustomMetric | null {
-  if (!records || records.length === 0) return null;
+  if (!records) return null;
+  const fmt = metric.displaySuffix?.trim()
+    ? (v: number) => (Number.isInteger(v) ? String(v) : parseFloat(v.toFixed(2)).toString()) + metric.displaySuffix!.trim()
+    : makeMetricFmt(metric.displayUnit);
+  if (records.length === 0) {
+    // Counter with no events in window — return zero baseline so metric still appears in heat chart.
+    return { label: metric.label, timeline: [0, 0], isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt };
+  }
   let timeline: number[];
   if (records.length === 1 && Array.isArray(records[0]["value"])) {
-    timeline = arr(records[0], "value");
+    timeline = parseMetricTimeline(arr(records[0], "value"), metric.displayUnit);
   } else {
     timeline = records.map((r) => { const v = r["value"]; const n = Number(v); return isFinite(n) ? n : 0; });
   }
   if (timeline.length < 2) return null;
-  const suffix = metric.displaySuffix?.trim();
-  const fmt = suffix
-    ? (v: number) => (Number.isInteger(v) ? String(v) : parseFloat(v.toFixed(2)).toString()) + suffix
-    : makeMetricFmt(metric.displayUnit);
   return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt };
 }
 

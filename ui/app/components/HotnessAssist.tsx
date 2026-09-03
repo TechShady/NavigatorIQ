@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { HeatBucketDetail, HeatBucketMetric, PersonaId, HeatMetricConfig } from "../types";
@@ -263,6 +263,7 @@ interface NextStepEntry {
   appPath: string;
   severity: "critical" | "warning";
   reason: string;
+  repoUrl?: string;
 }
 
 function formatThresholdDisplay(value: number, metric: HeatMetricConfig): string {
@@ -324,7 +325,7 @@ function buildNextSteps(
         thresholdDisplay = formatThresholdDisplay(metric.warningThreshold, metric);
       }
       if (severity) {
-        entries.push({ label: metric.label, appPath: metric.exploreAppPath!, severity,
+        entries.push({ label: metric.label, appPath: metric.exploreAppPath!, severity, repoUrl: metric.repoUrl,
           reason: `Min ${metric.label}: ${candidate.displayValue} — drops below ${severity} threshold of ${thresholdDisplay}` });
       }
     } else {
@@ -344,7 +345,7 @@ function buildNextSteps(
           : raw;
       }
       if (severity) {
-        entries.push({ label: metric.label, appPath: metric.exploreAppPath!, severity,
+        entries.push({ label: metric.label, appPath: metric.exploreAppPath!, severity, repoUrl: metric.repoUrl,
           reason: `Peak ${metric.label}: ${candidate.displayValue} — exceeds ${severity} threshold of ${thresholdDisplay}` });
       }
     }
@@ -358,8 +359,62 @@ const INSIGHT_COLORS: Record<HotnessAnalysis["insights"][0]["severity"], string>
   critical: "#FF073A", warning: "#FFF04D", info: "#4589FF", good: "#10B981",
 };
 
+// Probes each app by loading its icon.svg as an <img>.
+// Deployed apps serve a real SVG; non-deployed paths return the HTML SPA shell,
+// which fails image decoding → onerror → status false.
+// img-src CSP is explicitly widened to *.apps.dynatrace.com in app.config.json.
+function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
+  const [statuses, setStatuses] = useState<Record<string, boolean>>({});
+  const key = appIds.join(",");
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    let envUrl = "";
+    try { envUrl = getEnvironmentUrl(); } catch { /* relative fallback */ }
+    const cleanups: Array<() => void> = [];
+    for (const appId of appIds) {
+      const img = new window.Image();
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (cancelled || settled) return;
+        settled = true;
+        img.onload = img.onerror = null;
+      }, 5000);
+      img.onload = () => {
+        if (cancelled || settled) return;
+        settled = true;
+        clearTimeout(timer);
+        setStatuses(prev => ({ ...prev, [appId]: true }));
+      };
+      img.onerror = () => {
+        if (cancelled || settled) return;
+        settled = true;
+        clearTimeout(timer);
+        setStatuses(prev => ({ ...prev, [appId]: false }));
+      };
+      img.src = `${envUrl}/ui/apps/${appId}/icon.svg?_probe=${Date.now()}`;
+      cleanups.push(() => { clearTimeout(timer); img.onload = img.onerror = null; });
+    }
+    return () => { cancelled = true; cleanups.forEach(fn => fn()); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return statuses;
+}
+
 export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
+
+  // Compute steps here so the probe hook can be called at component level
+  const steps = useMemo(
+    () => heatMetrics && heatMetrics.length > 0 ? buildNextSteps(heatMetrics, bucketDetails, intervalMinutes) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [heatMetrics, bucketDetails, intervalMinutes],
+  );
+  const customAppIds = useMemo(
+    () => [...new Set(steps.filter(s => s.repoUrl).map(s => s.appPath))],
+    [steps],
+  );
+  const deploymentStatuses = useAppDeploymentStatuses(customAppIds);
   const burstLabels: Record<HotnessAnalysis["burstType"], string> = {
     stable: "Stable — no elevated activity",
     transient: "Transient spike — self-resolved",
@@ -471,25 +526,46 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
         )}
 
         {/* Next Steps */}
-        {heatMetrics && heatMetrics.length > 0 && (() => {
-          const steps = buildNextSteps(heatMetrics, bucketDetails, intervalMinutes);
-          return (
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Next Steps</div>
-              {steps.length === 0 ? (
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", padding: "8px 0" }}>
-                  All heat metrics are within configured thresholds — no specific actions required.
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {steps.map((step, i) => {
-                    const isCrit = step.severity === "critical";
-                    const color = isCrit ? "#FF073A" : "#FFF04D";
-                    return (
-                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8 }}>
-                        <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{isCrit ? "🔴" : "⚠️"}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5, marginBottom: 6 }}>{step.reason}</div>
+        {steps.length >= 0 && heatMetrics && heatMetrics.length > 0 && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Next Steps</div>
+            {steps.length === 0 ? (
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", padding: "8px 0" }}>
+                All heat metrics are within configured thresholds — no specific actions required.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {steps.map((step, i) => {
+                  const isCrit = step.severity === "critical";
+                  const color = isCrit ? "#FF073A" : "#FFF04D";
+                  // Show GitHub link when app has a repoUrl AND deployment probe has not confirmed it as deployed
+                  const showGitHub = !!step.repoUrl && deploymentStatuses[step.appPath] !== true;
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8 }}>
+                      <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{isCrit ? "🔴" : "⚠️"}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5, marginBottom: 6 }}>{step.reason}</div>
+                        {showGitHub ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              onClick={() => {
+                                try { window.open(`${getEnvironmentUrl()}/ui/apps/${step.appPath}`, "_blank"); }
+                                catch { window.open(`/ui/apps/${step.appPath}`, "_blank"); }
+                              }}
+                              style={{ background: `${color}15`, border: `1px solid ${color}40`, borderRadius: 5, color, fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer" }}
+                            >
+                              ↗ Investigate {step.label}
+                            </button>
+                            <a
+                              href={step.repoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ fontSize: 11, color: "#4589FF", fontWeight: 600, textDecoration: "underline", cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              ↗ Deploy from GitHub
+                            </a>
+                          </div>
+                        ) : (
                           <button
                             onClick={() => {
                               try { window.open(`${getEnvironmentUrl()}/ui/apps/${step.appPath}`, "_blank"); }
@@ -499,15 +575,15 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
                           >
                             ↗ Investigate {step.label}
                           </button>
-                        </div>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>,
     document.body

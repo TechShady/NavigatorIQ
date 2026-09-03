@@ -476,14 +476,19 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
     return Math.round(Math.max(40, Math.min(98, (1 - Math.min(1, (std / Math.abs(mean)) * 1.5)) * 100)));
   }, [historicalData]);
 
-  const allValues = useMemo(() => [...historicalData, ...forecastData, ...confidence.upper], [historicalData, forecastData, confidence.upper]);
   const totalPoints = historicalData.length + forecastData.length;
   const MARGIN = { top: 40, right: 60, bottom: 60, left: 70 };
   const W = 900; const H = 400;
   const plotW = W - MARGIN.left - MARGIN.right;
   const plotH = H - MARGIN.top - MARGIN.bottom;
-  const yMin = Math.min(0, ...allValues.filter(isFinite));
-  const yMax = Math.max(...[...historicalData, ...forecastData].filter(isFinite)) * 1.1 || 1;
+  const yMin = 0;
+  const yMax = (() => {
+    const vals = [...historicalData, ...forecastData].filter(isFinite).sort((a, b) => a - b);
+    if (!vals.length) return 1;
+    const p95 = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.95))];
+    // Cap at p95*2.5 so a runaway forecast spike doesn't crush historical data at the bottom
+    return Math.max(Math.min(vals[vals.length - 1], Math.max(p95 * 2.5, 0.001)) * 1.15, 0.001);
+  })();
   const yRange = yMax - yMin || 1;
   const xScale = (i: number) => MARGIN.left + (totalPoints > 1 ? (i / (totalPoints - 1)) * plotW : 0);
   const yScale = (v: number) => MARGIN.top + plotH - ((v - yMin) / yRange) * plotH;
