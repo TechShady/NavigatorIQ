@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useDql, useAppState, useSetAppState } from "@dynatrace-sdk/react-hooks";
+import { useDql, useAppState, useSetAppState, useUserAppState, useSetUserAppState } from "@dynatrace-sdk/react-hooks";
 import { queryExecutionClient } from "@dynatrace-sdk/client-query";
 import type { PersonaId, TimeframeTab, SavedSettings, AssessmentItem } from "../types";
 import {
@@ -21,11 +21,14 @@ import {
   networkQuery, networkErrorsQuery, parseNetwork,
   digitalExpQuery, syntheticQuery, parseDigitalExp,
   deploymentQuery, workflowQuery, parseDeployments,
+  deploymentTimelineQuery, parseDeploymentTimeline,
+  davisProblemsQuery, parseDavisProblems,
   digitalTimelapseQuery, parseDigitalTimelapse,
   platformTimelineQuery, parsePlatformTimeline,
   securityTimelapseQuery, parseSecurityTimelapse,
   buildCustomHeatQuery, parseCustomHeat, buildDqlHeatQuery, parseDqlHeatResult,
 } from "../queries";
+import type { DavisProblemsResult } from "../queries";
 import { computeAssessment } from "../intelligence";
 import type { CustomHeatMetric } from "../intelligence";
 import { PersonaPickerModal } from "../components/PersonaPickerModal";
@@ -35,7 +38,8 @@ import { AppLinksPanel } from "../components/AppLinksPanel";
 import { ForecastModal } from "../components/ForecastModal";
 import "./NavigatorIQ.css";
 
-const SETTINGS_KEY = "iq-settings-v1";
+const SHARED_SETTINGS_KEY = "iq-settings-v1";    // shared across all users (customPersonas only)
+const USER_SETTINGS_KEY = "iq-user-settings-v1";  // per-user (personas + global)
 const EMPTY_SETTINGS: SavedSettings = { personas: {}, global: {} };
 
 function parseSettings(raw: string | undefined): SavedSettings {
@@ -70,19 +74,27 @@ export function NavigatorIQ() {
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [forecastItem, setForecastItem] = useState<AssessmentItem | null>(null);
-  // ─── Settings from app-state (global/shared across all users) ──────────
-  const settingsState = useAppState({ key: SETTINGS_KEY });
-  const { execute: saveSettingsRaw } = useSetAppState();
+  // ─── Settings: per-user (personas + global) + shared (customPersonas) ──
+  const sharedState = useAppState({ key: SHARED_SETTINGS_KEY });
+  const userState = useUserAppState({ key: USER_SETTINGS_KEY });
+  const { execute: saveSharedRaw } = useSetAppState();
+  const { execute: saveUserRaw } = useSetUserAppState();
   const [localSettings, setLocalSettings] = useState<SavedSettings | null>(null);
-  const settings = useMemo(
-    () => localSettings ?? parseSettings(settingsState.data?.value as string | undefined),
-    [localSettings, settingsState.data?.value]
-  );
+  const settings = useMemo(() => {
+    if (localSettings) return localSettings;
+    const shared = parseSettings(sharedState.data?.value as string | undefined);
+    const user = parseSettings(userState.data?.value as string | undefined);
+    // Migration: if user key is empty, pull personas+global from old shared key
+    const hasUserData = Object.keys(user.personas).length > 0 || !!user.global?.defaultPersona;
+    const userPart = hasUserData ? user : { personas: shared.personas, global: shared.global };
+    return { ...userPart, customPersonas: shared.customPersonas };
+  }, [localSettings, sharedState.data?.value, userState.data?.value]);
 
   const handleSaveSettings = useCallback((s: SavedSettings) => {
-    saveSettingsRaw({ key: SETTINGS_KEY, body: { value: JSON.stringify(s) } });
+    saveUserRaw({ key: USER_SETTINGS_KEY, body: { value: JSON.stringify({ personas: s.personas, global: s.global }) } });
+    saveSharedRaw({ key: SHARED_SETTINGS_KEY, body: { value: JSON.stringify({ customPersonas: s.customPersonas }) } });
     setLocalSettings(s);
-  }, [saveSettingsRaw]);
+  }, [saveUserRaw, saveSharedRaw]);
 
   // ─── Auto-refresh ───────────────────────────────────────────────────────
   const refreshMs = settings.global?.refreshIntervalMs ?? 0;
@@ -197,6 +209,8 @@ export function NavigatorIQ() {
   const ptlQ     = isTabLoaded ? withSeed(platformTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
   const ptlPQ    = isTabLoaded ? withSeed(platformTimelineQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
   const secTlQ   = isTabLoaded ? withSeed(securityTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const deplTlQ  = isTabLoaded ? withSeed(deploymentTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const davisQ   = isTabLoaded ? withSeed(davisProblemsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
   const svcR      = useDql({ query: svcQ });
@@ -230,6 +244,8 @@ export function NavigatorIQ() {
   const ptlR      = useDql({ query: ptlQ });
   const ptlPR     = useDql({ query: ptlPQ });
   const secTlR    = useDql({ query: secTlQ });
+  const deplTlR   = useDql({ query: deplTlQ });
+  const davisR    = useDql({ query: davisQ });
 
   // ─── Parse results ──────────────────────────────────────────────────────
 
@@ -263,7 +279,10 @@ export function NavigatorIQ() {
   }), [svcPrevR.data, logPrevR.data, hostPrevR.data, k8sPrevR.data, secPrevR.data, atkPrevR.data, dbPrevR.data, netErrPR.data, netConPR.data, dxPrevR.data, synthPR.data, deplPR.data, wfPR.data, dxTlPR.data, ptlPR.data]);
 
   // ─── Loading state ──────────────────────────────────────────────────────
-  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, customHeatR, dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R].some((r) => r.isLoading);
+  const deploymentBuckets = useMemo(() => parseDeploymentTimeline(recs(deplTlR)), [deplTlR.data]);
+  const davisProblems: DavisProblemsResult | null = useMemo(() => parseDavisProblems(recs(davisR)), [davisR.data]);
+
+  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, deplTlR, davisR, customHeatR, dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R].some((r) => r.isLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
@@ -429,7 +448,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
+          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblems={davisProblems} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />

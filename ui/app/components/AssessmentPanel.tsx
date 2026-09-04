@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, HeatMetricConfig } from "../types";
+import type { DavisProblemsResult } from "../queries";
 import { HotnessAssistButton, HotnessAssistPanel } from "./HotnessAssist";
 import { HotnessForecastPanel } from "./HotnessForecastPanel";
 
@@ -12,6 +13,8 @@ interface AssessmentPanelProps {
   bucketMs?: number;
   persona?: PersonaId;
   heatMetrics?: HeatMetricConfig[];
+  deploymentBuckets?: boolean[] | null;
+  davisProblems?: DavisProblemsResult | null;
 }
 
 // ─── Drag hook ─────────────────────────────────────────────────────────────
@@ -194,19 +197,21 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, deploymentBuckets,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
   onAssist: () => void;
   onForecast: () => void;
   persona?: PersonaId;
+  deploymentBuckets?: boolean[] | null;
 }) {
   if (scores.length < 2) return null;
   const maxZ = Math.max(...scores, 1);
   const barColor = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
 
   const [forecastHover, setForecastHover] = useState(false);
+  const hasDeployments = deploymentBuckets && deploymentBuckets.some(Boolean);
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -238,24 +243,35 @@ function ClickableHeatStrip({
       </div>
 
       {/* Bars */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 180, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: "pointer" }}>
+      <div style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 180, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: "pointer" }}>
         {scores.map((z, i) => {
           const sel = selectedBucket === i;
+          const hasDeploy = deploymentBuckets?.[i] === true;
           return (
             <div
               key={i}
-              title={`Bucket ${i + 1}: Z=${z.toFixed(2)} — click to diagnose`}
-              onClick={() => onSelectBucket(sel ? null : i)}
-              style={{
-                flex: 1, height: `${Math.max(10, (z / maxZ) * 100)}%`,
-                background: barColor(z), borderRadius: 2,
-                opacity: selectedBucket === null ? 0.85 : sel ? 1 : 0.35,
-                transition: "all 0.2s",
-                boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
-                outline: sel ? `2px solid ${barColor(z)}` : "none",
-                outlineOffset: 1,
-              }}
-            />
+              style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", position: "relative" }}
+            >
+              {hasDeploy && (
+                <div
+                  title="Deployment"
+                  style={{ position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", zIndex: 1 }}
+                />
+              )}
+              <div
+                title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""} — click to diagnose`}
+                onClick={() => onSelectBucket(sel ? null : i)}
+                style={{
+                  width: "100%", height: `${Math.max(10, (z / maxZ) * 100)}%`,
+                  background: barColor(z), borderRadius: 2,
+                  opacity: selectedBucket === null ? 0.85 : sel ? 1 : 0.35,
+                  transition: "all 0.2s",
+                  boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
+                  outline: sel ? `2px solid ${barColor(z)}` : "none",
+                  outlineOffset: 1,
+                }}
+              />
+            </div>
           );
         })}
       </div>
@@ -267,6 +283,7 @@ function ClickableHeatStrip({
           {[{ z: 0, label: "Normal", color: "#4589FF" }, { z: 0.75, label: "Elevated", color: "#FFF04D" }, { z: 1.5, label: "Warm", color: "#FF3D9A" }, { z: 2.5, label: "Spike", color: "#FF073A" }].map((l) => (
             <span key={l.z} style={{ fontSize: 9, color: l.color }}>● {l.label}</span>
           ))}
+          {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>● Deployment</span>}
         </div>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now →</span>
       </div>
@@ -399,7 +416,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblems }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -474,6 +491,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onSelectBucket={handleSelectBucket}
           onAssist={() => setAssistOpen(true)}
           onForecast={() => setForecastOpen(true)}
+          deploymentBuckets={deploymentBuckets}
         />
       )}
 
@@ -506,6 +524,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           bucketLabel={assessment.bucketLabel}
           persona={persona}
           heatMetrics={heatMetrics}
+          problems={davisProblems}
           intervalMinutes={Math.round(bucketMs / 60000)}
           pos={assistDrag.pos}
           onDragStart={assistDrag.onDragStart}

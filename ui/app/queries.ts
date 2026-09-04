@@ -130,6 +130,20 @@ export function deploymentQuery(from: string, to: string): string {
 | summarize totalDeployments=count()`;
 }
 
+export function deploymentTimelineQuery(from: string, to: string, interval = "auto"): string {
+  return `fetch events, from:${from}, to:${to}
+| filter event.type == "DEPLOYMENT_EVENT" or event.type == "APPLICATION_DEPLOYMENT" or event.type == "CUSTOM_DEPLOYMENT"
+| fieldsAdd _c = 1.0
+| makeTimeseries { value = sum(_c) }, interval:${interval}`;
+}
+
+export function davisProblemsQuery(from: string, to: string): string {
+  return `fetch events, from:${from}, to:${to}
+| filter event.type == "DAVIS_PROBLEM"
+| filter toUpperCase(toString(event.status)) == "OPEN"
+| summarize count=count(), titles=collectDistinct(event.title)`;
+}
+
 // Per-bucket RUM timelapse — drives Digital Experience heat strip
 // Query is verbatim from user-confirmed working Frontend Overview / User Journey app queries.
 // Only addition: from:/to: on the fetch line. Field names, spacing, and overwrite pattern preserved.
@@ -289,6 +303,29 @@ export function parsePlatformTimeline(records: DqlRecord[] | undefined): Platfor
   const memTimeline = arr(r, "mem");
   if (cpuTimeline.length === 0) return null;
   return { cpuTimeline, memTimeline };
+}
+
+export function parseDeploymentTimeline(records: DqlRecord[] | undefined): boolean[] | null {
+  const r = records?.[0];
+  if (!r) return null;
+  const values = arr(r, "value");
+  if (values.length < 2) return null;
+  if (!values.some((v) => v > 0)) return null;
+  return values.map((v) => v > 0);
+}
+
+export interface DavisProblemsResult { count: number; titles: string[] }
+
+export function parseDavisProblems(records: DqlRecord[] | undefined): DavisProblemsResult | null {
+  const r = records?.[0];
+  if (!r) return null;
+  const count = num(r, "count");
+  if (count === 0) return null;
+  const rawTitles = r["titles"];
+  const titles: string[] = Array.isArray(rawTitles)
+    ? (rawTitles as unknown[]).filter((t): t is string => typeof t === "string")
+    : [];
+  return { count, titles };
 }
 
 export function parseDeployments(deployRecords: DqlRecord[] | undefined, workflowRecords: DqlRecord[] | undefined): DeploymentResult | null {

@@ -520,12 +520,19 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         </div>
 
         {/* Tab bar */}
-        <div style={{ padding: "12px 28px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 8, flexShrink: 0 }}>
-          <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
-          <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Assessment</button>
-          <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>🔥 Hotness</button>
-          <button style={tabStyle("personas")} onClick={() => setActiveTab("personas")}>👤 Personas</button>
-          <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
+        <div style={{ padding: "12px 28px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 12, flexShrink: 0, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(69,137,255,0.6)", whiteSpace: "nowrap" }}>Personal</span>
+            <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
+            <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Assessment</button>
+            <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>🔥 Hotness</button>
+            <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
+          </div>
+          <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,180,0,0.7)", whiteSpace: "nowrap" }}>All Users</span>
+            <button style={tabStyle("personas")} onClick={() => setActiveTab("personas")}>👤 Personas</button>
+          </div>
         </div>
 
         {/* Content */}

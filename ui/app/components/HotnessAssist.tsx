@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { HeatBucketDetail, HeatBucketMetric, PersonaId, HeatMetricConfig } from "../types";
+import type { DavisProblemsResult } from "../queries";
 
 // ─── Analysis ─────────────────────────────────────────────────────────────
 
@@ -250,6 +251,7 @@ export interface HotnessAssistPanelProps {
   bucketLabel: string;
   persona?: PersonaId;
   heatMetrics?: HeatMetricConfig[];
+  problems?: DavisProblemsResult | null;
   intervalMinutes?: number;
   pos: { x: number; y: number };
   onDragStart: (e: React.MouseEvent<HTMLDivElement>) => void;
@@ -401,7 +403,7 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
   return statuses;
 }
 
-export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
+export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, problems, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
 
   // Compute steps here so the probe hook can be called at component level
@@ -522,6 +524,28 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
                 <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)", lineHeight: 1.55 }}>{ins.text}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Davis Problems */}
+        {problems && problems.count > 0 && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
+              ⚠️ Davis Problems · {problems.count} Open
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {problems.titles.slice(0, 5).map((title, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 11px", background: "rgba(255,7,58,0.07)", border: "1px solid rgba(255,7,58,0.25)", borderRadius: 7 }}>
+                  <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>🔴</span>
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>{title}</span>
+                </div>
+              ))}
+              {problems.count > 5 && (
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", padding: "4px 11px" }}>
+                  + {problems.count - 5} more open problem{problems.count - 5 !== 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
