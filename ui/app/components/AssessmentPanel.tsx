@@ -366,7 +366,6 @@ function AssessmentItemRow({ item, onForecast, index }: { item: AssessmentItem; 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
             {item.builtinAppPath && <AppButton label={item.builtinAppLabel ?? "Open App"} onClick={() => openApp(item.builtinAppPath!)} color="#4589FF" />}
             {item.customApp && <AppButton label={item.customApp.label} onClick={() => openApp(item.customApp!.appPath)} color="#7C3AED" />}
-            {onForecast && item.metricValue !== undefined && <AppButton label="Forecast" onClick={() => onForecast(item)} color="#F59E0B" />}
           </div>
         </div>
       )}
