@@ -1,8 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
+import { useUserAppState, useSetUserAppState } from "@dynatrace-sdk/react-hooks";
 import type { HeatBucketDetail, HeatBucketMetric, PersonaId, HeatMetricConfig } from "../types";
 import type { DavisProblemsResult } from "../queries";
+
+const INSTALLED_APPS_KEY = "iq-installed-apps-v1";
+
+function parseInstalledApps(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
 
 // ─── Analysis ─────────────────────────────────────────────────────────────
 
@@ -361,9 +369,11 @@ const INSIGHT_COLORS: Record<HotnessAnalysis["insights"][0]["severity"], string>
   critical: "#FF073A", warning: "#FFF04D", info: "#4589FF", good: "#10B981",
 };
 
-// Probes each app via fetch to check icon.svg Content-Type.
-// Deployed apps return image/svg+xml → true. Non-deployed return text/html (SPA shell) → false.
-// Same-origin fetch (all apps share the tenant domain) — no CORS needed, no img-src CSP required.
+// Probes each app by fetching icon.svg and inspecting both Content-Type AND body content.
+// Deployed apps serve an SVG file; non-deployed paths return the HTML SPA shell.
+// Strategy: check Content-Type first (fast); if that's ambiguous (DT CDN may return text/html
+// for all paths), read the first few bytes of the body to see if it's real SVG markup.
+// Same-origin fetch (all apps share the tenant domain) — no CORS, no img-src CSP needed.
 // Condition: showGitHub only when status === false (confirmed not deployed), never on undefined.
 function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
   const [statuses, setStatuses] = useState<Record<string, boolean>>({});
@@ -380,14 +390,21 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
       let settled = false;
       const timer = setTimeout(() => {
         if (!settled) { settled = true; controller.abort(); }
-      }, 5000);
+      }, 6000);
       fetch(`${envUrl}/ui/apps/${appId}/icon.svg`, { signal: controller.signal, cache: "no-store" })
-        .then((res) => {
+        .then(async (res) => {
           if (cancelled || settled) return;
           settled = true;
           clearTimeout(timer);
+          if (!res.ok) { setStatuses(prev => ({ ...prev, [appId]: false })); return; }
           const ct = res.headers.get("content-type") ?? "";
-          setStatuses(prev => ({ ...prev, [appId]: res.ok && (ct.includes("svg") || ct.includes("image")) }));
+          if (ct.includes("svg") || ct.includes("image")) {
+            setStatuses(prev => ({ ...prev, [appId]: true })); return;
+          }
+          // Content-Type may be wrong (DT CDN quirk) — inspect body to confirm SVG vs HTML
+          const text = await res.text();
+          const head = text.trimStart().substring(0, 15).toLowerCase();
+          setStatuses(prev => ({ ...prev, [appId]: head.startsWith("<svg") || head.startsWith("<?xml") }));
         })
         .catch((err) => {
           if (cancelled || settled) return;
@@ -406,6 +423,20 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
 export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, problems, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
 
+  // Per-user "installed apps" list — overrides probe results for reliable hiding of GitHub links
+  const installedAppsState = useUserAppState({ key: INSTALLED_APPS_KEY });
+  const { execute: saveInstalledApps } = useSetUserAppState();
+  const [localInstalled, setLocalInstalled] = useState<string[] | null>(null);
+  const installedApps = useMemo(
+    () => localInstalled ?? parseInstalledApps(installedAppsState.data?.value as string | undefined),
+    [localInstalled, installedAppsState.data?.value],
+  );
+  const markInstalled = useCallback((appPath: string) => {
+    const updated = [...new Set([...installedApps, appPath])];
+    saveInstalledApps({ key: INSTALLED_APPS_KEY, body: { value: JSON.stringify(updated) } });
+    setLocalInstalled(updated);
+  }, [installedApps, saveInstalledApps]);
+
   // Compute steps here so the probe hook can be called at component level
   const steps = useMemo(
     () => heatMetrics && heatMetrics.length > 0 ? buildNextSteps(heatMetrics, bucketDetails, intervalMinutes) : [],
@@ -417,6 +448,16 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
     [steps],
   );
   const deploymentStatuses = useAppDeploymentStatuses(customAppIds);
+
+  // Auto-mark as installed when probe confirms an app is deployed
+  useEffect(() => {
+    for (const [appId, status] of Object.entries(deploymentStatuses)) {
+      if (status === true && !installedApps.includes(appId)) {
+        markInstalled(appId);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deploymentStatuses]);
   const burstLabels: Record<HotnessAnalysis["burstType"], string> = {
     stable: "Stable — no elevated activity",
     transient: "Transient spike — self-resolved",
@@ -562,34 +603,14 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
                 {steps.map((step, i) => {
                   const isCrit = step.severity === "critical";
                   const color = isCrit ? "#FF073A" : "#FFF04D";
-                  // Show GitHub link when app has a repoUrl AND deployment probe has not confirmed it as deployed
-                  const showGitHub = !!step.repoUrl && deploymentStatuses[step.appPath] === false;
+                  const isInstalled = installedApps.includes(step.appPath);
+                  const showGitHub = !!step.repoUrl && !isInstalled;
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8 }}>
                       <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{isCrit ? "🔴" : "⚠️"}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5, marginBottom: 6 }}>{step.reason}</div>
-                        {showGitHub ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <button
-                              onClick={() => {
-                                try { window.open(`${getEnvironmentUrl()}/ui/apps/${step.appPath}`, "_blank"); }
-                                catch { window.open(`/ui/apps/${step.appPath}`, "_blank"); }
-                              }}
-                              style={{ background: `${color}15`, border: `1px solid ${color}40`, borderRadius: 5, color, fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer" }}
-                            >
-                              ↗ Investigate {step.label}
-                            </button>
-                            <a
-                              href={step.repoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ fontSize: 11, color: "#4589FF", fontWeight: 600, textDecoration: "underline", cursor: "pointer", whiteSpace: "nowrap" }}
-                            >
-                              ↗ Deploy from GitHub
-                            </a>
-                          </div>
-                        ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <button
                             onClick={() => {
                               try { window.open(`${getEnvironmentUrl()}/ui/apps/${step.appPath}`, "_blank"); }
@@ -599,7 +620,26 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
                           >
                             ↗ Investigate {step.label}
                           </button>
-                        )}
+                          {showGitHub && (
+                            <>
+                              <a
+                                href={step.repoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ fontSize: 11, color: "#4589FF", fontWeight: 600, textDecoration: "underline", cursor: "pointer", whiteSpace: "nowrap" }}
+                              >
+                                ↗ Deploy from GitHub
+                              </a>
+                              <button
+                                onClick={() => markInstalled(step.appPath)}
+                                title="Hide this link — app is already installed"
+                                style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, padding: "3px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
+                              >
+                                ✓ Already installed
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
