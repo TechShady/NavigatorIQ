@@ -361,10 +361,10 @@ const INSIGHT_COLORS: Record<HotnessAnalysis["insights"][0]["severity"], string>
   critical: "#FF073A", warning: "#FFF04D", info: "#4589FF", good: "#10B981",
 };
 
-// Probes each app by loading its icon.svg as an <img>.
-// Deployed apps serve a real SVG; non-deployed paths return the HTML SPA shell,
-// which fails image decoding → onerror → status false.
-// img-src CSP is explicitly widened to *.apps.dynatrace.com in app.config.json.
+// Probes each app via fetch to check icon.svg Content-Type.
+// Deployed apps return image/svg+xml → true. Non-deployed return text/html (SPA shell) → false.
+// Same-origin fetch (all apps share the tenant domain) — no CORS needed, no img-src CSP required.
+// Condition: showGitHub only when status === false (confirmed not deployed), never on undefined.
 function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
   const [statuses, setStatuses] = useState<Record<string, boolean>>({});
   const key = appIds.join(",");
@@ -373,31 +373,31 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
     let cancelled = false;
     let envUrl = "";
     try { envUrl = getEnvironmentUrl(); } catch { /* relative fallback */ }
-    const cleanups: Array<() => void> = [];
+    const controllers: AbortController[] = [];
     for (const appId of appIds) {
-      const img = new window.Image();
+      const controller = new AbortController();
+      controllers.push(controller);
       let settled = false;
       const timer = setTimeout(() => {
-        if (cancelled || settled) return;
-        settled = true;
-        img.onload = img.onerror = null;
+        if (!settled) { settled = true; controller.abort(); }
       }, 5000);
-      img.onload = () => {
-        if (cancelled || settled) return;
-        settled = true;
-        clearTimeout(timer);
-        setStatuses(prev => ({ ...prev, [appId]: true }));
-      };
-      img.onerror = () => {
-        if (cancelled || settled) return;
-        settled = true;
-        clearTimeout(timer);
-        setStatuses(prev => ({ ...prev, [appId]: false }));
-      };
-      img.src = `${envUrl}/ui/apps/${appId}/icon.svg?_probe=${Date.now()}`;
-      cleanups.push(() => { clearTimeout(timer); img.onload = img.onerror = null; });
+      fetch(`${envUrl}/ui/apps/${appId}/icon.svg`, { signal: controller.signal, cache: "no-store" })
+        .then((res) => {
+          if (cancelled || settled) return;
+          settled = true;
+          clearTimeout(timer);
+          const ct = res.headers.get("content-type") ?? "";
+          setStatuses(prev => ({ ...prev, [appId]: res.ok && (ct.includes("svg") || ct.includes("image")) }));
+        })
+        .catch((err) => {
+          if (cancelled || settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if ((err as Error).name === "AbortError") return; // timeout — leave as undefined (assume deployed)
+          setStatuses(prev => ({ ...prev, [appId]: false }));
+        });
     }
-    return () => { cancelled = true; cleanups.forEach(fn => fn()); };
+    return () => { cancelled = true; controllers.forEach(c => c.abort()); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return statuses;
@@ -563,7 +563,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
                   const isCrit = step.severity === "critical";
                   const color = isCrit ? "#FF073A" : "#FFF04D";
                   // Show GitHub link when app has a repoUrl AND deployment probe has not confirmed it as deployed
-                  const showGitHub = !!step.repoUrl && deploymentStatuses[step.appPath] !== true;
+                  const showGitHub = !!step.repoUrl && deploymentStatuses[step.appPath] === false;
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8 }}>
                       <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{isCrit ? "🔴" : "⚠️"}</span>

@@ -36,6 +36,7 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import { AssessmentPanel } from "../components/AssessmentPanel";
 import { AppLinksPanel } from "../components/AppLinksPanel";
 import { ForecastModal } from "../components/ForecastModal";
+import { HelpModal } from "../components/HelpModal";
 import "./NavigatorIQ.css";
 
 const SHARED_SETTINGS_KEY = "iq-settings-v1";    // shared across all users (customPersonas only)
@@ -73,6 +74,7 @@ export function NavigatorIQ() {
   const [visitedTabs, setVisitedTabs] = useState<Set<TimeframeTab>>(new Set(["2h"]));
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [forecastItem, setForecastItem] = useState<AssessmentItem | null>(null);
   // ─── Settings: per-user (personas + global) + shared (customPersonas) ──
   const sharedState = useAppState({ key: SHARED_SETTINGS_KEY });
@@ -437,6 +439,13 @@ export function NavigatorIQ() {
             ⟳
           </button>
           <button
+            onClick={() => setHelpOpen(true)}
+            title="Help"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 700, padding: "5px 10px", cursor: "pointer", lineHeight: 1 }}
+          >
+            ?
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             style={{ background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 6, color: "#7ab4ff", fontSize: 12, fontWeight: 600, padding: "5px 12px", cursor: "pointer" }}
           >
@@ -456,6 +465,8 @@ export function NavigatorIQ() {
       </div>
 
       {/* ── Modals ── */}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+
       {settingsOpen && (
         <SettingsPanel
           settings={settings}
