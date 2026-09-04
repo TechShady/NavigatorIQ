@@ -316,19 +316,29 @@ export function NavigatorIQ() {
   const [forecastColor, setForecastColor] = useState("#4589FF");
   const [forecastFromMs, setForecastFromMs] = useState(0);
   const [forecastToMs, setForecastToMs] = useState(0);
+  // tracks which data source / field to use when requerying forecast over a longer range
+  const [forecastRequeryType, setForecastRequeryType] = useState<
+    "svcRt" | "svcErr" | "cpu" | "lcp" | "db" | "log" | "dxErr" | "dxDur" | "dxTtfb" | "dxFcp"
+  >("svcRt");
 
   const handleForecast = useCallback((item: AssessmentItem) => {
+    const t = item.title.toLowerCase();
+    type RequeryType = "svcRt" | "svcErr" | "cpu" | "lcp" | "db" | "log" | "dxErr" | "dxDur" | "dxTtfb" | "dxFcp";
+    let requeryType: RequeryType = "svcRt";
     const sparkline = (() => {
-      if (item.title.toLowerCase().includes("response") || item.title.toLowerCase().includes("latency")) return curResults.serviceHealth?.rtTimeline ?? [];
-      if (item.title.toLowerCase().includes("cpu")) return curResults.hostHealth?.cpuTimeline ?? [];
-      if (item.title.toLowerCase().includes("lcp") || item.title.toLowerCase().includes("experience")) return curResults.digitalExp?.lcpTimeline ?? [];
-      if (item.title.toLowerCase().includes("database") || item.title.toLowerCase().includes("query")) return curResults.database?.rtTimeline ?? [];
-      if (item.title.toLowerCase().includes("log")) return curResults.logErrors?.logTimeline ?? [];
-      if (item.title.toLowerCase().includes("error")) {
+      if (t.includes("response") || t.includes("latency")) { requeryType = "svcRt"; return curResults.serviceHealth?.rtTimeline ?? []; }
+      if (t.includes("cpu")) { requeryType = "cpu"; return curResults.hostHealth?.cpuTimeline ?? []; }
+      if (t.includes("lcp") || t.includes("experience")) { requeryType = "lcp"; return curResults.digitalTimelapse?.lcpTimeline ?? curResults.digitalExp?.lcpTimeline ?? []; }
+      if (t.includes("database") || t.includes("query")) { requeryType = "db"; return curResults.database?.rtTimeline ?? []; }
+      if (t.includes("log")) { requeryType = "log"; return curResults.logErrors?.logTimeline ?? []; }
+      if (t.includes("error")) {
         const svcTl = curResults.serviceHealth?.errorTimeline;
-        if (svcTl?.length) return svcTl;
-        return (curResults.digitalExp as any)?.errorRateTimeline ?? [];
+        if (svcTl?.length) { requeryType = "svcErr"; return svcTl; }
+        requeryType = "dxErr"; return curResults.digitalTimelapse?.errorRateTimeline ?? [];
       }
+      if (t.includes("duration")) { requeryType = "dxDur"; return curResults.digitalTimelapse?.durationTimeline ?? []; }
+      if (t.includes("ttfb")) { requeryType = "dxTtfb"; return curResults.digitalTimelapse?.ttfbTimeline ?? []; }
+      if (t.includes("fcp")) { requeryType = "dxFcp"; return curResults.digitalTimelapse?.lcpTimeline ?? []; }
       return [];
     })();
     const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
@@ -340,34 +350,37 @@ export function NavigatorIQ() {
     setForecastToMs(nowMs);
     setForecastFromMs(nowMs - (durationMs[tab] ?? 3600000));
     setForecastItem(item);
+    setForecastRequeryType(requeryType);
   }, [curResults, tab]);
 
   const handleForecastRequery = useCallback(async (analyzeDays: number, _datapointMinutes: number): Promise<number[]> => {
     const from = `now()-${analyzeDays}d`;
     const to = "now()";
-    const title = forecastItem?.title?.toLowerCase() ?? "";
-    const isLog = title.includes("log");
-    const q = isLog
-      ? logErrorsQuery(from, to)
-      : title.includes("response") || title.includes("latency")
-        ? serviceHealthQuery(from, to)
-        : title.includes("cpu")
-          ? hostHealthQuery(from, to)
-          : title.includes("lcp") || title.includes("experience")
-            ? digitalExpQuery(from, to)
-            : title.includes("database") || title.includes("query")
-              ? databaseQuery(from, to)
-              : serviceHealthQuery(from, to);
+    const isDx = forecastRequeryType.startsWith("dx");
+    const q = forecastRequeryType === "log" ? logErrorsQuery(from, to)
+      : forecastRequeryType === "cpu" ? hostHealthQuery(from, to)
+      : forecastRequeryType === "db" ? databaseQuery(from, to)
+      : isDx ? digitalTimelapseQuery(from, to)
+      : serviceHealthQuery(from, to);
     try {
       const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 } });
       const records = (res.result as any)?.records ?? [];
-      if (isLog) return parseLogErrors(records)?.logTimeline ?? [];
+      if (forecastRequeryType === "log") return parseLogErrors(records)?.logTimeline ?? [];
+      if (isDx) {
+        const parsed = parseDigitalTimelapse(records);
+        if (!parsed) return forecastSparkline;
+        if (forecastRequeryType === "dxErr") return parsed.errorRateTimeline;
+        if (forecastRequeryType === "dxDur") return parsed.durationTimeline;
+        if (forecastRequeryType === "dxTtfb") return parsed.ttfbTimeline;
+        return parsed.lcpTimeline;
+      }
       const parsed = parseServiceHealth(records);
+      if (forecastRequeryType === "svcErr") return parsed?.errorTimeline ?? [];
       return parsed?.rtTimeline ?? [];
     } catch {
       return forecastSparkline;
     }
-  }, [forecastItem, forecastSparkline]);
+  }, [forecastRequeryType, forecastSparkline]);
 
   // ─── Persona picker ─────────────────────────────────────────────────────
   const handlePersonaApply = useCallback((p: PersonaId) => {
