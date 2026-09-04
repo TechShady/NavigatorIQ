@@ -324,7 +324,11 @@ export function NavigatorIQ() {
       if (item.title.toLowerCase().includes("lcp") || item.title.toLowerCase().includes("experience")) return curResults.digitalExp?.lcpTimeline ?? [];
       if (item.title.toLowerCase().includes("database") || item.title.toLowerCase().includes("query")) return curResults.database?.rtTimeline ?? [];
       if (item.title.toLowerCase().includes("log")) return curResults.logErrors?.logTimeline ?? [];
-      if (item.title.toLowerCase().includes("error") && curResults.serviceHealth) return curResults.serviceHealth.errorTimeline;
+      if (item.title.toLowerCase().includes("error")) {
+        const svcTl = curResults.serviceHealth?.errorTimeline;
+        if (svcTl?.length) return svcTl;
+        return (curResults.digitalExp as any)?.errorRateTimeline ?? [];
+      }
       return [];
     })();
     const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
@@ -431,6 +435,7 @@ export function NavigatorIQ() {
 
         {/* Right controls */}
         <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
+          <span style={{ fontSize: 11, opacity: 0.4, fontFamily: "monospace", marginRight: 4 }}>v{APP_VERSION}</span>
           <button
             onClick={() => setRefreshSeed((s) => s + 1)}
             title="Refresh queries"
