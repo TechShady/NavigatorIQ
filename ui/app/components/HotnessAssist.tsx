@@ -18,15 +18,22 @@ export interface HotnessAnalysis {
   summary: string;
   worstIdx: number;
   worstZ: number;
+  worst2Idx: number;
+  worst2Z: number;
   bestIdx: number;
   bestZ: number;
+  best2Idx: number;
+  best2Z: number;
   hotBuckets: number;
   criticalBuckets: number;
   maxConsecutiveHot: number;
   burstType: "stable" | "transient" | "sustained" | "chronic";
   worstDriver: string;
   worstMetrics: HeatBucketMetric[];
+  worst2Metrics: HeatBucketMetric[];
   bestMetrics: HeatBucketMetric[];
+  best2Metrics: HeatBucketMetric[];
+  usableCount: number;
   insights: Array<{ severity: "critical" | "warning" | "info" | "good"; icon: string; text: string }>;
 }
 
@@ -37,23 +44,36 @@ export function analyzeHotness(
 ): HotnessAnalysis {
   if (heatScores.length === 0) {
     return {
-      summary: "No hotness data available for this timeframe.", worstIdx: 0, worstZ: 0,
-      bestIdx: 0, bestZ: 0, hotBuckets: 0, criticalBuckets: 0, maxConsecutiveHot: 0,
-      burstType: "stable", worstDriver: "N/A", worstMetrics: [], bestMetrics: [],
+      summary: "No hotness data available for this timeframe.",
+      worstIdx: 0, worstZ: 0, worst2Idx: 0, worst2Z: 0,
+      bestIdx: 0, bestZ: 0, best2Idx: 0, best2Z: 0,
+      hotBuckets: 0, criticalBuckets: 0, maxConsecutiveHot: 0,
+      burstType: "stable", worstDriver: "N/A",
+      worstMetrics: [], worst2Metrics: [], bestMetrics: [], best2Metrics: [],
+      usableCount: 0,
       insights: [{ severity: "info", icon: "ℹ️", text: "Collect more data to enable Hotness Assist analysis." }],
     };
   }
 
-  let worstIdx = 0, bestIdx = 0;
-  for (let i = 0; i < heatScores.length; i++) {
-    if (heatScores[i] > heatScores[worstIdx]) worstIdx = i;
-    if (heatScores[i] < heatScores[bestIdx]) bestIdx = i;
-  }
+  // Drop the last bucket — it may be a partial/incomplete interval
+  const usable = heatScores.length > 1 ? heatScores.slice(0, -1) : heatScores;
+  const usableDetails = bucketDetails.length > 1 ? bucketDetails.slice(0, -1) : bucketDetails;
 
-  const worstZ = heatScores[worstIdx] ?? 0;
-  const bestZ = heatScores[bestIdx] ?? 0;
-  const worstMetrics = bucketDetails[worstIdx]?.metrics ?? [];
-  const bestMetrics = bucketDetails[bestIdx]?.metrics ?? [];
+  // Find top-2 worst (highest z) and top-2 best (lowest z)
+  const ranked = usable.map((z, i) => ({ z, i })).sort((a, b) => b.z - a.z);
+  const worstIdx = ranked[0]?.i ?? 0;
+  const worst2Idx = ranked.length > 1 ? (ranked[1]?.i ?? worstIdx) : worstIdx;
+  const bestIdx = ranked[ranked.length - 1]?.i ?? 0;
+  const best2Idx = ranked.length > 1 ? (ranked[ranked.length - 2]?.i ?? bestIdx) : bestIdx;
+
+  const worstZ = usable[worstIdx] ?? 0;
+  const worst2Z = usable[worst2Idx] ?? 0;
+  const bestZ = usable[bestIdx] ?? 0;
+  const best2Z = usable[best2Idx] ?? 0;
+  const worstMetrics = usableDetails[worstIdx]?.metrics ?? [];
+  const worst2Metrics = usableDetails[worst2Idx]?.metrics ?? [];
+  const bestMetrics = usableDetails[bestIdx]?.metrics ?? [];
+  const best2Metrics = usableDetails[best2Idx]?.metrics ?? [];
 
   const perfMetrics = worstMetrics.filter((m) => !m.isTraffic && m.zScore > 0).sort((a, b) => b.zScore - a.zScore);
   let worstDriver = "Mixed issues";
@@ -65,13 +85,13 @@ export function analyzeHotness(
   }
 
   let hotBuckets = 0, criticalBuckets = 0;
-  for (const z of heatScores) {
+  for (const z of usable) {
     if (z >= 0.75) hotBuckets++;
     if (z >= 2.5) criticalBuckets++;
   }
 
   let maxRun = 0, currentRun = 0;
-  for (const z of heatScores) {
+  for (const z of usable) {
     if (z >= 0.75) { currentRun++; maxRun = Math.max(maxRun, currentRun); }
     else currentRun = 0;
   }
@@ -88,12 +108,20 @@ export function analyzeHotness(
   } else if (worstZ >= 0.75) {
     insights.push({ severity: "info", icon: "📈", text: `Peak at bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}) remained in tolerable range.` });
   } else {
-    insights.push({ severity: "good", icon: "✅", text: `All ${heatScores.length} buckets within normal operating range — no elevated activity detected.` });
+    insights.push({ severity: "good", icon: "✅", text: `All ${usable.length} analyzed buckets within normal operating range — no elevated activity detected.` });
   }
 
   if (bestZ < 0.5 && worstZ >= 1.0) {
     const bestNote = bestMetrics[0] ? ` — ${bestMetrics[0].label}: ${bestMetrics[0].displayValue}` : "";
     insights.push({ severity: "good", icon: "✨", text: `Best conditions at bucket ${bestIdx + 1} (Z=${bestZ.toFixed(2)})${bestNote}. Use as your SLO performance baseline.` });
+  }
+
+  if (worst2Idx !== worstIdx && worst2Z >= 0.75) {
+    const commonBad = worstMetrics.filter(m => !m.isTraffic && m.zScore > 0.75).map(m => m.label)
+      .filter(lbl => (worst2Metrics.find(m => m.label === lbl)?.zScore ?? 0) > 0.75);
+    if (commonBad.length > 0) {
+      insights.push({ severity: "warning", icon: "🔁", text: `Consistent signal across both worst windows: ${commonBad.join(", ")} elevated in both bucket ${worstIdx + 1} and bucket ${worst2Idx + 1}.` });
+    }
   }
 
   if (burstType === "chronic") {
@@ -113,9 +141,11 @@ export function analyzeHotness(
     : hotBuckets > 0 ? `${hotBuckets} bucket${hotBuckets !== 1 ? "s" : ""} elevated`
     : "all buckets within normal operating range";
   const burstDesc = burstType !== "stable" ? ` (${burstType} pattern, max ${maxRun} consecutive)` : "";
-  const summary = `Analyzed ${heatScores.length} ${bucketLabel} bucket${heatScores.length !== 1 ? "s" : ""}. ${spikeSummary.charAt(0).toUpperCase() + spikeSummary.slice(1)}${burstDesc}. Worst: bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}, driver: ${worstDriver}). Best: bucket ${bestIdx + 1} (Z=${bestZ.toFixed(2)}).`;
+  const w2note = worst2Idx !== worstIdx ? ` 2nd worst: bucket ${worst2Idx + 1} (Z=${worst2Z.toFixed(1)}).` : "";
+  const b2note = best2Idx !== bestIdx ? ` 2nd best: bucket ${best2Idx + 1} (Z=${best2Z.toFixed(2)}).` : "";
+  const summary = `Analyzed ${usable.length} ${bucketLabel} bucket${usable.length !== 1 ? "s" : ""} (last excluded as potentially incomplete). ${spikeSummary.charAt(0).toUpperCase() + spikeSummary.slice(1)}${burstDesc}. Worst: bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}, driver: ${worstDriver}).${w2note} Best: bucket ${bestIdx + 1} (Z=${bestZ.toFixed(2)}).${b2note}`;
 
-  return { summary, worstIdx, worstZ, bestIdx, bestZ, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, bestMetrics, insights };
+  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, insights };
 }
 
 // ─── Button ────────────────────────────────────────────────────────────────
@@ -164,7 +194,7 @@ function AnimatedSummary({ text }: { text: string }) {
 
 // ─── Mini hotness chart ────────────────────────────────────────────────────
 
-function MiniHotnessChart({ scores, worstIdx, bestIdx }: { scores: number[]; worstIdx: number; bestIdx: number }) {
+function MiniHotnessChart({ scores, worstIdx, worst2Idx, bestIdx, best2Idx }: { scores: number[]; worstIdx: number; worst2Idx: number; bestIdx: number; best2Idx: number }) {
   if (scores.length < 2) return null;
   const W = 640, H = 72, LH = 14;
   const maxZ = Math.max(...scores, 1);
@@ -172,19 +202,22 @@ function MiniHotnessChart({ scores, worstIdx, bestIdx }: { scores: number[]; wor
   const color = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const xOf = (i: number) => (i / Math.max(scores.length - 1, 1)) * (W - barW);
   const bH = (z: number) => Math.max(3, (z / maxZ) * H);
+  const markers: { i: number; label: string; color: string }[] = [];
+  markers.push({ i: worstIdx, label: "▲W1", color: "#FF073A" });
+  if (worst2Idx !== worstIdx) markers.push({ i: worst2Idx, label: "▲W2", color: "#FF3D9A" });
+  markers.push({ i: bestIdx, label: "▽B1", color: "#10B981" });
+  if (best2Idx !== bestIdx) markers.push({ i: best2Idx, label: "▽B2", color: "#34D399" });
   return (
     <svg width={W} height={H + LH} style={{ display: "block", borderRadius: 6, background: "rgba(255,255,255,0.03)" }}>
       {scores.map((z, i) => (
         <rect key={i} x={xOf(i)} y={H - bH(z)} width={barW} height={bH(z)} fill={color(z)} opacity={0.85} rx={1} />
       ))}
-      {scores.map((z, i) => {
-        if (i !== worstIdx && i !== bestIdx) return null;
-        const isWorst = i === worstIdx;
-        const cx = xOf(i) + barW / 2;
+      {markers.map((m) => {
+        const cx = xOf(m.i) + barW / 2;
         return (
-          <g key={`marker-${i}`}>
-            <line x1={cx} y1={0} x2={cx} y2={H} stroke={isWorst ? "#FF073A" : "#10B981"} strokeWidth={1} strokeDasharray="3,2" opacity={0.5} />
-            <text x={cx} y={H + LH - 2} textAnchor="middle" fill={isWorst ? "#FF073A" : "#10B981"} fontSize={9} fontWeight="bold">{isWorst ? "▲worst" : "▽best"}</text>
+          <g key={`marker-${m.i}-${m.label}`}>
+            <line x1={cx} y1={0} x2={cx} y2={H} stroke={m.color} strokeWidth={1} strokeDasharray="3,2" opacity={0.5} />
+            <text x={cx} y={H + LH - 2} textAnchor="middle" fill={m.color} fontSize={9} fontWeight="bold">{m.label}</text>
           </g>
         );
       })}
@@ -218,9 +251,12 @@ function MetricRow({ m }: { m: HeatBucketMetric }) {
   );
 }
 
-// ─── Gap table ─────────────────────────────────────────────────────────────
+// ─── Comparison tables ─────────────────────────────────────────────────────
 
-function GapTable({ worstMetrics, bestMetrics }: { worstMetrics: HeatBucketMetric[]; bestMetrics: HeatBucketMetric[] }) {
+const CELL: React.CSSProperties = { padding: "7px 10px", fontSize: 12, borderTop: "1px solid rgba(255,255,255,0.05)" };
+const HDR: React.CSSProperties  = { padding: "6px 10px", background: "rgba(255,255,255,0.04)", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em" };
+
+function DiffTable({ worstMetrics, bestMetrics, worstLabel, bestLabel }: { worstMetrics: HeatBucketMetric[]; bestMetrics: HeatBucketMetric[]; worstLabel: string; bestLabel: string }) {
   if (worstMetrics.length === 0 || bestMetrics.length === 0) return null;
   const rows = worstMetrics.map((wm) => {
     const bm = bestMetrics.find((b) => b.label === wm.label);
@@ -228,20 +264,57 @@ function GapTable({ worstMetrics, bestMetrics }: { worstMetrics: HeatBucketMetri
   });
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Worst vs Best Gap</div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>What's Different — Worst vs Best</div>
       <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 0 }}>
-          {["Metric", "Worst", "Best", "Δ Z-score"].map((h) => (
-            <div key={h} style={{ padding: "6px 10px", background: "rgba(255,255,255,0.04)", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em" }}>{h}</div>
-          ))}
+          {["Metric", worstLabel, bestLabel, "Δ Z-score"].map((h) => <div key={h} style={HDR}>{h}</div>)}
           {rows.map((row, i) => {
             const gapColor = !row.isTraffic && row.delta > 1 ? "#FF3D9A" : !row.isTraffic && row.delta > 0.5 ? "#FFF04D" : "rgba(255,255,255,0.6)";
+            const wColor = row.isTraffic ? "#4589FF" : row.worstZ >= 1.5 ? "#FF3D9A" : row.worstZ >= 0.75 ? "#FFF04D" : "rgba(255,255,255,0.6)";
+            const bt = i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none";
             return (
               <React.Fragment key={i}>
-                <div style={{ padding: "7px 10px", fontSize: 12, color: "rgba(255,255,255,0.75)", borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>{row.label}</div>
-                <div style={{ padding: "7px 10px", fontSize: 12, fontWeight: 600, color: row.isTraffic ? "#4589FF" : (row.worstZ >= 1.5 ? "#FF3D9A" : row.worstZ >= 0.75 ? "#FFF04D" : "rgba(255,255,255,0.6)"), borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>{row.worstVal}</div>
-                <div style={{ padding: "7px 10px", fontSize: 12, color: "#10B981", borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>{row.bestVal}</div>
-                <div style={{ padding: "7px 10px", fontSize: 12, fontWeight: 700, color: gapColor, borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>{row.delta > 0 ? "+" : ""}{row.delta.toFixed(1)}</div>
+                <div style={{ ...CELL, borderTop: bt, color: "rgba(255,255,255,0.75)" }}>{row.label}</div>
+                <div style={{ ...CELL, borderTop: bt, fontWeight: 600, color: wColor }}>{row.worstVal}</div>
+                <div style={{ ...CELL, borderTop: bt, color: "#10B981" }}>{row.bestVal}</div>
+                <div style={{ ...CELL, borderTop: bt, fontWeight: 700, color: gapColor }}>{row.delta > 0 ? "+" : ""}{row.delta.toFixed(1)}</div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommonTable({ metrics1, metrics2, label1, label2, title, mode }: {
+  metrics1: HeatBucketMetric[]; metrics2: HeatBucketMetric[];
+  label1: string; label2: string; title: string; mode: "worst" | "best";
+}) {
+  if (metrics1.length === 0 || metrics2.length === 0) return null;
+  const rows = metrics1.map((m1) => {
+    const m2 = metrics2.find(m => m.label === m1.label);
+    const z2 = m2?.zScore ?? 0;
+    const common = !m1.isTraffic && (mode === "worst" ? (m1.zScore > 0.75 && z2 > 0.75) : (m1.zScore <= 0.75 && z2 <= 0.75));
+    return { label: m1.label, val1: m1.displayValue, z1: m1.zScore, val2: m2?.displayValue ?? "—", z2, common, isTraffic: m1.isTraffic };
+  });
+  const zColor = (z: number, isTraffic: boolean) => isTraffic ? "#4589FF" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#10B981";
+  const signalColor = mode === "worst" ? "#FF3D9A" : "#10B981";
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>{title}</div>
+      <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 0 }}>
+          {["Metric", label1, label2, "Pattern"].map((h) => <div key={h} style={HDR}>{h}</div>)}
+          {rows.map((row, i) => {
+            const bt = i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none";
+            const bg = row.common ? `${signalColor}08` : "transparent";
+            return (
+              <React.Fragment key={i}>
+                <div style={{ ...CELL, borderTop: bt, background: bg, color: "rgba(255,255,255,0.75)", fontWeight: row.common ? 700 : 400 }}>{row.label}</div>
+                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 600, color: zColor(row.z1, row.isTraffic ?? false) }}>{row.val1} <span style={{ fontSize: 10, opacity: 0.6 }}>{row.z1 > 0 ? "+" : ""}{row.z1.toFixed(1)}σ</span></div>
+                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 600, color: zColor(row.z2, row.isTraffic ?? false) }}>{row.val2} <span style={{ fontSize: 10, opacity: 0.6 }}>{row.z2 > 0 ? "+" : ""}{row.z2.toFixed(1)}σ</span></div>
+                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 700, color: row.common ? signalColor : "rgba(255,255,255,0.2)", fontSize: 11 }}>{row.common ? (mode === "worst" ? "Both hot" : "Both healthy") : "—"}</div>
               </React.Fragment>
             );
           })}
@@ -422,6 +495,47 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
 
 export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, problems, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
+  const hasTwoWorst = analysis.worst2Idx !== analysis.worstIdx;
+  const hasTwoBest  = analysis.best2Idx  !== analysis.bestIdx;
+
+  const handleExportPdf = useCallback(() => {
+    const ts = new Date().toLocaleString();
+    const rows = (metrics: HeatBucketMetric[]) => metrics.map(m =>
+      `<tr><td>${m.label}</td><td style="color:${m.zScore >= 1.5 ? "#FF3D9A" : m.zScore >= 0.75 ? "#FFF04D" : "#10B981"}">${m.displayValue}</td><td>${m.zScore > 0 ? "+" : ""}${m.zScore.toFixed(1)}σ</td></tr>`
+    ).join("");
+    const insHtml = analysis.insights.map(ins =>
+      `<div style="margin-bottom:7px;padding:8px 12px;border-radius:6px;border-left:3px solid ${INSIGHT_COLORS[ins.severity]};background:rgba(255,255,255,0.03)"><span style="font-size:11px;font-weight:700;opacity:0.55;margin-right:6px">${ins.severity.toUpperCase()}</span>${ins.icon} ${ins.text}</div>`
+    ).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Hotness Assist Report — NavigatorIQ</title>
+<style>
+  @media print{body{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}@page{margin:0.6in;size:A4;}.no-print{display:none !important;}}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e0e0e0;background:#0f1428;margin:0 auto;padding:32px;max-width:900px;line-height:1.5;}
+  h1{margin:0 0 4px;font-size:22px;color:#FF8C42;}h2{font-size:12px;margin:20px 0 8px;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:5px;color:#bbb;text-transform:uppercase;letter-spacing:0.5px;}
+  table{border-collapse:collapse;width:100%;margin-bottom:20px;}td,th{padding:6px 10px;border-bottom:1px solid rgba(128,128,128,0.08);font-size:13px;}th{text-align:left;font-size:11px;opacity:0.5;font-weight:600;}
+  .toolbar{text-align:right;margin-bottom:16px;}.toolbar button{background:#FF8C42;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:13px;cursor:pointer;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}.kpi-tile{background:rgba(128,128,128,0.08);border:1px solid rgba(128,128,128,0.15);border-radius:8px;padding:10px 14px;text-align:center;}
+</style></head><body>
+<div class="toolbar no-print"><button onclick="window.print()">Print / Save PDF</button></div>
+<h1>🔥 Hotness Assist Report — NavigatorIQ</h1>
+<div style="font-size:11px;color:#888;margin-bottom:20px">${analysis.usableCount} buckets analyzed · ${analysis.hotBuckets} elevated · ${analysis.criticalBuckets} critical | Generated: ${ts}</div>
+<h2>Summary</h2><p style="font-size:13px;line-height:1.7">${analysis.summary}</p>
+<div class="kpi-grid">
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981"}">${analysis.criticalBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Critical Spikes</div></div>
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}σ</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}σ</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
+</div>
+<h2>Worst Bucket (#${analysis.worstIdx + 1}, Z=${analysis.worstZ.toFixed(2)})</h2>
+<table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.worstMetrics)}</table>
+${hasTwoWorst ? `<h2>2nd Worst Bucket (#${analysis.worst2Idx + 1}, Z=${analysis.worst2Z.toFixed(2)})</h2><table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.worst2Metrics)}</table>` : ""}
+<h2>Best Bucket (#${analysis.bestIdx + 1}, Z=${analysis.bestZ.toFixed(2)})</h2>
+<table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.bestMetrics)}</table>
+${hasTwoBest ? `<h2>2nd Best Bucket (#${analysis.best2Idx + 1}, Z=${analysis.best2Z.toFixed(2)})</h2><table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.best2Metrics)}</table>` : ""}
+<h2>Insights</h2>${insHtml}
+</body></html>`;
+    const win = window.open("", "_blank");
+    if (win) { win.document.write(html); win.document.close(); }
+  }, [analysis, hasTwoWorst, hasTwoBest]);
 
   // Per-user "installed apps" list — overrides probe results for reliable hiding of GitHub links
   const installedAppsState = useUserAppState({ key: INSTALLED_APPS_KEY });
@@ -488,14 +602,21 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
           <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: 0.4 }}>Hotness Assist</span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>drag to move</span>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onMouseDown={e => e.stopPropagation()} onClick={handleExportPdf} title="Export printable PDF report"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ verticalAlign: "middle" }}><path d="M4 1h5l4 4v9a1.5 1.5 0 01-1.5 1.5h-7A1.5 1.5 0 013 14V2.5A1.5 1.5 0 014 1z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1v4h4" stroke="currentColor" strokeWidth="1.5"/></svg>
+            Export PDF
+          </button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+        </div>
       </div>
 
       <div style={{ overflowY: "auto", flex: 1, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
         {/* KPI Tiles */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
           {[
-            { label: "Hot Buckets", value: String(analysis.hotBuckets), color: analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981" },
+            { label: "Hot Buckets", value: `${analysis.hotBuckets}/${analysis.usableCount}`, color: analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981" },
             { label: "Critical Spikes", value: String(analysis.criticalBuckets), color: analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981" },
             { label: "Worst Z-score", value: analysis.worstZ.toFixed(2) + "σ", color: analysis.worstZ >= 2.5 ? "#FF073A" : analysis.worstZ >= 1.5 ? "#FF3D9A" : analysis.worstZ >= 0.75 ? "#FFF04D" : "#4589FF" },
             { label: "Best Z-score", value: analysis.bestZ.toFixed(2) + "σ", color: "#10B981" },
@@ -515,8 +636,8 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
 
         {/* Mini chart */}
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Hotness Timeline · {heatScores.length} {bucketLabel} buckets</div>
-          <MiniHotnessChart scores={heatScores} worstIdx={analysis.worstIdx} bestIdx={analysis.bestIdx} />
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Hotness Timeline · {analysis.usableCount} {bucketLabel} buckets analyzed (last excluded)</div>
+          <MiniHotnessChart scores={heatScores.slice(0, -1)} worstIdx={analysis.worstIdx} worst2Idx={analysis.worst2Idx} bestIdx={analysis.bestIdx} best2Idx={analysis.best2Idx} />
         </div>
 
         {/* Pattern card */}
@@ -538,22 +659,55 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
           </div>
         </div>
 
-        {/* Worst vs Best bucket cards */}
-        {(analysis.worstMetrics.length > 0 || analysis.bestMetrics.length > 0) && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {/* Bucket metric cards: top 2 worst + top 2 best */}
+        {analysis.worstMetrics.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: hasTwoWorst ? "1fr 1fr" : "1fr", gap: 10 }}>
             <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
               {analysis.worstMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
             </div>
+            {hasTwoWorst && (
+              <div style={{ background: "rgba(255,61,154,0.06)", border: "1px solid rgba(255,61,154,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF3D9A", marginBottom: 10 }}>▲ Worst #2 — Bucket {analysis.worst2Idx + 1} (Z={analysis.worst2Z.toFixed(2)})</div>
+                {analysis.worst2Metrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+            )}
+          </div>
+        )}
+        {analysis.bestMetrics.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: hasTwoBest ? "1fr 1fr" : "1fr", gap: 10 }}>
             <div style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
               {analysis.bestMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
             </div>
+            {hasTwoBest && (
+              <div style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#34D399", marginBottom: 10 }}>▽ Best #2 — Bucket {analysis.best2Idx + 1} (Z={analysis.best2Z.toFixed(2)})</div>
+                {analysis.best2Metrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Gap table */}
-        <GapTable worstMetrics={analysis.worstMetrics} bestMetrics={analysis.bestMetrics} />
+        {/* Three comparison tables */}
+        <DiffTable
+          worstMetrics={analysis.worstMetrics} bestMetrics={analysis.bestMetrics}
+          worstLabel={`Worst #1 (B${analysis.worstIdx + 1})`} bestLabel={`Best #1 (B${analysis.bestIdx + 1})`}
+        />
+        {hasTwoWorst && (
+          <CommonTable
+            metrics1={analysis.worstMetrics} metrics2={analysis.worst2Metrics}
+            label1={`Worst #1 (B${analysis.worstIdx + 1})`} label2={`Worst #2 (B${analysis.worst2Idx + 1})`}
+            title="Common Bad Signals — Worst #1 vs Worst #2" mode="worst"
+          />
+        )}
+        {hasTwoBest && (
+          <CommonTable
+            metrics1={analysis.bestMetrics} metrics2={analysis.best2Metrics}
+            label1={`Best #1 (B${analysis.bestIdx + 1})`} label2={`Best #2 (B${analysis.best2Idx + 1})`}
+            title="Common Good Signals — Best #1 vs Best #2" mode="best"
+          />
+        )}
 
         {/* Insights */}
         {analysis.insights.length > 0 && (
