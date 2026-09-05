@@ -471,7 +471,10 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>NavigatorIQ Launcher Assessment</div>
           <HealthBadge health={assessment.overallHealth} />
         </div>
-        <div style={{ display: "flex", gap: 16 }}>
+        <div
+          style={{ display: "flex", gap: 16, cursor: "help" }}
+          title="Assessment item counts — not hotness scores. Expand the sections below (Needs Immediate Attention, Potential Issues, Environment Healthy) to see per-metric details."
+        >
           {[{ v: assessment.redItems.length, label: "Critical", color: "#EF4444" }, { v: assessment.yellowItems.length, label: "Warning", color: "#F59E0B" }, { v: assessment.greenItems.length, label: "Healthy", color: "#10B981" }, { v: total, label: "Total", color: "rgba(255,255,255,0.6)" }].map((s) => (
             <div key={s.label} style={{ textAlign: "center" }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.v}</div>
