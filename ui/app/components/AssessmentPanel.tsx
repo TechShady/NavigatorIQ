@@ -551,7 +551,7 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
 
       {/* Pills — peak (red) on top, best (green) below */}
       {useHeat && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
+        <div style={{ display: "flex", flexDirection: "row", gap: 5, flexShrink: 0 }}>
           {/* Peak pill */}
           <div
             style={pillBase(heatColor, peakHover)}
