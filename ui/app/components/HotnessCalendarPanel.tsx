@@ -125,6 +125,7 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
                         width: CELL_W, height: CELL_H, borderRadius: 3,
                         background: cellColor(val ?? 0, val !== null),
                         border: isHovered ? "1px solid rgba(255,255,255,0.6)" : "1px solid transparent",
+                        boxSizing: "border-box",
                         cursor: "default", transition: "border 0.1s",
                         opacity: 1,
                       }}
