@@ -203,7 +203,7 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, flashBucket,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
@@ -212,6 +212,7 @@ function ClickableHeatStrip({
   onCalendar?: () => void;
   persona?: PersonaId;
   deploymentBuckets?: boolean[] | null;
+  flashBucket?: number | null;
 }) {
   if (scores.length < 2) return null;
   const maxZ = Math.max(...scores, 1);
@@ -267,9 +268,11 @@ function ClickableHeatStrip({
       </div>
 
       {/* Bars */}
+      <style>{`@keyframes heatbar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }`}</style>
       <div style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 180, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: "pointer" }}>
         {scores.map((z, i) => {
           const sel = selectedBucket === i;
+          const flashing = flashBucket === i;
           const hasDeploy = deploymentBuckets?.[i] === true;
           return (
             <div
@@ -289,10 +292,12 @@ function ClickableHeatStrip({
                   width: "100%", height: `${Math.max(10, (z / maxZ) * 100)}%`,
                   background: barColor(z), borderRadius: 2,
                   opacity: selectedBucket === null ? 0.85 : sel ? 1 : 0.35,
-                  transition: "all 0.2s",
+                  transition: flashing ? "none" : "all 0.2s",
                   boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
                   outline: sel ? `2px solid ${barColor(z)}` : "none",
                   outlineOffset: 1,
+                  transformOrigin: "bottom",
+                  animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
                 }}
               />
             </div>
@@ -499,7 +504,10 @@ function SeveritySection({ severity, items, label, defaultOpen, onForecast, onUp
 
 // ─── Health sparkline ─────────────────────────────────────────────────────
 
-function HealthSparkline({ readings, currentScore, heatScores }: { readings: HealthReading[]; currentScore: number; heatScores?: number[] }) {
+function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBestClick }: {
+  readings: HealthReading[]; currentScore: number; heatScores?: number[];
+  onPeakClick?: (idx: number) => void; onBestClick?: (idx: number) => void;
+}) {
   const useHeat = heatScores && heatScores.length >= 2;
   const plotData = useHeat ? heatScores : [...readings.map((r) => r.score), currentScore];
   if (plotData.length < 2) return null;
@@ -514,26 +522,65 @@ function HealthSparkline({ readings, currentScore, heatScores }: { readings: Hea
   const trend = plotData.length >= 2 ? plotData[plotData.length - 1] - plotData[plotData.length - 2] : 0;
   const color = currentScore >= 80 ? "#10B981" : currentScore >= 50 ? "#F59E0B" : "#EF4444";
 
-  // Peak heat badge — max Z-score in current window
-  const peakZ = useHeat ? Math.max(...heatScores) : 0;
-  const heatColor = peakZ >= 2.5 ? "#FF073A" : peakZ >= 1.5 ? "#FF3D9A" : peakZ >= 0.75 ? "#FFF04D" : "#4589FF";
-  const heatLabel = peakZ >= 2.5 ? "SPIKE" : peakZ >= 1.5 ? "HOT" : peakZ >= 0.75 ? "WARM" : "COOL";
+  // Peak and best indices via reduce (avoids indexOf float-equality issues)
+  const peakIdx = useHeat ? heatScores.reduce((pi, v, i) => v > heatScores[pi] ? i : pi, 0) : -1;
+  const bestIdx = useHeat ? heatScores.reduce((bi, v, i) => v < heatScores[bi] ? i : bi, 0) : -1;
+  const peakZ   = useHeat ? heatScores[peakIdx] : 0;
+  const bestZ   = useHeat ? heatScores[bestIdx] : 0;
+
+  const heatColor  = peakZ >= 2.5 ? "#FF073A" : peakZ >= 1.5 ? "#FF3D9A" : peakZ >= 0.75 ? "#FFF04D" : "#4589FF";
+  const heatLabel  = peakZ >= 2.5 ? "SPIKE" : peakZ >= 1.5 ? "HOT" : peakZ >= 0.75 ? "WARM" : "COOL";
+  const bestColor  = "#10B981";
+  const bestLabel  = bestZ <= 0.05 ? "QUIET" : bestZ <= 0.75 ? "CALM" : "NORMAL";
+
+  const [peakHover, setPeakHover] = useState(false);
+  const [bestHover, setBestHover] = useState(false);
+
+  const pillBase = (col: string, hover: boolean): React.CSSProperties => ({
+    textAlign: "center", padding: "5px 11px", borderRadius: 9, flexShrink: 0,
+    background: hover ? `${col}2e` : `${col}1a`,
+    border: `1px solid ${col}${hover ? "99" : "66"}`,
+    boxShadow: `0 0 ${hover ? "20px" : "14px"} ${col}${hover ? "66" : "44"}, inset 0 0 6px ${col}11`,
+    cursor: onPeakClick ? "pointer" : "default",
+    transition: "all 0.15s",
+    userSelect: "none" as const,
+  });
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
 
-      {/* Peak hotness badge */}
+      {/* Pills — peak (red) on top, best (green) below */}
       {useHeat && (
-        <div style={{
-          textAlign: "center", padding: "5px 11px", borderRadius: 9, flexShrink: 0,
-          background: `${heatColor}1a`, border: `1px solid ${heatColor}66`,
-          boxShadow: `0 0 14px ${heatColor}44, inset 0 0 6px ${heatColor}11`,
-        }}>
-          <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
-            {peakZ.toFixed(1)}σ
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
+          {/* Peak pill */}
+          <div
+            style={pillBase(heatColor, peakHover)}
+            onMouseEnter={() => setPeakHover(true)}
+            onMouseLeave={() => setPeakHover(false)}
+            onClick={() => peakIdx >= 0 && onPeakClick?.(peakIdx)}
+            title="Peak hotness in this window — click to focus that bucket"
+          >
+            <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
+              {peakZ.toFixed(1)}σ
+            </div>
+            <div style={{ fontSize: 8, fontWeight: 800, color: heatColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
+              {heatLabel}
+            </div>
           </div>
-          <div style={{ fontSize: 8, fontWeight: 800, color: heatColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
-            {heatLabel}
+          {/* Best pill */}
+          <div
+            style={pillBase(bestColor, bestHover)}
+            onMouseEnter={() => setBestHover(true)}
+            onMouseLeave={() => setBestHover(false)}
+            onClick={() => bestIdx >= 0 && onBestClick?.(bestIdx)}
+            title="Quietest bucket in this window — click to focus"
+          >
+            <div style={{ fontSize: 17, fontWeight: 900, color: bestColor, lineHeight: 1, letterSpacing: -0.5 }}>
+              {bestZ.toFixed(1)}σ
+            </div>
+            <div style={{ fontSize: 8, fontWeight: 800, color: bestColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
+              {bestLabel}
+            </div>
           </div>
         </div>
       )}
@@ -544,16 +591,13 @@ function HealthSparkline({ readings, currentScore, heatScores }: { readings: Hea
           <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.7} strokeLinejoin="round" />
           <circle cx={xOf(plotData.length - 1)} cy={yOf(lastV)} r={2.5} fill={color} />
         </svg>
-        {/* Legend */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: W }}>
           <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>← start</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <svg width={18} height={7} style={{ flexShrink: 0 }}>
               <line x1={0} y1={3.5} x2={18} y2={3.5} stroke={color} strokeWidth={1.5} strokeOpacity={0.7} />
             </svg>
-            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.32)" }}>
-              activity heat · {plotData.length} intervals
-            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.32)" }}>activity heat · {plotData.length} intervals</span>
           </div>
           <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>now →</span>
         </div>
@@ -595,6 +639,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
   const [assistOpen, setAssistOpen] = useState(false);
   const [forecastOpen, setForecastOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [flashBucket, setFlashBucket] = useState<number | null>(null);
 
   const diagDrag = useDrag({ x: 30, y: 120 });
   const assistDrag = useDrag({ x: 50, y: 90 });
@@ -609,6 +654,13 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
       setSelectedBucket(i);
       setDiagOpen(true);
     }
+  }, []);
+
+  const handlePillClick = useCallback((idx: number) => {
+    setSelectedBucket(idx);
+    setDiagOpen(true);
+    setFlashBucket(idx);
+    setTimeout(() => setFlashBucket(null), 700);
   }, []);
 
   const getRequeryData = useCallback(async (days: number): Promise<number[]> => {
@@ -650,9 +702,15 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>NavigatorIQ Launcher Assessment</div>
           <HealthBadge health={assessment.overallHealth} />
         </div>
-        {healthReadings && healthReadings.length > 0 && (
-          <div title="Health score trend — line mirrors the activity heat strip resolution (0=all critical, 100=all healthy)">
-            <HealthSparkline readings={healthReadings} currentScore={assessment.healthScore} heatScores={assessment.heatScores} />
+        {assessment.heatScores.length > 1 && (
+          <div title="Activity heat sparkline — line mirrors the bar graph below. Click a pill to focus that bucket.">
+            <HealthSparkline
+              readings={healthReadings ?? []}
+              currentScore={assessment.healthScore}
+              heatScores={assessment.heatScores}
+              onPeakClick={handlePillClick}
+              onBestClick={handlePillClick}
+            />
           </div>
         )}
         <div
@@ -679,6 +737,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onForecast={() => setForecastOpen(true)}
           onCalendar={() => setCalendarOpen(true)}
           deploymentBuckets={deploymentBuckets}
+          flashBucket={flashBucket}
         />
       )}
 
