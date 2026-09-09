@@ -5,6 +5,9 @@ import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, He
 import type { DavisProblemsResult } from "../queries";
 import { HotnessAssistButton, HotnessAssistPanel } from "./HotnessAssist";
 import { HotnessForecastPanel } from "./HotnessForecastPanel";
+import { HotnessCalendarPanel } from "./HotnessCalendarPanel";
+
+interface HealthReading { score: number; ts: number; }
 
 interface AssessmentPanelProps {
   assessment: Assessment;
@@ -15,6 +18,9 @@ interface AssessmentPanelProps {
   heatMetrics?: HeatMetricConfig[];
   deploymentBuckets?: boolean[] | null;
   davisProblems?: DavisProblemsResult | null;
+  onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void;
+  healthReadings?: HealthReading[];
+  getHotnessHistory?: (days: number) => Promise<number[]>;
 }
 
 // ─── Drag hook ─────────────────────────────────────────────────────────────
@@ -197,12 +203,13 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, deploymentBuckets,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
   onAssist: () => void;
   onForecast: () => void;
+  onCalendar?: () => void;
   persona?: PersonaId;
   deploymentBuckets?: boolean[] | null;
 }) {
@@ -211,6 +218,7 @@ function ClickableHeatStrip({
   const barColor = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
 
   const [forecastHover, setForecastHover] = useState(false);
+  const [calHover, setCalHover] = useState(false);
   const hasDeployments = deploymentBuckets && deploymentBuckets.some(Boolean);
 
   return (
@@ -225,6 +233,22 @@ function ClickableHeatStrip({
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <HotnessAssistButton onClick={onAssist} />
+          {onCalendar && (
+            <button
+              onClick={onCalendar}
+              onMouseEnter={() => setCalHover(true)}
+              onMouseLeave={() => setCalHover(false)}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: calHover ? "rgba(69,137,255,0.28)" : "rgba(69,137,255,0.15)",
+                border: "1px solid rgba(69,137,255,0.5)", borderRadius: 6,
+                color: "#7ab4ff", fontSize: 11, fontWeight: 700, padding: "4px 10px",
+                cursor: "pointer", transition: "all 0.15s",
+              }}
+            >
+              📅 Heatmap
+            </button>
+          )}
           <button
             onClick={onForecast}
             onMouseEnter={() => setForecastHover(true)}
@@ -331,10 +355,71 @@ function TypewriterNarrative({ text }: { text: string }) {
   );
 }
 
+// ─── Inline threshold editor ──────────────────────────────────────────────
+
+function ThresholdPopover({ item, onSave, onClose }: { item: AssessmentItem; onSave: (label: string, warn: number | undefined, crit: number | undefined) => void; onClose: () => void }) {
+  const [warnStr, setWarnStr] = useState("");
+  const [critStr, setCritStr] = useState("");
+  const suffix = item.metricUnit ?? "";
+
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const warn = warnStr.trim() !== "" ? parseFloat(warnStr) : undefined;
+    const crit = critStr.trim() !== "" ? parseFloat(critStr) : undefined;
+    onSave(item.metricLabel!, warn, crit);
+    onClose();
+  };
+
+  return (
+    <div
+      style={{ background: "#1a1f2e", border: "1px solid rgba(69,137,255,0.35)", borderRadius: 8, padding: "12px 14px", marginTop: 8 }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(69,137,255,0.9)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>
+        Set Thresholds — {item.metricLabel}
+      </div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+        {[{ label: "Warning", value: warnStr, set: setWarnStr, accent: "#F59E0B" }, { label: "Critical", value: critStr, set: setCritStr, accent: "#EF4444" }].map(({ label, value, set, accent }) => (
+          <div key={label} style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: accent, fontWeight: 700, marginBottom: 4 }}>{label}{suffix ? ` (${suffix})` : ""}</div>
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => set(e.target.value)}
+              placeholder={label === "Warning" ? "e.g. 1.0" : "e.g. 2.0"}
+              style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${accent}40`, borderRadius: 5, padding: "5px 8px", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={handleSave}
+          style={{ flex: 1, background: "rgba(69,137,255,0.2)", border: "1px solid rgba(69,137,255,0.4)", borderRadius: 5, padding: "6px 0", color: "#4589FF", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+        >
+          Save
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 5, padding: "6px 10px", color: "rgba(255,255,255,0.5)", fontSize: 12, cursor: "pointer" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Assessment item row ──────────────────────────────────────────────────
 
-function AssessmentItemRow({ item, onForecast, index }: { item: AssessmentItem; onForecast?: (item: AssessmentItem) => void; index: number }) {
+function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
+  item: AssessmentItem;
+  onForecast?: (item: AssessmentItem) => void;
+  index: number;
+  onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void;
+}) {
   const [expanded, setExpanded] = useState(index === 0);
+  const [editingThreshold, setEditingThreshold] = useState(false);
   const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
   const color = colors[item.severity];
 
@@ -351,6 +436,15 @@ function AssessmentItemRow({ item, onForecast, index }: { item: AssessmentItem; 
         {item.metricValue !== undefined && (
           <div style={{ fontSize: 12, color, fontWeight: 700, flexShrink: 0 }}>{item.metricValue.toFixed(1)}{item.metricUnit ?? ""}</div>
         )}
+        {item.needsThreshold && item.metricLabel && onUpdateThreshold && (
+          <button
+            title="Set thresholds for this metric"
+            onClick={(e) => { e.stopPropagation(); setEditingThreshold((v) => !v); setExpanded(true); }}
+            style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 4, padding: "2px 6px", color: "#4589FF", fontSize: 12, cursor: "pointer", flexShrink: 0 }}
+          >
+            ✎
+          </button>
+        )}
         {item.trend && item.trend !== "stable" && <div style={{ flexShrink: 0 }}><TrendArrow trend={item.trend} pct={item.trendPct} /></div>}
         <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, marginLeft: 4 }}>{expanded ? "▲" : "▼"}</div>
       </div>
@@ -362,6 +456,13 @@ function AssessmentItemRow({ item, onForecast, index }: { item: AssessmentItem; 
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(69,137,255,0.8)", marginBottom: 3 }}>Recommendation</div>
               <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", lineHeight: 1.5 }}>{item.recommendation}</div>
             </div>
+          )}
+          {editingThreshold && item.metricLabel && onUpdateThreshold && (
+            <ThresholdPopover
+              item={item}
+              onSave={(label, warn, crit) => { onUpdateThreshold(label, warn, crit); setEditingThreshold(false); }}
+              onClose={() => setEditingThreshold(false)}
+            />
           )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
             {item.builtinAppPath && <AppButton label={item.builtinAppLabel ?? "Open App"} onClick={() => openApp(item.builtinAppPath!)} color="#4589FF" />}
@@ -375,7 +476,7 @@ function AssessmentItemRow({ item, onForecast, index }: { item: AssessmentItem; 
 
 // ─── Severity section ─────────────────────────────────────────────────────
 
-function SeveritySection({ severity, items, label, defaultOpen, onForecast }: { severity: "red" | "yellow" | "green"; items: AssessmentItem[]; label: string; defaultOpen: boolean; onForecast?: (item: AssessmentItem) => void }) {
+function SeveritySection({ severity, items, label, defaultOpen, onForecast, onUpdateThreshold }: { severity: "red" | "yellow" | "green"; items: AssessmentItem[]; label: string; defaultOpen: boolean; onForecast?: (item: AssessmentItem) => void; onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void }) {
   const [open, setOpen] = useState(defaultOpen);
   if (items.length === 0) return null;
   const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
@@ -391,7 +492,41 @@ function SeveritySection({ severity, items, label, defaultOpen, onForecast }: { 
         </div>
         <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 13 }}>{open ? "▲" : "▼"}</div>
       </div>
-      {open && items.map((item, i) => <AssessmentItemRow key={i} item={item} onForecast={onForecast} index={i} />)}
+      {open && items.map((item, i) => <AssessmentItemRow key={i} item={item} onForecast={onForecast} index={i} onUpdateThreshold={onUpdateThreshold} />)}
+    </div>
+  );
+}
+
+// ─── Health sparkline ─────────────────────────────────────────────────────
+
+function HealthSparkline({ readings, currentScore, heatScores }: { readings: HealthReading[]; currentScore: number; heatScores?: number[] }) {
+  // Prefer heat scores (same resolution as bar graph) over the sparse stored readings
+  const useHeat = heatScores && heatScores.length >= 2;
+  const plotData = useHeat ? heatScores : [...readings.map((r) => r.score), currentScore];
+  if (plotData.length < 2) return null;
+  const W = 280, H = 28;
+  const minV = Math.max(0, Math.min(...plotData));
+  const maxV = Math.max(...plotData);
+  const range = Math.max(maxV - minV, useHeat ? 0.1 : 10);
+  const xOf = (i: number) => (i / (plotData.length - 1)) * W;
+  // Heat: high Z = high on chart (matches bar graph). Health scores: high = high (good).
+  const yOf = (v: number) => H - ((v - minV) / range) * H;
+  const pts = plotData.map((v, i) => `${xOf(i)},${yOf(v)}`).join(" ");
+  const lastV = plotData[plotData.length - 1];
+  const trend = plotData.length >= 2 ? plotData[plotData.length - 1] - plotData[plotData.length - 2] : 0;
+  const color = currentScore >= 80 ? "#10B981" : currentScore >= 50 ? "#F59E0B" : "#EF4444";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      <svg width={W} height={H} style={{ overflow: "visible" }}>
+        <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.7} strokeLinejoin="round" />
+        <circle cx={xOf(plotData.length - 1)} cy={yOf(lastV)} r={2.5} fill={color} />
+      </svg>
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color, lineHeight: 1 }}>{currentScore}</div>
+        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
+          Health {trend > 0 ? "↑" : trend < 0 ? "↓" : "→"}
+        </div>
+      </div>
     </div>
   );
 }
@@ -415,15 +550,17 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblems }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
   const [forecastOpen, setForecastOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const diagDrag = useDrag({ x: 30, y: 120 });
   const assistDrag = useDrag({ x: 50, y: 90 });
   const forecastDrag = useDrag({ x: 20, y: 160 });
+  const calendarDrag = useDrag({ x: 60, y: 200 });
 
   const handleSelectBucket = useCallback((i: number | null) => {
     if (i === null) {
@@ -435,7 +572,10 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
     }
   }, []);
 
-  const getRequeryData = useCallback(async (_days: number): Promise<number[]> => assessment.heatScores, [assessment.heatScores]);
+  const getRequeryData = useCallback(async (days: number): Promise<number[]> => {
+    if (getHotnessHistory) return getHotnessHistory(days);
+    return assessment.heatScores;
+  }, [assessment.heatScores, getHotnessHistory]);
 
   if (isLoading) {
     return (
@@ -471,6 +611,11 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>NavigatorIQ Launcher Assessment</div>
           <HealthBadge health={assessment.overallHealth} />
         </div>
+        {healthReadings && healthReadings.length > 0 && (
+          <div title="Health score trend — line mirrors the activity heat strip resolution (0=all critical, 100=all healthy)">
+            <HealthSparkline readings={healthReadings} currentScore={assessment.healthScore} heatScores={assessment.heatScores} />
+          </div>
+        )}
         <div
           style={{ display: "flex", gap: 16, cursor: "help" }}
           title="Assessment item counts — not hotness scores. Expand the sections below (Needs Immediate Attention, Potential Issues, Environment Healthy) to see per-metric details."
@@ -493,6 +638,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onSelectBucket={handleSelectBucket}
           onAssist={() => setAssistOpen(true)}
           onForecast={() => setForecastOpen(true)}
+          onCalendar={() => setCalendarOpen(true)}
           deploymentBuckets={deploymentBuckets}
         />
       )}
@@ -501,9 +647,9 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
       {assessment.narrative && <TypewriterNarrative text={assessment.narrative} />}
 
       {/* Severity sections */}
-      <SeveritySection severity="red" items={assessment.redItems} label="Needs Immediate Attention" defaultOpen={true} onForecast={onForecast} />
-      <SeveritySection severity="yellow" items={assessment.yellowItems} label="Potential Issues" defaultOpen={assessment.redItems.length === 0} onForecast={onForecast} />
-      <SeveritySection severity="green" items={assessment.greenItems} label="Environment Healthy" defaultOpen={assessment.redItems.length === 0 && assessment.yellowItems.length === 0} onForecast={onForecast} />
+      <SeveritySection severity="red" items={assessment.redItems} label="Needs Immediate Attention" defaultOpen={true} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
+      <SeveritySection severity="yellow" items={assessment.yellowItems} label="Potential Issues" defaultOpen={assessment.redItems.length === 0} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
+      <SeveritySection severity="green" items={assessment.greenItems} label="Environment Healthy" defaultOpen={assessment.redItems.length === 0 && assessment.yellowItems.length === 0} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
 
       {/* Bucket diagnosis panel */}
       {diagOpen && selectedDetail && (
@@ -542,6 +688,18 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           pos={forecastDrag.pos}
           onDragStart={forecastDrag.onDragStart}
           onClose={() => setForecastOpen(false)}
+          getRequeryData={getRequeryData}
+        />
+      )}
+
+      {/* Calendar heatmap panel */}
+      {calendarOpen && (
+        <HotnessCalendarPanel
+          heatScores={assessment.heatScores}
+          bucketMs={bucketMs}
+          pos={calendarDrag.pos}
+          onDragStart={calendarDrag.onDragStart}
+          onClose={() => setCalendarOpen(false)}
           getRequeryData={getRequeryData}
         />
       )}
