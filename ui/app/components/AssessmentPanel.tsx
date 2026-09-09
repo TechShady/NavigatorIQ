@@ -549,24 +549,9 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
 
-      {/* Pills — peak (red) on top, best (green) below */}
+      {/* Pills — best (green) first, peak (red) second */}
       {useHeat && (
         <div style={{ display: "flex", flexDirection: "row", gap: 5, flexShrink: 0 }}>
-          {/* Peak pill */}
-          <div
-            style={pillBase(heatColor, peakHover)}
-            onMouseEnter={() => setPeakHover(true)}
-            onMouseLeave={() => setPeakHover(false)}
-            onClick={() => peakIdx >= 0 && onPeakClick?.(peakIdx)}
-            title="Peak hotness in this window — click to focus that bucket"
-          >
-            <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
-              {peakZ.toFixed(1)}σ
-            </div>
-            <div style={{ fontSize: 8, fontWeight: 800, color: heatColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
-              {heatLabel}
-            </div>
-          </div>
           {/* Best pill */}
           <div
             style={pillBase(bestColor, bestHover)}
@@ -580,6 +565,21 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
             </div>
             <div style={{ fontSize: 8, fontWeight: 800, color: bestColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
               {bestLabel}
+            </div>
+          </div>
+          {/* Peak pill */}
+          <div
+            style={pillBase(heatColor, peakHover)}
+            onMouseEnter={() => setPeakHover(true)}
+            onMouseLeave={() => setPeakHover(false)}
+            onClick={() => peakIdx >= 0 && onPeakClick?.(peakIdx)}
+            title="Peak hotness in this window — click to focus that bucket"
+          >
+            <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
+              {peakZ.toFixed(1)}σ
+            </div>
+            <div style={{ fontSize: 8, fontWeight: 800, color: heatColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
+              {heatLabel}
             </div>
           </div>
         </div>
