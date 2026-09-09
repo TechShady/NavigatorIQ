@@ -500,7 +500,6 @@ function SeveritySection({ severity, items, label, defaultOpen, onForecast, onUp
 // ─── Health sparkline ─────────────────────────────────────────────────────
 
 function HealthSparkline({ readings, currentScore, heatScores }: { readings: HealthReading[]; currentScore: number; heatScores?: number[] }) {
-  // Prefer heat scores (same resolution as bar graph) over the sparse stored readings
   const useHeat = heatScores && heatScores.length >= 2;
   const plotData = useHeat ? heatScores : [...readings.map((r) => r.score), currentScore];
   if (plotData.length < 2) return null;
@@ -509,19 +508,59 @@ function HealthSparkline({ readings, currentScore, heatScores }: { readings: Hea
   const maxV = Math.max(...plotData);
   const range = Math.max(maxV - minV, useHeat ? 0.1 : 10);
   const xOf = (i: number) => (i / (plotData.length - 1)) * W;
-  // Heat: high Z = high on chart (matches bar graph). Health scores: high = high (good).
   const yOf = (v: number) => H - ((v - minV) / range) * H;
   const pts = plotData.map((v, i) => `${xOf(i)},${yOf(v)}`).join(" ");
   const lastV = plotData[plotData.length - 1];
   const trend = plotData.length >= 2 ? plotData[plotData.length - 1] - plotData[plotData.length - 2] : 0;
   const color = currentScore >= 80 ? "#10B981" : currentScore >= 50 ? "#F59E0B" : "#EF4444";
+
+  // Peak heat badge — max Z-score in current window
+  const peakZ = useHeat ? Math.max(...heatScores) : 0;
+  const heatColor = peakZ >= 2.5 ? "#FF073A" : peakZ >= 1.5 ? "#FF3D9A" : peakZ >= 0.75 ? "#FFF04D" : "#4589FF";
+  const heatLabel = peakZ >= 2.5 ? "SPIKE" : peakZ >= 1.5 ? "HOT" : peakZ >= 0.75 ? "WARM" : "COOL";
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-      <svg width={W} height={H} style={{ overflow: "visible" }}>
-        <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.7} strokeLinejoin="round" />
-        <circle cx={xOf(plotData.length - 1)} cy={yOf(lastV)} r={2.5} fill={color} />
-      </svg>
-      <div style={{ textAlign: "right" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+
+      {/* Peak hotness badge */}
+      {useHeat && (
+        <div style={{
+          textAlign: "center", padding: "5px 11px", borderRadius: 9, flexShrink: 0,
+          background: `${heatColor}1a`, border: `1px solid ${heatColor}66`,
+          boxShadow: `0 0 14px ${heatColor}44, inset 0 0 6px ${heatColor}11`,
+        }}>
+          <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
+            {peakZ.toFixed(1)}σ
+          </div>
+          <div style={{ fontSize: 8, fontWeight: 800, color: heatColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
+            {heatLabel}
+          </div>
+        </div>
+      )}
+
+      {/* Sparkline + legend */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <svg width={W} height={H} style={{ overflow: "visible" }}>
+          <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.7} strokeLinejoin="round" />
+          <circle cx={xOf(plotData.length - 1)} cy={yOf(lastV)} r={2.5} fill={color} />
+        </svg>
+        {/* Legend */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: W }}>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>← start</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <svg width={18} height={7} style={{ flexShrink: 0 }}>
+              <line x1={0} y1={3.5} x2={18} y2={3.5} stroke={color} strokeWidth={1.5} strokeOpacity={0.7} />
+            </svg>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.32)" }}>
+              activity heat · {plotData.length} intervals
+            </span>
+          </div>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>now →</span>
+        </div>
+      </div>
+
+      {/* Health score */}
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color, lineHeight: 1 }}>{currentScore}</div>
         <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
           Health {trend > 0 ? "↑" : trend < 0 ? "↓" : "→"}
