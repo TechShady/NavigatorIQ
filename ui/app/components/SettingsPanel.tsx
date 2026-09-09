@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { PersonaId, AppLink, ThresholdConfig, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings } from "../types";
-import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_THRESHOLDS, DEFAULT_HEAT_METRICS, APP_VERSION } from "../constants";
+import type { PersonaId, AppLink, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings } from "../types";
+import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_HEAT_METRICS, APP_VERSION } from "../constants";
 
 interface SettingsPanelProps {
   settings: SavedSettings;
@@ -8,7 +8,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = "applinks" | "thresholds" | "hotness" | "personas" | "general";
+type SettingsTab = "applinks" | "hotness" | "personas" | "general";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "rgba(255,255,255,0.06)",
@@ -27,22 +27,6 @@ const LABEL_STYLE: React.CSSProperties = {
   display: "block",
 };
 
-function ThresholdRow({ label, field, value, onChange, unit = "", min = 0, step = 0.1 }: { label: string; field: keyof ThresholdConfig; value: number; onChange: (field: keyof ThresholdConfig, val: number) => void; unit?: string; min?: number; step?: number }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 24px", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{label}</div>
-      <input
-        type="number"
-        value={value}
-        min={min}
-        step={step}
-        onChange={(e) => onChange(field, Number(e.target.value))}
-        style={{ ...INPUT_STYLE, width: "100%" }}
-      />
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{unit}</div>
-    </div>
-  );
-}
 
 function AppLinkRow({ link, index, onChange, onRemove }: { link: AppLink; index: number; onChange: (i: number, link: AppLink) => void; onRemove: (i: number) => void }) {
   return (
@@ -365,29 +349,12 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
   const getPersonaLinks = (personaId: PersonaId): AppLink[] =>
     draft.personas[personaId]?.appLinks ?? DEFAULT_APP_LINKS[personaId] ?? [];
 
-  const getPersonaThresholds = (personaId: PersonaId): ThresholdConfig =>
-    ({ ...DEFAULT_THRESHOLDS, ...draft.personas[personaId]?.thresholds });
-
   const updatePersonaLinks = (personaId: PersonaId, links: AppLink[]) => {
     setDraft((prev) => ({
       ...prev,
       personas: {
         ...prev.personas,
         [personaId]: { ...prev.personas[personaId], appLinks: links } as PersonaSettings,
-      },
-    }));
-    markDirty();
-  };
-
-  const updateThreshold = (personaId: PersonaId, field: keyof ThresholdConfig, val: number) => {
-    setDraft((prev) => ({
-      ...prev,
-      personas: {
-        ...prev.personas,
-        [personaId]: {
-          ...prev.personas[personaId],
-          thresholds: { ...prev.personas[personaId]?.thresholds, [field]: val },
-        } as PersonaSettings,
       },
     }));
     markDirty();
@@ -400,14 +367,6 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
 
   const resetPersonaLinks = (personaId: PersonaId) => {
     updatePersonaLinks(personaId, [...(DEFAULT_APP_LINKS[personaId] ?? [])]);
-  };
-
-  const resetPersonaThresholds = (personaId: PersonaId) => {
-    setDraft((prev) => ({
-      ...prev,
-      personas: { ...prev.personas, [personaId]: { ...prev.personas[personaId], thresholds: {} } as PersonaSettings },
-    }));
-    markDirty();
   };
 
   const getPersonaHeatMetrics = (personaId: PersonaId): HeatMetricConfig[] => {
@@ -495,7 +454,6 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
   });
 
   const links = getPersonaLinks(activePersona);
-  const thresholds = getPersonaThresholds(activePersona);
   const activePersonaDef = allPersonas.find((p) => p.id === activePersona) ?? PERSONAS[0];
 
   return (
@@ -505,7 +463,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         <div style={{ padding: "20px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff" }}>⚙️ NavigatorIQ Launcher Settings</h2>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Customize app links, alert thresholds, and general preferences</p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Customize app links, metrics, and general preferences</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {hasChanges && (
@@ -524,8 +482,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
           <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(69,137,255,0.6)", whiteSpace: "nowrap" }}>Personal</span>
             <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
-            <button style={tabStyle("thresholds")} onClick={() => setActiveTab("thresholds")}>🎯 Assessment</button>
-            <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>🔥 Hotness</button>
+            <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>📊 Metrics</button>
             <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
           </div>
           <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
@@ -587,60 +544,13 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
               </div>
             )}
 
-            {activeTab === "thresholds" && (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Assessment Thresholds</h3>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Values that determine Red (critical) and Yellow (warning) classifications in the assessment.</p>
-                  </div>
-                  <button onClick={() => resetPersonaThresholds(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "8px 0 4px", marginBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>Services</div>
-                  <ThresholdRow label="Error Rate — Red threshold" field="errorRateRedPct" value={thresholds.errorRateRedPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={0.5} />
-                  <ThresholdRow label="Error Rate — Yellow threshold" field="errorRateYellowPct" value={thresholds.errorRateYellowPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={0.1} />
-                  <ThresholdRow label="Response Time — Red threshold" field="responseTimeRedMs" value={thresholds.responseTimeRedMs} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="ms" step={100} />
-                  <ThresholdRow label="Response Time — Yellow threshold" field="responseTimeYellowMs" value={thresholds.responseTimeYellowMs} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="ms" step={100} />
-
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "12px 0 4px", marginTop: 8, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>Logs</div>
-                  <ThresholdRow label="Log Errors — Red count" field="logErrorsRedCount" value={thresholds.logErrorsRedCount} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="errors" step={10} />
-                  <ThresholdRow label="Log Errors — Yellow count" field="logErrorsYellowCount" value={thresholds.logErrorsYellowCount} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="errors" step={5} />
-
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "12px 0 4px", marginTop: 8, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>Problems & SLOs</div>
-                  <ThresholdRow label="Active Problems — Red count" field="problemsRed" value={thresholds.problemsRed} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="problems" step={1} />
-                  <ThresholdRow label="Active Problems — Yellow count" field="problemsYellow" value={thresholds.problemsYellow} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="problems" step={1} />
-
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "12px 0 4px", marginTop: 8, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>Infrastructure</div>
-                  <ThresholdRow label="Host CPU — Red threshold" field="cpuRedPct" value={thresholds.cpuRedPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={1} />
-                  <ThresholdRow label="Host CPU — Yellow threshold" field="cpuYellowPct" value={thresholds.cpuYellowPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={1} />
-                  <ThresholdRow label="Host Memory — Red threshold" field="memRedPct" value={thresholds.memRedPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={1} />
-                  <ThresholdRow label="Host Memory — Yellow threshold" field="memYellowPct" value={thresholds.memYellowPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={1} />
-                  <ThresholdRow label="K8s Pod Restarts — Red count" field="podRestartsRed" value={thresholds.podRestartsRed} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="restarts" step={1} />
-                  <ThresholdRow label="K8s Pod Restarts — Yellow count" field="podRestartsYellow" value={thresholds.podRestartsYellow} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="restarts" step={1} />
-
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "12px 0 4px", marginTop: 8, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>Security</div>
-                  <ThresholdRow label="Critical Vulnerabilities — Red count" field="vulnCriticalRed" value={thresholds.vulnCriticalRed} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="vulns" step={1} />
-                  <ThresholdRow label="High Vulnerabilities — Red count" field="vulnHighRed" value={thresholds.vulnHighRed} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="vulns" step={1} />
-                  <ThresholdRow label="Attacks — Red count" field="attacksRed" value={thresholds.attacksRed} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="attacks" step={1} />
-
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", padding: "12px 0 4px", marginTop: 8, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>Digital Experience</div>
-                  <ThresholdRow label="Session Error Rate — Red threshold" field="sessionErrorRateRedPct" value={thresholds.sessionErrorRateRedPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={0.5} />
-                  <ThresholdRow label="Session Error Rate — Yellow threshold" field="sessionErrorRateYellowPct" value={thresholds.sessionErrorRateYellowPct} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="%" step={0.1} />
-                  <ThresholdRow label="LCP — Red threshold" field="lcpRedMs" value={thresholds.lcpRedMs} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="ms" step={100} />
-                  <ThresholdRow label="LCP — Yellow threshold" field="lcpYellowMs" value={thresholds.lcpYellowMs} onChange={(f, v) => updateThreshold(activePersona, f, v)} unit="ms" step={100} />
-                </div>
-              </div>
-            )}
-
             {activeTab === "hotness" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                   <div>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Heat Metrics</h3>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — Metrics</h3>
                     <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
-                      Grail metrics used for hotness Z-score computation. Hotness is purely statistical — deviation from each metric's own mean across buckets.
+                      Configured here once, these metrics drive <strong style={{ color: "rgba(255,255,255,0.7)" }}>both</strong> the heat strip (Z-score per bucket) and the assessment panel (average over the full timeframe vs. the thresholds you set below).
                       {activePersona === "digital" && <span style={{ color: "rgba(255,180,60,0.9)" }}> Digital also uses RUM event data as a fallback when no Grail metrics return results.</span>}
                       {activePersona === "security" && <span style={{ color: "rgba(255,180,60,0.9)" }}> Security also uses attack event data as a fallback when no Grail metrics return results.</span>}
                     </p>
@@ -698,10 +608,10 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                     </div>
                   )}
                   <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(255,120,30,0.06)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#FF8C42", marginBottom: 6 }}>How Heat Metrics Work</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#FF8C42", marginBottom: 6 }}>How Metrics Work</div>
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-                      Each metric is queried as a timeseries over the selected timeframe. For each bucket, the Z-score is computed as (value − mean) ÷ std. The highest Z-score across all metrics becomes that bucket's heat.<br />
-                      The <strong style={{ color: "#4589FF" }}>blue indicator</strong> marks traffic metrics (neutral — higher is not worse). Use <strong>Nanoseconds → ms</strong> for Dynatrace latency metrics like <code style={{ color: "#FF8C42" }}>dt.service.request.response_time</code>.
+                      Metrics are queried as a timeseries. For the <strong style={{ color: "#FF8C42" }}>heat strip</strong>: each bucket gets a Z-score = (value − mean) ÷ std; the highest Z across all metrics becomes that bucket's heat. For the <strong style={{ color: "#4589FF" }}>assessment panel</strong>: the average bucket value is compared against the Warning/Critical thresholds you set on each metric row.<br />
+                      The <strong style={{ color: "#4589FF" }}>blue indicator</strong> marks traffic metrics (neutral — higher is not worse, skipped in assessment). Use <strong>Nanoseconds → ms</strong> for Dynatrace latency metrics like <code style={{ color: "#FF8C42" }}>dt.service.request.response_time</code>.
                       {activePersona === "digital" && <><br />Digital defaults use <code style={{ color: "#FF8C42" }}>ext:app.web.*</code> RUM metrics — update keys if they differ in your environment.</>}
                     </div>
                   </div>
@@ -712,7 +622,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
             {activeTab === "personas" && (
               <div>
                 <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: "#fff" }}>Manage Personas</h3>
-                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their App Links, Assessment thresholds, and Hotness metrics in the other tabs.</p>
+                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their App Links and Metrics in the other tabs.</p>
 
                 {/* Built-in */}
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Built-in Personas</div>
@@ -792,7 +702,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                     + Create Persona
                   </button>
                   <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.6 }}>
-                    After creating, switch to <strong style={{ color: "rgba(255,255,255,0.5)" }}>App Links</strong>, <strong style={{ color: "rgba(255,255,255,0.5)" }}>Assessment</strong>, or <strong style={{ color: "rgba(255,255,255,0.5)" }}>Hotness</strong> tabs to configure the new persona.
+                    After creating, switch to <strong style={{ color: "rgba(255,255,255,0.5)" }}>App Links</strong> or <strong style={{ color: "rgba(255,255,255,0.5)" }}>Metrics</strong> tabs to configure the new persona.
                   </div>
                 </div>
               </div>

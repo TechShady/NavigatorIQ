@@ -29,7 +29,7 @@ import {
   buildCustomHeatQuery, parseCustomHeat, buildDqlHeatQuery, parseDqlHeatResult,
 } from "../queries";
 import type { DavisProblemsResult } from "../queries";
-import { computeAssessment } from "../intelligence";
+import { computeAssessment, computeHeat } from "../intelligence";
 import type { CustomHeatMetric } from "../intelligence";
 import { PersonaPickerModal } from "../components/PersonaPickerModal";
 import { SettingsPanel } from "../components/SettingsPanel";
@@ -41,7 +41,11 @@ import "./NavigatorIQ.css";
 
 const SHARED_SETTINGS_KEY = "iq-settings-v1";    // shared across all users (customPersonas only)
 const USER_SETTINGS_KEY = "iq-user-settings-v1";  // per-user (personas + global)
+const HEALTH_HISTORY_KEY = "iq-health-v1";         // per-user health score history (all personas)
 const EMPTY_SETTINGS: SavedSettings = { personas: {}, global: {} };
+
+interface HealthReading { score: number; ts: number; }
+type HealthHistory = Partial<Record<string, HealthReading[]>>;
 
 function parseSettings(raw: string | undefined): SavedSettings {
   if (!raw) return EMPTY_SETTINGS;
@@ -79,8 +83,10 @@ export function NavigatorIQ() {
   // ─── Settings: per-user (personas + global) + shared (customPersonas) ──
   const sharedState = useAppState({ key: SHARED_SETTINGS_KEY });
   const userState = useUserAppState({ key: USER_SETTINGS_KEY });
+  const healthHistoryState = useUserAppState({ key: HEALTH_HISTORY_KEY });
   const { execute: saveSharedRaw } = useSetAppState();
   const { execute: saveUserRaw } = useSetUserAppState();
+  const { execute: saveHealthRaw } = useSetUserAppState();
   const [localSettings, setLocalSettings] = useState<SavedSettings | null>(null);
   const settings = useMemo(() => {
     if (localSettings) return localSettings;
@@ -304,11 +310,31 @@ export function NavigatorIQ() {
         dqlMetrics[9] ? parseDqlHeatResult(recs(dql9R), dqlMetrics[9]) : null,
       ].filter(Boolean) as CustomHeatMetric[];
       const customMetrics = [...standardMetrics, ...dqlResults];
-      return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined);
+      return computeAssessment(curResults, prevResults, persona, personaThresholds ?? {}, tf, customMetrics.length > 0 ? customMetrics : undefined, heatMetrics);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dql3R.data, dql4R.data, dql5R.data, dql6R.data, dql7R.data, dql8R.data, dql9R.data, dqlMetrics]
+    [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dql3R.data, dql4R.data, dql5R.data, dql6R.data, dql7R.data, dql8R.data, dql9R.data, dqlMetrics, heatMetrics]
   );
+
+  // ─── Health score history ───────────────────────────────────────────────
+  const healthHistory: HealthHistory = useMemo(() => {
+    try { return JSON.parse(healthHistoryState.data?.value as string ?? "{}"); } catch { return {}; }
+  }, [healthHistoryState.data?.value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const personaHealthReadings: HealthReading[] = useMemo(
+    () => (healthHistory[persona] ?? []).slice(-14),
+    [healthHistory, persona]
+  );
+
+  useEffect(() => {
+    if (!assessment.dataAvailable) return;
+    const now = Date.now();
+    const prev = healthHistory[persona] ?? [];
+    // Only record once per 15 min to avoid spam on auto-refresh
+    if (prev.length > 0 && now - prev[prev.length - 1].ts < 15 * 60 * 1000) return;
+    const next: HealthHistory = { ...healthHistory, [persona]: [...prev, { score: assessment.healthScore, ts: now }].slice(-14) };
+    saveHealthRaw({ key: HEALTH_HISTORY_KEY, body: { value: JSON.stringify(next) } });
+  }, [assessment.dataAvailable, assessment.healthScore, persona]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Forecast helpers ───────────────────────────────────────────────────
   const [forecastSparkline, setForecastSparkline] = useState<number[]>([]);
@@ -320,6 +346,23 @@ export function NavigatorIQ() {
   const [forecastRequeryType, setForecastRequeryType] = useState<
     "svcRt" | "svcErr" | "cpu" | "lcp" | "db" | "log" | "dxErr" | "dxDur" | "dxTtfb" | "dxFcp"
   >("svcRt");
+
+  const handleUpdateThreshold = useCallback((label: string, warn: number | undefined, crit: number | undefined) => {
+    const updated = heatMetrics.map((m) =>
+      m.label === label ? { ...m, warningThreshold: warn, criticalThreshold: crit } : m
+    );
+    const nextSettings: SavedSettings = {
+      ...settings,
+      personas: {
+        ...settings.personas,
+        [persona]: {
+          ...(settings.personas[persona] ?? { appLinks: [], thresholds: {} }),
+          heatMetrics: updated,
+        },
+      },
+    };
+    handleSaveSettings(nextSettings);
+  }, [heatMetrics, settings, persona, handleSaveSettings]);
 
   const handleForecast = useCallback((item: AssessmentItem) => {
     const t = item.title.toLowerCase();
@@ -381,6 +424,25 @@ export function NavigatorIQ() {
       return forecastSparkline;
     }
   }, [forecastRequeryType, forecastSparkline]);
+
+  // ─── Hotness historical query (for Forecast panel "Analyze" slider) ────
+  const getHotnessHistory = useCallback(async (days: number): Promise<number[]> => {
+    if (heatMetrics.length === 0) return assessment.heatScores;
+    const from = `now()-${days}d`;
+    const to = "now()";
+    const q = buildCustomHeatQuery(heatMetrics, from, to, "1h");
+    try {
+      const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 60000 } });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const records = (res.result as any)?.records ?? [];
+      const metrics = parseCustomHeat(records, heatMetrics);
+      const timelines = metrics.filter((m) => m.timeline.length > 1).map((m) => m.timeline);
+      if (timelines.length === 0) return assessment.heatScores;
+      return computeHeat(timelines);
+    } catch {
+      return assessment.heatScores;
+    }
+  }, [heatMetrics, assessment.heatScores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Persona picker ─────────────────────────────────────────────────────
   const handlePersonaApply = useCallback((p: PersonaId) => {
@@ -475,7 +537,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblems={davisProblems} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
+          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />

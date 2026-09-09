@@ -121,6 +121,10 @@ export interface AssessmentItem {
   builtinAppPath?: string;
   builtinAppLabel?: string;
   customApp?: { label: string; appPath: string; tab?: string };
+  /** The HeatMetricConfig label, set for metric-driven items to enable inline threshold editing */
+  metricLabel?: string;
+  /** True when this item came from a heat metric with no thresholds configured */
+  needsThreshold?: boolean;
 }
 
 export interface Assessment {
@@ -128,6 +132,8 @@ export interface Assessment {
   yellowItems: AssessmentItem[];
   greenItems: AssessmentItem[];
   overallHealth: Severity;
+  /** 0–100: 100 = all green, penalizes yellow and red items weighted by count */
+  healthScore: number;
   narrative: string;
   dataAvailable: boolean;
   heatScores: number[];

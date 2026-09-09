@@ -689,6 +689,23 @@ ${hasTwoBest ? `<h2>2nd Best Bucket (#${analysis.best2Idx + 1}, Z=${analysis.bes
           </div>
         )}
 
+        {/* Worst #1 vs Best #1 — direct card comparison */}
+        {analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Worst #1 vs Best #1 — Direct Comparison</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
+                {analysis.worstMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+              <div style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
+                {analysis.bestMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Three comparison tables */}
         <DiffTable
           worstMetrics={analysis.worstMetrics} bestMetrics={analysis.bestMetrics}

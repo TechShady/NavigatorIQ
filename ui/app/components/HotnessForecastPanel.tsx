@@ -9,18 +9,48 @@ import type { ForecastMethod } from "./ForecastModal";
 const LOOKBACK_OPTIONS = [7, 14, 30, 60, 90];
 const FORECAST_OPTIONS = [7, 14, 30];
 
-function runModel(method: ForecastMethod, data: number[], buckets: number): number[] {
+// Seasonal model: forecast each future bucket as the historical mean for that hour-of-day.
+// This is appropriate for Z-score data (mean-reverting) — instead of extrapolating a trend,
+// it asks "what does this hour of day historically look like?"
+type HFMethod = ForecastMethod | "seasonal";
+
+function seasonalMeanForecast(data: number[], buckets: number, effectiveBucketMs: number): number[] {
+  if (data.length < 24) return new Array(buckets).fill(data.reduce((a, b) => a + b, 0) / Math.max(1, data.length));
+  const n = data.length;
+  const nowMs = Date.now();
+  const histStartMs = nowMs - n * effectiveBucketMs;
+
+  // Accumulate sum+count per hour-of-day
+  const hourSums  = new Array(24).fill(0);
+  const hourCounts = new Array(24).fill(0);
+  for (let i = 0; i < n; i++) {
+    const h = new Date(histStartMs + i * effectiveBucketMs).getHours();
+    hourSums[h]  += data[i];
+    hourCounts[h]++;
+  }
+  const hourMeans = hourSums.map((s, h) => hourCounts[h] > 0 ? s / hourCounts[h] : 0);
+
+  const result: number[] = [];
+  for (let i = 0; i < buckets; i++) {
+    const h = new Date(nowMs + i * effectiveBucketMs).getHours();
+    result.push(Math.max(0, hourMeans[h]));
+  }
+  return result;
+}
+
+function runModel(method: HFMethod, data: number[], buckets: number, effectiveBucketMs = 3600000): number[] {
   if (data.length < 2) return new Array(buckets).fill(0);
   try {
     switch (method) {
-      case "linear":       return linearForecast(data, buckets);
+      case "seasonal":    return seasonalMeanForecast(data, buckets, effectiveBucketMs);
+      case "linear":      return linearForecast(data, buckets);
       case "holt-winters": return holtWintersForecast(data, buckets);
-      case "triple-exp":   return tripleExpSmoothingForecast(data, buckets);
-      case "prophet":      return prophetForecast(data, buckets);
-      case "arima":        return arimaForecast(data, buckets);
-      case "sarima":       return sarimaForecast(data, buckets);
+      case "triple-exp":  return tripleExpSmoothingForecast(data, buckets);
+      case "prophet":     return prophetForecast(data, buckets);
+      case "arima":       return arimaForecast(data, buckets);
+      case "sarima":      return sarimaForecast(data, buckets);
     }
-  } catch { return linearForecast(data, buckets); }
+  } catch { return seasonalMeanForecast(data, buckets, effectiveBucketMs); }
 }
 
 function hotnessColor(z: number): string {
@@ -105,7 +135,8 @@ function HfDropdown<T extends string | number>({
   );
 }
 
-const MODEL_OPTIONS: { value: ForecastMethod; label: string }[] = [
+const MODEL_OPTIONS: { value: HFMethod; label: string }[] = [
+  { value: "seasonal",     label: "Seasonal (Hour-of-Day)" },
   { value: "prophet",      label: "Prophet" },
   { value: "holt-winters", label: "Holt-Winters" },
   { value: "triple-exp",   label: "Triple Exp. Smoothing" },
@@ -128,26 +159,50 @@ export interface HotnessForecastPanelProps {
 export function HotnessForecastPanel({
   hotness, bucketMs, onClose, pos, onDragStart, getRequeryData,
 }: HotnessForecastPanelProps) {
-  const [method, setMethod]                   = React.useState<ForecastMethod>("prophet");
+  const [method, setMethod]                   = React.useState<HFMethod>("seasonal");
   const [pendingLookback, setPendingLookback] = React.useState(14);
   const [appliedLookback, setAppliedLookback] = React.useState(14);
   const [pendingForecast, setPendingForecast] = React.useState(7);
   const [appliedForecast, setAppliedForecast] = React.useState(7);
   const [histData, setHistData]               = React.useState<number[]>(hotness);
+  // Tracks the actual bucket size of the loaded historical data (may differ from main-view bucketMs).
+  // getHotnessHistory returns 1h buckets; the main view may be 5-min. Using the wrong value here
+  // causes bucketsPerDay to be 288 instead of 24, making models think 30 days = 2.5 days.
+  const [histBucketMs, setHistBucketMs]       = React.useState(bucketMs);
   const [isLoading, setIsLoading]             = React.useState(false);
   const [loadError, setLoadError]             = React.useState<string | null>(null);
   const [hoverIdx, setHoverIdx]               = React.useState<number | null>(null);
 
   const isDirty = pendingLookback !== appliedLookback || pendingForecast !== appliedForecast;
 
-  const bucketsPerDay   = Math.max(1, Math.round(86400000 / bucketMs));
-  const trainingData    = histData.slice(-appliedLookback * bucketsPerDay);
-  const forecastBuckets = appliedForecast * bucketsPerDay;
+  const applyHistData = React.useCallback((data: number[], days: number) => {
+    if (data.length === 0) return;
+    setHistData(data);
+    // Infer actual bucket size from data length and requested time window
+    const inferredMs = Math.round((days * 86400000) / data.length);
+    setHistBucketMs(inferredMs > 0 ? inferredMs : bucketMs);
+  }, [bucketMs]);
+
+  // Auto-fetch on mount so the panel always starts with full historical data
+  React.useEffect(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    getRequeryData(pendingLookback)
+      .then((data) => { applyHistData(data, pendingLookback); })
+      .catch(() => setLoadError("Failed to load historical data"))
+      .finally(() => setIsLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Use actual historical bucket size for all bucket-count math
+  const effectiveBucketMs = histBucketMs;
+  const bucketsPerDay     = Math.max(1, Math.round(86400000 / effectiveBucketMs));
+  const trainingData      = histData.slice(-appliedLookback * bucketsPerDay);
+  const forecastBuckets   = appliedForecast * bucketsPerDay;
 
   const forecastData = React.useMemo(
-    () => trainingData.length >= 2 ? runModel(method, trainingData, forecastBuckets) : [],
+    () => trainingData.length >= 2 ? runModel(method, trainingData, forecastBuckets, effectiveBucketMs) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(trainingData), method, forecastBuckets],
+    [JSON.stringify(trainingData), method, forecastBuckets, effectiveBucketMs],
   );
 
   const { upper, lower } = React.useMemo(
@@ -169,7 +224,7 @@ export function HotnessForecastPanel({
       setLoadError(null);
       try {
         const data = await getRequeryData(pendingLookback);
-        if (data.length > 0) setHistData(data);
+        if (data.length > 0) applyHistData(data, pendingLookback);
         else setLoadError("No data returned for this period");
       } catch { setLoadError("Failed to load historical data"); }
       finally { setIsLoading(false); }
@@ -184,11 +239,15 @@ export function HotnessForecastPanel({
   const cW = W - mL - mR, cH = H - mT - mB;
   const histLen = trainingData.length, fLen = forecastData.length;
 
-  // Scale from actual data only — confidence band upper values are excluded so they don't crush the bars
-  const dataVals = [...trainingData, ...forecastData].filter(isFinite);
-  const dataMax  = dataVals.length ? Math.max(...dataVals) : 0;
-  const maxY     = dataMax > 2 ? Math.max(dataMax, 3) * 1.15 : Math.max(dataMax * 1.5, 1.0);
+  // Y-axis is based on HISTORICAL data only so the forecast never crushes the bars.
+  // Forecast bars are clamped to maxY visually; the actual peak value still shows as text.
+  const histVals = trainingData.filter(isFinite);
+  const histMax  = histVals.length ? Math.max(...histVals) : 0;
+  const maxY     = histMax > 2 ? Math.max(histMax, 3) * 1.3 : Math.max(histMax * 1.5, 1.0);
   const yOf     = (v: number) => cH - Math.max(0, Math.min(v, maxY)) / maxY * cH;
+
+  // Warn when the forecast diverges far beyond the historical range
+  const forecastDiverges = histMax > 0 && peakZ > histMax * 2.5 && peakZ > 3;
 
   // "Now" always at horizontal center — equal space for history and forecast
   const halfW    = cW / 2;
@@ -239,7 +298,7 @@ export function HotnessForecastPanel({
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap" }}>Model</span>
-          <HfDropdown value={method} options={MODEL_OPTIONS} onChange={v => setMethod(v as ForecastMethod)} />
+          <HfDropdown value={method} options={MODEL_OPTIONS} onChange={v => setMethod(v as HFMethod)} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap" }}>Analyze</span>
@@ -311,15 +370,36 @@ export function HotnessForecastPanel({
             </>
           )}
 
-          {/* Forecast bars */}
+          {/* Forecast bars — clipped to maxY; clipped bars get a hatched top cap */}
           {forecastData.map((v, i) => {
+            const clipped = v > maxY;
             const bH = Math.max(2, Math.min(v, maxY) / maxY * cH);
+            const x = mL + xFore(i);
+            const y = mT + cH - bH;
             return (
-              <rect key={i} x={mL + xFore(i)} y={mT + cH - bH} width={foreBarW} height={bH}
-                fill={hotnessColor(v)} opacity={hoverIdx === histLen + i ? 0.9 : 0.32}
-                onMouseEnter={() => setHoverIdx(histLen + i)} style={{ cursor: "crosshair" }} />
+              <g key={i} onMouseEnter={() => setHoverIdx(histLen + i)} style={{ cursor: "crosshair" }}>
+                <rect x={x} y={y} width={foreBarW} height={bH}
+                  fill={hotnessColor(v)} opacity={hoverIdx === histLen + i ? 0.9 : 0.32} />
+                {clipped && <rect x={x} y={y} width={foreBarW} height={Math.min(4, foreBarW)}
+                  fill="rgba(255,255,255,0.7)" opacity={0.6} />}
+              </g>
             );
           })}
+
+          {/* Historical mean reference line in forecast zone */}
+          {fLen > 0 && histMax > 0 && (() => {
+            const histMean = trainingData.reduce((a, b) => a + b, 0) / Math.max(1, trainingData.length);
+            if (histMean < 0.1) return null;
+            const y = mT + yOf(Math.min(histMean, maxY));
+            return (
+              <g>
+                <line x1={mL + halfW} y1={y} x2={mL + cW} y2={y}
+                  stroke="rgba(255,255,255,0.22)" strokeWidth={1} strokeDasharray="3,5" />
+                <text x={mL + cW - 2} y={y - 3} textAnchor="end"
+                  fill="rgba(255,255,255,0.32)" fontSize={10}>hist avg</text>
+              </g>
+            );
+          })()}
 
           {/* Forecast trend line */}
           {fLen > 1 && (
@@ -382,11 +462,21 @@ export function HotnessForecastPanel({
         padding: "7px 20px 14px", borderTop: "1px solid rgba(255,255,255,0.06)",
         display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10,
       }}>
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", flexDirection: "column", gap: 4 }}>
           {peakZ >= 0.75
-            ? <span>Forecast peak: <span style={{ color: hotnessColor(peakZ), fontWeight: 700 }}>z={peakZ.toFixed(2)}</span> at +{peakIdx + 1} bucket(s) into forecast window</span>
+            ? <span>Forecast peak: <span style={{ color: hotnessColor(peakZ), fontWeight: 700 }}>z={peakZ.toFixed(2)}</span> at +{peakIdx + 1} bucket(s) into forecast window{peakZ > maxY ? <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}> (off-scale — bars capped at {maxY.toFixed(1)}σ)</span> : null}</span>
             : <span style={{ color: "#3EC96A" }}>No significant hotness spikes projected in forecast window</span>
           }
+          {method === "seasonal" && (
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+              Seasonal model: each forecast bucket shows the historical average Z-score for that hour of day. Dashed "hist avg" line = overall mean. Wider analyze window = more accurate hourly patterns.
+            </span>
+          )}
+          {forecastDiverges && (
+            <span style={{ fontSize: 11, color: "#FF8C42", display: "flex", alignItems: "center", gap: 5 }}>
+              ⚠ Forecast diverges significantly from history (z={peakZ.toFixed(1)} vs historical max z={histMax.toFixed(1)}). Linear Regression extrapolates trends indefinitely and is unreliable for mean-reverting Z-scores — try Seasonal instead.
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           {(["#4589FF","#FFF04D","#FF3D9A","#FF073A"] as const).map((col, i) => (

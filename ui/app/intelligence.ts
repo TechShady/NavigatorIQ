@@ -14,12 +14,13 @@ import type {
   DigitalExpResult,
   HeatBucketDetail,
   HeatBucketMetric,
+  HeatMetricConfig,
 } from "./types";
 import { DEFAULT_THRESHOLDS, CUSTOM_APPS } from "./constants";
 
 // ─── Heat / Z-score computation ────────────────────────────────────────────
 
-function computeHeat(timelines: number[][]): number[] {
+export function computeHeat(timelines: number[][]): number[] {
   const nonEmpty = timelines.filter((t) => t.length > 1);
   if (nonEmpty.length === 0) return [];
   // Drop the last bucket — it's always partially filled (incomplete sessions/transactions)
@@ -732,6 +733,79 @@ function buildNarrative(
   return parts.join(" ");
 }
 
+// ─── Assessment from hotness bucket data ───────────────────────────────────
+
+function assessFromBucketDetails(
+  bucketDetails: HeatBucketDetail[],
+  metricConfigs: HeatMetricConfig[]
+): AssessmentItem[] {
+  if (bucketDetails.length === 0) return [];
+  const items: AssessmentItem[] = [];
+
+  for (const cfg of metricConfigs) {
+    if (cfg.isTraffic) continue;
+
+    const values: number[] = [];
+    for (const bd of bucketDetails) {
+      const m = bd.metrics.find((m) => m.label === cfg.label);
+      if (m !== undefined) values.push(m.value);
+    }
+    if (values.length === 0) continue;
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const warn = cfg.warningThreshold;
+    const crit = cfg.criticalThreshold;
+    const hasThresholds = warn !== undefined || crit !== undefined;
+
+    let severity: Severity = "green";
+    if (hasThresholds) {
+      if (crit !== undefined && avg >= crit) severity = "red";
+      else if (warn !== undefined && avg >= warn) severity = "yellow";
+    }
+
+    const suffix = cfg.displaySuffix ?? (
+      cfg.displayUnit === "pct" ? "%" :
+      (cfg.displayUnit === "ms" || cfg.displayUnit === "ns->ms" || cfg.displayUnit === "µs->ms") ? "ms" : ""
+    );
+    const displayValue = suffix === "ms"
+      ? (avg >= 1000 ? `${(avg / 1000).toFixed(1)}s` : `${Math.round(avg)}ms`)
+      : suffix === "%"
+        ? `${avg.toFixed(1)}%`
+        : avg % 1 === 0 ? `${Math.round(avg).toLocaleString()}` : `${avg.toFixed(1)}${suffix ? ` ${suffix}` : ""}`;
+
+    const label = cfg.label;
+    const title = severity === "red"
+      ? `${label} Critical — ${displayValue}`
+      : severity === "yellow"
+        ? `${label} Elevated — ${displayValue}`
+        : `${label} Normal — ${displayValue}`;
+
+    const item: AssessmentItem = {
+      severity,
+      title,
+      detail: `Average ${label} over the selected timeframe was ${displayValue}.`,
+      metricValue: avg,
+      metricUnit: suffix,
+      metricLabel: cfg.label,
+      needsThreshold: !hasThresholds,
+      recommendation: severity === "red"
+        ? `${label} exceeded the critical threshold. Investigate recent activity in the environment.`
+        : severity === "yellow"
+          ? `${label} exceeded the warning threshold. Monitor closely for further elevation.`
+          : hasThresholds
+            ? `${label} is within the expected range.`
+            : `${label} has no thresholds configured. Tap ✎ to set Warning/Critical values inline.`,
+    };
+    if (cfg.exploreAppPath) {
+      item.builtinAppPath = cfg.exploreAppPath;
+      item.builtinAppLabel = label;
+    }
+    items.push(item);
+  }
+
+  return items;
+}
+
 // ─── Main entry point ──────────────────────────────────────────────────────
 
 export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
@@ -742,64 +816,13 @@ export function computeAssessment(
   persona: PersonaId,
   partialThresholds: Partial<ThresholdConfig>,
   tf: TimeframeInfo,
-  customMetrics?: CustomHeatMetric[]
+  customMetrics?: CustomHeatMetric[],
+  heatMetricConfigs?: HeatMetricConfig[]
 ): Assessment {
   const t: ThresholdConfig = { ...DEFAULT_THRESHOLDS, ...partialThresholds };
 
-  let allItems: AssessmentItem[];
-  switch (persona) {
-    case "developer": allItems = assessDeveloper(cur, prev, t, tf); break;
-    case "sre": allItems = assessSre(cur, prev, t, tf); break;
-    case "platform": allItems = assessPlatform(cur, prev, t, tf); break;
-    case "security": allItems = assessSecurity(cur, prev, t, tf); break;
-    case "dba": allItems = assessDba(cur, prev, t, tf); break;
-    case "network": allItems = assessNetwork(cur, prev, t, tf); break;
-    case "digital": allItems = assessDigital(cur, prev, t, tf); break;
-    case "devops": allItems = assessDevops(cur, prev, t, tf); break;
-    default: allItems = assessDeveloper(cur, prev, t, tf);
-  }
-
-  const redItems = allItems.filter((i) => i.severity === "red");
-  const yellowItems = allItems.filter((i) => i.severity === "yellow");
-  const existingGreenItems = allItems.filter((i) => i.severity === "green");
-  const supplementalGreen = buildGreenItems(allItems, cur);
-  let greenItems = [...existingGreenItems, ...supplementalGreen];
-
-  // When no data came back from any query for this timeframe, show a helpful "quiet" item
-  const hasAnyData = Object.values(cur).some((v) => v !== null);
-  const hasActiveCustomMetrics = customMetrics && customMetrics.some((m) => m.timeline.length > 1);
-  if (!hasAnyData && !hasActiveCustomMetrics) {
-    greenItems = [{
-      severity: "green",
-      title: "No Activity in This Timeframe",
-      detail: `No significant events or metrics were detected in ${tf.label}. This may indicate a quiet monitoring period, no traffic in the selected window, or that specific metric types are not yet available in this environment.`,
-      recommendation: `Try a longer timeframe (Today, Yesterday, or Last 7 Days) to see activity patterns. Check Infrastructure & Operations to verify agents are reporting.`,
-      builtinAppPath: "dynatrace.infraops",
-      builtinAppLabel: "Infrastructure & Operations",
-    }];
-  } else if (redItems.length === 0 && yellowItems.length === 0 && greenItems.length === 0) {
-    if (hasActiveCustomMetrics) {
-      greenItems = [{
-        severity: "green",
-        title: "Custom Metrics Active",
-        detail: `${customMetrics!.length} custom metric(s) are monitoring this persona. All values are within normal ranges. Check the heat strip for time-based anomaly patterns.`,
-        recommendation: `Review the heat strip to identify time buckets with elevated activity. Adjust thresholds in Settings if you want alert-level notifications.`,
-        builtinAppPath: "dynatrace.notebooks",
-        builtinAppLabel: "Notebooks",
-      }];
-    } else {
-      greenItems = [{
-        severity: "green",
-        title: "No Activity in This Timeframe",
-        detail: `No significant events or metrics were detected in ${tf.label}. This may indicate a quiet monitoring period, no traffic in the selected window, or that specific metric types are not yet available in this environment.`,
-        recommendation: `Try a longer timeframe (Today, Yesterday, or Last 7 Days) to see activity patterns. Check Infrastructure & Operations to verify agents are reporting.`,
-        builtinAppPath: "dynatrace.infraops",
-        builtinAppLabel: "Infrastructure & Operations",
-      }];
-    }
-  }
-
-  // ─── Heat scores + per-bucket detail from persona-specific metric timelines ──
+  // ─── Heat scores + per-bucket detail ──────────────────────────────────────
+  // Computed first so assessFromBucketDetails can use bucketDetails for assessment.
   const sh = cur.serviceHealth;
   const db = cur.database;
   const dtl = cur.digitalTimelapse;
@@ -903,10 +926,75 @@ export function computeAssessment(
     }
   }
 
+  // ─── Assessment items ──────────────────────────────────────────────────────
+  // When heat metric configs are provided (always the case when Metrics tab is configured),
+  // derive assessment directly from the same bucket data — no separate threshold config needed.
+  const useMetricAssessment = heatMetricConfigs && heatMetricConfigs.length > 0 && bucketDetails.length > 0;
+  let allItems: AssessmentItem[];
+  if (useMetricAssessment) {
+    allItems = assessFromBucketDetails(bucketDetails, heatMetricConfigs);
+  } else {
+    switch (persona) {
+      case "developer": allItems = assessDeveloper(cur, prev, t, tf); break;
+      case "sre": allItems = assessSre(cur, prev, t, tf); break;
+      case "platform": allItems = assessPlatform(cur, prev, t, tf); break;
+      case "security": allItems = assessSecurity(cur, prev, t, tf); break;
+      case "dba": allItems = assessDba(cur, prev, t, tf); break;
+      case "network": allItems = assessNetwork(cur, prev, t, tf); break;
+      case "digital": allItems = assessDigital(cur, prev, t, tf); break;
+      case "devops": allItems = assessDevops(cur, prev, t, tf); break;
+      default: allItems = assessDeveloper(cur, prev, t, tf);
+    }
+  }
+
+  const redItems = allItems.filter((i) => i.severity === "red");
+  const yellowItems = allItems.filter((i) => i.severity === "yellow");
+  const existingGreenItems = allItems.filter((i) => i.severity === "green");
+  // Skip supplemental green items when using metric-driven assessment (already covers all configured metrics)
+  const supplementalGreen = useMetricAssessment ? [] : buildGreenItems(allItems, cur);
+  let greenItems = [...existingGreenItems, ...supplementalGreen];
+
+  // When no data came back from any query for this timeframe, show a helpful "quiet" item
+  const hasAnyData = Object.values(cur).some((v) => v !== null);
+  const hasActiveCustomMetrics = customMetrics && customMetrics.some((m) => m.timeline.length > 1);
+  if (!hasAnyData && !hasActiveCustomMetrics) {
+    greenItems = [{
+      severity: "green",
+      title: "No Activity in This Timeframe",
+      detail: `No significant events or metrics were detected in ${tf.label}. This may indicate a quiet monitoring period, no traffic in the selected window, or that specific metric types are not yet available in this environment.`,
+      recommendation: `Try a longer timeframe (Today, Yesterday, or Last 7 Days) to see activity patterns. Check Infrastructure & Operations to verify agents are reporting.`,
+      builtinAppPath: "dynatrace.infraops",
+      builtinAppLabel: "Infrastructure & Operations",
+    }];
+  } else if (redItems.length === 0 && yellowItems.length === 0 && greenItems.length === 0) {
+    if (hasActiveCustomMetrics) {
+      greenItems = [{
+        severity: "green",
+        title: "Custom Metrics Active",
+        detail: `${customMetrics!.length} custom metric(s) are monitoring this persona. All values are within normal ranges. Check the heat strip for time-based anomaly patterns.`,
+        recommendation: `Review the heat strip to identify time buckets with elevated activity. Adjust thresholds in Settings → Metrics if you want alert-level notifications.`,
+        builtinAppPath: "dynatrace.notebooks",
+        builtinAppLabel: "Notebooks",
+      }];
+    } else {
+      greenItems = [{
+        severity: "green",
+        title: "No Activity in This Timeframe",
+        detail: `No significant events or metrics were detected in ${tf.label}. This may indicate a quiet monitoring period, no traffic in the selected window, or that specific metric types are not yet available in this environment.`,
+        recommendation: `Try a longer timeframe (Today, Yesterday, or Last 7 Days) to see activity patterns. Check Infrastructure & Operations to verify agents are reporting.`,
+        builtinAppPath: "dynatrace.infraops",
+        builtinAppLabel: "Infrastructure & Operations",
+      }];
+    }
+  }
+
   const overallHealth: Severity = redItems.length > 0 ? "red" : yellowItems.length > 0 ? "yellow" : "green";
   const narrative = (redItems.length === 0 && yellowItems.length === 0 && !hasAnyData)
     ? `No monitoring data found for ${tf.label}. Ensure Dynatrace agents are active and the environment has traffic in this window.`
     : buildNarrative(allItems, persona, tf, cur, prev);
 
-  return { redItems, yellowItems, greenItems, overallHealth, narrative, dataAvailable: true, heatScores, bucketLabel: tf.bucketLabel, bucketDetails };
+  const totalItems = redItems.length + yellowItems.length + greenItems.length;
+  const healthScore = totalItems === 0 ? 100 : Math.max(0, Math.round(100 - (redItems.length * 25 + yellowItems.length * 10) / Math.max(1, totalItems) * 4));
+
+  return { redItems, yellowItems, greenItems, overallHealth, healthScore, narrative, dataAvailable: true, heatScores, bucketLabel: tf.bucketLabel, bucketDetails };
 }
