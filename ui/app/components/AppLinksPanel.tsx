@@ -18,6 +18,12 @@ function openApp(appPath: string, tab?: string) {
 
 function LinkCard({ link }: { link: AppLink }) {
   const [hover, setHover] = useState(false);
+
+  let envBase = "";
+  try { envBase = getEnvironmentUrl(); } catch { /* not in Dynatrace shell */ }
+  const baseAppId = link.appPath ? link.appPath.split("/")[0] : null;
+  const iconUrl = baseAppId ? `${envBase}/ui/apps/${baseAppId}/icon.png` : null;
+
   return (
     <div
       onMouseEnter={() => setHover(true)}
@@ -25,6 +31,15 @@ function LinkCard({ link }: { link: AppLink }) {
       style={{ background: hover ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", cursor: "pointer", transition: "all 0.15s" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: link.docsUrl ? 6 : 0 }}>
+        {iconUrl && (
+          <img
+            src={iconUrl}
+            width={16}
+            height={16}
+            style={{ flexShrink: 0, borderRadius: 3 }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        )}
         <div
           style={{ flex: 1, fontSize: 13, fontWeight: 600, color: hover ? "#7ab4ff" : "rgba(255,255,255,0.85)" }}
           onClick={() => link.appPath && openApp(link.appPath)}
