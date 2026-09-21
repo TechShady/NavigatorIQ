@@ -22,7 +22,7 @@ function LinkCard({ link }: { link: AppLink }) {
   let envBase = "";
   try { envBase = getEnvironmentUrl(); } catch { /* not in Dynatrace shell */ }
   const baseAppId = link.appPath ? link.appPath.split("/")[0] : null;
-  const iconUrl = baseAppId ? `${envBase}/ui/apps/${baseAppId}/icon.png` : null;
+  const iconUrl = baseAppId ? `${envBase}/ui/apps/${baseAppId}/icon.svg` : null;
 
   return (
     <div
