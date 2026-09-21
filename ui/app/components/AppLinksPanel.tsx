@@ -2,6 +2,52 @@ import React, { useState } from "react";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { AppLink, AssessmentItem, PersonaId } from "../types";
 import { DEFAULT_APP_LINKS } from "../constants";
+import {
+  PurePathSignetIcon,
+  ApplicationObservabilitySignetIcon,
+  LogAnalyticsSignetIcon,
+  DQLSignetIcon,
+  GrailSignetIcon,
+  DavisAISignetIcon,
+  SiteReliabilitySignetIcon,
+  AutomationsSignetIcon,
+  InfrastructureObservabilitySignetIcon,
+  AppEngineSignetIcon,
+  PlatformSignetIcon,
+  SecurityAnalyticsSignetIcon,
+  ApplicationSecuritySignetIcon,
+  SecurityProtectionSignetIcon,
+  SecurityConfigAndComplianceSignetIcon,
+  SmartscapeSignetIcon,
+  DigitalExperienceSignetIcon,
+  SyntheticMonitoringSignetIcon,
+  BusinessAnalyticsSignetIcon,
+} from "@dynatrace/strato-icons";
+
+const APP_ICON_MAP: Record<string, React.ComponentType<any>> = {
+  "dynatrace.distributedtracing": PurePathSignetIcon,
+  "dynatrace.services": ApplicationObservabilitySignetIcon,
+  "dynatrace.logs": LogAnalyticsSignetIcon,
+  "dynatrace.notebooks": DQLSignetIcon,
+  "dynatrace.dashboards": GrailSignetIcon,
+  "dynatrace.davis.problems": DavisAISignetIcon,
+  "dynatrace.service.level.objectives": SiteReliabilitySignetIcon,
+  "dynatrace.davis.anomaly.detection": DavisAISignetIcon,
+  "dynatrace.automations": AutomationsSignetIcon,
+  "dynatrace.infraops": InfrastructureObservabilitySignetIcon,
+  "dynatrace.kubernetes": InfrastructureObservabilitySignetIcon,
+  "dynatrace.extensions": AppEngineSignetIcon,
+  "dynatrace.settings": PlatformSignetIcon,
+  "dynatrace.security.analytics": SecurityAnalyticsSignetIcon,
+  "dynatrace.security.vulnerabilities": ApplicationSecuritySignetIcon,
+  "dynatrace.security.attacks": SecurityProtectionSignetIcon,
+  "dynatrace.security.posture.management": SecurityConfigAndComplianceSignetIcon,
+  "dynatrace.database.overview": SmartscapeSignetIcon,
+  "dynatrace.experience.vitals": DigitalExperienceSignetIcon,
+  "dynatrace.synthetic": SyntheticMonitoringSignetIcon,
+  "dynatrace.biz.explore": BusinessAnalyticsSignetIcon,
+  "dynatrace.site.reliability.guardian": SiteReliabilitySignetIcon,
+};
 
 interface AppLinksPanelProps {
   personaId: PersonaId;
@@ -18,11 +64,8 @@ function openApp(appPath: string, tab?: string) {
 
 function LinkCard({ link }: { link: AppLink }) {
   const [hover, setHover] = useState(false);
-
-  let envBase = "";
-  try { envBase = getEnvironmentUrl(); } catch { /* not in Dynatrace shell */ }
   const baseAppId = link.appPath ? link.appPath.split("/")[0] : null;
-  const iconUrl = baseAppId ? `${envBase}/ui/apps/${baseAppId}/icon.svg` : null;
+  const AppIcon = baseAppId ? APP_ICON_MAP[baseAppId] : null;
 
   return (
     <div
@@ -31,15 +74,7 @@ function LinkCard({ link }: { link: AppLink }) {
       style={{ background: hover ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", cursor: "pointer", transition: "all 0.15s" }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: link.docsUrl ? 6 : 0 }}>
-        {iconUrl && (
-          <img
-            src={iconUrl}
-            width={16}
-            height={16}
-            style={{ flexShrink: 0, borderRadius: 3 }}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-          />
-        )}
+        {AppIcon && <AppIcon width={16} height={16} style={{ flexShrink: 0 }} />}
         <div
           style={{ flex: 1, fontSize: 13, fontWeight: 600, color: hover ? "#7ab4ff" : "rgba(255,255,255,0.85)" }}
           onClick={() => link.appPath && openApp(link.appPath)}
