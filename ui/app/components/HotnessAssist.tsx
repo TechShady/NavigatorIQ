@@ -583,6 +583,24 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
   const hasTwoWorst = analysis.worst2Idx !== analysis.worstIdx;
   const hasTwoBest  = analysis.best2Idx  !== analysis.bestIdx;
 
+  const [panelW, setPanelW] = useState(700);
+  const [panelH, setPanelH] = useState(600);
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const dx = e.clientX - resizeRef.current.startX;
+      const dy = e.clientY - resizeRef.current.startY;
+      setPanelW(Math.max(380, resizeRef.current.startW + dx));
+      setPanelH(Math.max(420, resizeRef.current.startH + dy));
+    };
+    const onUp = () => { resizeRef.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   const handleExportPdf = useCallback(() => {
     const ts = new Date().toLocaleString();
 
@@ -829,11 +847,11 @@ ${davisHtml}
   }, [deploymentStatuses]);
   return createPortal(
     <div style={{
-      position: "fixed", left: pos.x, top: pos.y, zIndex: 9991, width: 700,
+      position: "fixed", left: pos.x, top: pos.y, zIndex: 9991, width: panelW,
       background: "rgba(14,18,36,0.97)", border: "1px solid rgba(255,120,30,0.35)",
       borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.78)",
       fontFamily: '"Inter",system-ui,sans-serif', color: "#e8eeff",
-      backdropFilter: "blur(16px)", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column",
+      backdropFilter: "blur(16px)", height: panelH, overflow: "hidden", display: "flex", flexDirection: "column",
     }}>
       {/* Header */}
       <div onMouseDown={onDragStart} style={{
@@ -1124,6 +1142,30 @@ ${davisHtml}
             )}
           </div>
         )}
+      </div>
+      {/* Resize handle */}
+      <div
+        onMouseDown={e => {
+          e.stopPropagation();
+          resizeRef.current = { startX: e.clientX, startY: e.clientY, startW: panelW, startH: panelH };
+        }}
+        style={{
+          position: "absolute",
+          bottom: 0,
+          right: 0,
+          width: 18,
+          height: 18,
+          cursor: "nwse-resize",
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "flex-end",
+          padding: "3px",
+        }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: 0.3 }}>
+          <line x1="1" y1="9" x2="9" y2="1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          <line x1="5" y1="9" x2="9" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
       </div>
     </div>,
     document.body
