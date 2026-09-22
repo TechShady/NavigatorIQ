@@ -34,6 +34,8 @@ export interface HotnessAnalysis {
   bestMetrics: HeatBucketMetric[];
   best2Metrics: HeatBucketMetric[];
   usableCount: number;
+  alertPattern: "deployment" | "load-induced" | "infrastructure" | "unknown";
+  recommendations: Array<{ impact: "high" | "medium" | "low"; text: string }>;
   insights: Array<{ severity: "critical" | "warning" | "info" | "good"; icon: string; text: string }>;
 }
 
@@ -51,6 +53,8 @@ export function analyzeHotness(
       burstType: "stable", worstDriver: "N/A",
       worstMetrics: [], worst2Metrics: [], bestMetrics: [], best2Metrics: [],
       usableCount: 0,
+      alertPattern: "unknown",
+      recommendations: [],
       insights: [{ severity: "info", icon: "ℹ️", text: "Collect more data to enable Hotness Assist analysis." }],
     };
   }
@@ -145,7 +149,32 @@ export function analyzeHotness(
   const b2note = best2Idx !== bestIdx ? ` 2nd best: bucket ${best2Idx + 1} (Z=${best2Z.toFixed(2)}).` : "";
   const summary = `Analyzed ${usable.length} ${bucketLabel} bucket${usable.length !== 1 ? "s" : ""} (last excluded as potentially incomplete). ${spikeSummary.charAt(0).toUpperCase() + spikeSummary.slice(1)}${burstDesc}. Worst: bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}, driver: ${worstDriver}).${w2note} Best: bucket ${bestIdx + 1} (Z=${bestZ.toFixed(2)}).${b2note}`;
 
-  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, insights };
+  // Compute alertPattern
+  const trafficMetric = worstMetrics.find(m => m.isTraffic);
+  const sessZ = trafficMetric?.zScore ?? 0;
+  const nonTrafficSorted = worstMetrics.filter(m => !m.isTraffic && m.zScore > 0).sort((a, b) => b.zScore - a.zScore);
+  const errZ = nonTrafficSorted[0]?.zScore ?? 0;
+  const perfZ = worstMetrics.filter(m => !m.isTraffic).sort((a, b) => b.zScore - a.zScore)[0]?.zScore ?? 0;
+  const alertPattern: HotnessAnalysis["alertPattern"] =
+    errZ >= 1.0 && sessZ >= 0.75 ? "load-induced" :
+    errZ >= 1.0 && sessZ < 0.5 ? "deployment" :
+    perfZ >= 1.0 && errZ < 0.5 ? "infrastructure" :
+    "unknown";
+
+  // Compute recommendations
+  const recommendations: HotnessAnalysis["recommendations"] = [];
+  if (worstZ >= 0.75) {
+    recommendations.push({ impact: "high", text: `Investigate ${worstDriver} in bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}) — compare traces and logs from the worst window against baseline.` });
+  }
+  if (bestZ < 0.5 && worstZ >= 1.0) {
+    const bestNote = bestMetrics[0] ? ` (${bestMetrics[0].label}: ${bestMetrics[0].displayValue})` : "";
+    recommendations.push({ impact: "high", text: `Bucket ${bestIdx + 1}${bestNote} represents your optimal operating conditions — use it as your SLO and capacity planning baseline.` });
+  }
+  if (burstType === "sustained" || burstType === "chronic") {
+    recommendations.push({ impact: "medium", text: `${burstType === "chronic" ? "Chronic" : "Sustained"} pattern (${maxRun} consecutive hot buckets) — configure auto-remediation or alerting to catch this pattern automatically.` });
+  }
+
+  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, alertPattern, recommendations, insights };
 }
 
 // ─── Button ────────────────────────────────────────────────────────────────
@@ -196,28 +225,43 @@ function AnimatedSummary({ text }: { text: string }) {
 
 function MiniHotnessChart({ scores, worstIdx, worst2Idx, bestIdx, best2Idx }: { scores: number[]; worstIdx: number; worst2Idx: number; bestIdx: number; best2Idx: number }) {
   if (scores.length < 2) return null;
-  const W = 640, H = 72, LH = 14;
-  const maxZ = Math.max(...scores, 1);
+  const W = 640, maxZ = Math.max(...scores, 1);
   const barW = Math.max(2, W / scores.length - 1);
   const color = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const xOf = (i: number) => (i / Math.max(scores.length - 1, 1)) * (W - barW);
+
+  // Build raw label specs
+  const rawLabels = [
+    { idx: worstIdx,  label: "W1", color: "#FF073A", lineW: 1.5, lineOp: 0.75 },
+    ...(worst2Idx !== worstIdx ? [{ idx: worst2Idx, label: "W2", color: "#FF8FAB", lineW: 1, lineOp: 0.65 }] : []),
+    ...(bestIdx !== worstIdx   ? [{ idx: bestIdx,   label: "B1", color: "#10B981", lineW: 1.5, lineOp: 0.75 }] : []),
+    ...(best2Idx !== bestIdx && best2Idx !== worstIdx ? [{ idx: best2Idx, label: "B2", color: "#6EE7A0", lineW: 1, lineOp: 0.65 }] : []),
+  ].map(l => ({ ...l, cx: xOf(l.idx) + barW / 2 }));
+
+  // Greedy row assignment to avoid overlap
+  const rowMaxX: number[] = [];
+  const labelRow = new Map<string, number>();
+  [...rawLabels].sort((a, b) => a.cx - b.cx).forEach(lbl => {
+    let r = 0; while (r < rowMaxX.length && lbl.cx - rowMaxX[r] < 20) r++;
+    labelRow.set(lbl.label, r); rowMaxX[r] = lbl.cx;
+  });
+  const labelRowH = 14;
+  const linesStartY = rowMaxX.length * labelRowH + 2;
+  const H = 72;
   const bH = (z: number) => Math.max(3, (z / maxZ) * H);
-  const markers: { i: number; label: string; color: string }[] = [];
-  markers.push({ i: worstIdx, label: "▲W1", color: "#FF073A" });
-  if (worst2Idx !== worstIdx) markers.push({ i: worst2Idx, label: "▲W2", color: "#FF3D9A" });
-  markers.push({ i: bestIdx, label: "▽B1", color: "#10B981" });
-  if (best2Idx !== bestIdx) markers.push({ i: best2Idx, label: "▽B2", color: "#34D399" });
+
   return (
-    <svg width={W} height={H + LH} style={{ display: "block", borderRadius: 6, background: "rgba(255,255,255,0.03)" }}>
+    <svg width={W} height={H + linesStartY} style={{ display: "block", borderRadius: 6, background: "rgba(255,255,255,0.03)" }}>
       {scores.map((z, i) => (
-        <rect key={i} x={xOf(i)} y={H - bH(z)} width={barW} height={bH(z)} fill={color(z)} opacity={0.85} rx={1} />
+        <rect key={i} x={xOf(i)} y={linesStartY + H - bH(z)} width={barW} height={bH(z)} fill={color(z)} opacity={0.85} rx={1} />
       ))}
-      {markers.map((m) => {
-        const cx = xOf(m.i) + barW / 2;
+      {rawLabels.map(({ label, color: c, lineW, lineOp, cx }) => {
+        const row = labelRow.get(label) ?? 0;
         return (
-          <g key={`marker-${m.i}-${m.label}`}>
-            <line x1={cx} y1={0} x2={cx} y2={H} stroke={m.color} strokeWidth={1} strokeDasharray="3,2" opacity={0.5} />
-            <text x={cx} y={H + LH - 2} textAnchor="middle" fill={m.color} fontSize={9} fontWeight="bold">{m.label}</text>
+          <g key={label}>
+            <line x1={cx} y1={linesStartY} x2={cx} y2={linesStartY + H} stroke={c} strokeWidth={lineW} strokeDasharray="3,2" opacity={lineOp} />
+            <rect x={cx - 9} y={row * labelRowH + 1} width={18} height={13} rx={2} fill="rgba(15,20,40,0.88)" />
+            <text x={cx} y={row * labelRowH + 11} fontSize={8} fill={c} fontWeight="700" fontFamily="'Segoe UI',system-ui,sans-serif" textAnchor="middle">{label}</text>
           </g>
         );
       })}
@@ -264,7 +308,6 @@ function DiffTable({ worstMetrics, bestMetrics, worstLabel, bestLabel }: { worst
   });
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>What's Different — Worst vs Best</div>
       <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 0 }}>
           {["Metric", worstLabel, bestLabel, "Δ Z-score"].map((h) => <div key={h} style={HDR}>{h}</div>)}
@@ -302,7 +345,7 @@ function CommonTable({ metrics1, metrics2, label1, label2, title, mode }: {
   const signalColor = mode === "worst" ? "#FF3D9A" : "#10B981";
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>{title}</div>
+      {title && <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>{title}</div>}
       <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 0 }}>
           {["Metric", label1, label2, "Pattern"].map((h) => <div key={h} style={HDR}>{h}</div>)}
@@ -500,42 +543,212 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
 
   const handleExportPdf = useCallback(() => {
     const ts = new Date().toLocaleString();
-    const rows = (metrics: HeatBucketMetric[]) => metrics.map(m =>
-      `<tr><td>${m.label}</td><td style="color:${m.zScore >= 1.5 ? "#FF3D9A" : m.zScore >= 0.75 ? "#FFF04D" : "#10B981"}">${m.displayValue}</td><td>${m.zScore > 0 ? "+" : ""}${m.zScore.toFixed(1)}σ</td></tr>`
+
+    // Build SVG timeline with greedy staggered labels (same logic as panel chart)
+    const pdfScores = heatScores.slice(0, -1);
+    const pdfSvg = (() => {
+      if (pdfScores.length < 2) return "";
+      const W = 640, maxZ = Math.max(...pdfScores, 1);
+      const barW = Math.max(2, W / pdfScores.length - 1);
+      const colorFn = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
+      const xOf = (i: number) => (i / Math.max(pdfScores.length - 1, 1)) * (W - barW);
+      const rawLabels = [
+        { idx: analysis.worstIdx, label: "W1", color: "#FF073A", lineW: 1.5, lineOp: 0.75 },
+        ...(analysis.worst2Idx !== analysis.worstIdx ? [{ idx: analysis.worst2Idx, label: "W2", color: "#FF8FAB", lineW: 1, lineOp: 0.65 }] : []),
+        ...(analysis.bestIdx !== analysis.worstIdx ? [{ idx: analysis.bestIdx, label: "B1", color: "#10B981", lineW: 1.5, lineOp: 0.75 }] : []),
+        ...(analysis.best2Idx !== analysis.bestIdx && analysis.best2Idx !== analysis.worstIdx ? [{ idx: analysis.best2Idx, label: "B2", color: "#6EE7A0", lineW: 1, lineOp: 0.65 }] : []),
+      ].map(l => ({ ...l, cx: xOf(l.idx) + barW / 2 }));
+      const rowMaxX: number[] = [];
+      const labelRowMap: Record<string, number> = {};
+      [...rawLabels].sort((a, b) => a.cx - b.cx).forEach(lbl => {
+        let r = 0; while (r < rowMaxX.length && lbl.cx - rowMaxX[r] < 20) r++;
+        labelRowMap[lbl.label] = r; rowMaxX[r] = lbl.cx;
+      });
+      const labelRowH = 14;
+      const linesStartY = rowMaxX.length * labelRowH + 2;
+      const H = 72;
+      const bH = (z: number) => Math.max(3, (z / maxZ) * H);
+      const bars = pdfScores.map((z, i) => `<rect x="${xOf(i)}" y="${linesStartY + H - bH(z)}" width="${barW}" height="${bH(z)}" fill="${colorFn(z)}" opacity="0.85" rx="1"/>`).join("");
+      const markers = rawLabels.map(({ idx, label, color: c, lineW, lineOp, cx }) => {
+        const row = labelRowMap[label] ?? 0;
+        return `<line x1="${cx}" y1="${linesStartY}" x2="${cx}" y2="${linesStartY + H}" stroke="${c}" stroke-width="${lineW}" stroke-dasharray="3,2" opacity="${lineOp}"/><rect x="${cx - 9}" y="${row * labelRowH + 1}" width="18" height="13" rx="2" fill="rgba(15,20,40,0.88)"/><text x="${cx}" y="${row * labelRowH + 11}" font-size="8" fill="${c}" font-weight="700" font-family="Segoe UI,system-ui,sans-serif" text-anchor="middle">${label}</text>`;
+      }).join("");
+      return `<svg width="${W}" height="${H + linesStartY}" style="display:block;border-radius:6px;background:rgba(255,255,255,0.03)">${bars}${markers}</svg>`;
+    })();
+
+    // Metric table rows for PDF
+    const metricTableRows = (metrics: HeatBucketMetric[]) => metrics.map(m =>
+      `<tr><td style="padding:3px 10px;opacity:0.7;font-size:12px">${m.label}</td><td style="padding:3px 10px;font-weight:600;font-size:12px;color:${m.zScore >= 1.5 ? "#FF3D9A" : m.zScore >= 0.75 ? "#FFF04D" : "#10B981"}">${m.displayValue} <span style="font-size:10px;opacity:0.6">${m.zScore > 0 ? "+" : ""}${m.zScore.toFixed(1)}σ</span></td></tr>`
     ).join("");
+
+    // Delta table for W1 vs B1
+    const deltaTableRows = analysis.worstMetrics.map(wm => {
+      const bm = analysis.bestMetrics.find(b => b.label === wm.label);
+      const delta = wm.zScore - (bm?.zScore ?? 0);
+      const gapColor = !wm.isTraffic && delta > 1 ? "#FF3D9A" : !wm.isTraffic && delta > 0.5 ? "#FFF04D" : "rgba(255,255,255,0.6)";
+      const wColor = wm.isTraffic ? "#4589FF" : wm.zScore >= 1.5 ? "#FF3D9A" : wm.zScore >= 0.75 ? "#FFF04D" : "rgba(255,255,255,0.6)";
+      return `<tr><td style="padding:5px 10px;font-size:12px">${wm.label}</td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:#10B981">${bm?.displayValue ?? "—"}</td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${wColor}">${wm.displayValue}</td><td style="padding:5px 10px;font-size:12px;font-weight:700;color:${gapColor}">${delta > 0 ? "+" : ""}${delta.toFixed(1)}</td></tr>`;
+    }).join("");
+
+    // Common table rows (W1vsW2 or B1vsB2)
+    const commonTableRows = (m1s: HeatBucketMetric[], m2s: HeatBucketMetric[], mode: "worst" | "best") => m1s.map(m1 => {
+      const m2 = m2s.find(m => m.label === m1.label);
+      const z2 = m2?.zScore ?? 0;
+      const isCommon = !m1.isTraffic && (mode === "worst" ? (m1.zScore > 0.75 && z2 > 0.75) : (m1.zScore <= 0.75 && z2 <= 0.75));
+      const zColor = (z: number, isT: boolean) => isT ? "#4589FF" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#10B981";
+      const signalColor = mode === "worst" ? "#FF3D9A" : "#10B981";
+      const bg = isCommon ? `${signalColor}18` : "transparent";
+      return `<tr style="background:${bg}"><td style="padding:5px 10px;font-size:12px;font-weight:${isCommon ? 700 : 400}">${m1.label}</td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${zColor(m1.zScore, m1.isTraffic ?? false)}">${m1.displayValue} <span style="font-size:10px;opacity:0.6">${m1.zScore > 0 ? "+" : ""}${m1.zScore.toFixed(1)}σ</span></td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${zColor(z2, m1.isTraffic ?? false)}">${m2?.displayValue ?? "—"} <span style="font-size:10px;opacity:0.6">${z2 > 0 ? "+" : ""}${z2.toFixed(1)}σ</span></td><td style="padding:5px 10px;font-size:12px;font-weight:700;color:${isCommon ? signalColor : "rgba(255,255,255,0.2)"}">${isCommon ? (mode === "worst" ? "Both hot" : "Both healthy") : "—"}</td></tr>`;
+    }).join("");
+
+    // Pattern/burst info
+    const patternLabel = analysis.alertPattern === "deployment" ? "Deployment Regression" : analysis.alertPattern === "load-induced" ? "Load-Induced Overload" : analysis.alertPattern === "infrastructure" ? "Infrastructure Issue" : "Pattern Unknown";
+    const patternColor = analysis.alertPattern === "deployment" ? "#FF3D9A" : analysis.alertPattern === "load-induced" ? "#FFF04D" : analysis.alertPattern === "infrastructure" ? "#FF832B" : "#888";
+    const patternSub = analysis.alertPattern === "deployment" ? "Code / config change most likely" : analysis.alertPattern === "load-induced" ? "Infrastructure capacity limit hit" : analysis.alertPattern === "infrastructure" ? "CDN, network, or origin saturation" : "Insufficient signal for classification";
+    const burstColor = analysis.burstType === "chronic" ? "#FF073A" : analysis.burstType === "sustained" ? "#FF3D9A" : analysis.burstType === "transient" ? "#FFF04D" : "#10B981";
+    const burstLabel = analysis.burstType === "chronic" ? `Chronic (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "sustained" ? `Sustained (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "transient" ? `Transient (${analysis.maxConsecutiveHot} consecutive)` : "Stable";
+    const burstSub = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Appears self-resolved" : "No elevated buckets";
+
     const insHtml = analysis.insights.map(ins =>
       `<div style="margin-bottom:7px;padding:8px 12px;border-radius:6px;border-left:3px solid ${INSIGHT_COLORS[ins.severity]};background:rgba(255,255,255,0.03)"><span style="font-size:11px;font-weight:700;opacity:0.55;margin-right:6px">${ins.severity.toUpperCase()}</span>${ins.icon} ${ins.text}</div>`
     ).join("");
+
+    const recsHtml = analysis.recommendations.length > 0
+      ? `<div class="section-label">Recommendations</div>` +
+        analysis.recommendations.map(rec => {
+          const rc = rec.impact === "high" ? "#FF3D9A" : rec.impact === "medium" ? "#FFF04D" : "#4589FF";
+          return `<div style="margin-bottom:7px;padding:8px 12px;border-radius:6px;border-left:3px solid ${rc};background:rgba(255,255,255,0.03)"><span style="font-size:11px;font-weight:700;color:${rc};margin-right:8px;text-transform:uppercase">${rec.impact}</span>${rec.text}</div>`;
+        }).join("")
+      : "";
+
+    const davisHtml = problems && problems.count > 0
+      ? `<div class="page-break"></div><div class="section-label">⚠️ Active Davis Problems · ${problems.count} Open</div>` +
+        problems.titles.slice(0, 5).map(t => `<div style="margin-bottom:5px;padding:8px 11px;background:rgba(255,7,58,0.07);border:1px solid rgba(255,7,58,0.25);border-radius:7px;font-size:12px">🔴 ${t}</div>`).join("") +
+        (problems.count > 5 ? `<div style="font-size:11px;opacity:0.4;padding:4px 11px">+ ${problems.count - 5} more open problem${problems.count - 5 !== 1 ? "s" : ""}</div>` : "")
+      : "";
+
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Hotness Assist Report — NavigatorIQ</title>
 <style>
-  @media print{body{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;}@page{margin:0.6in;size:A4;}.no-print{display:none !important;}}
+  @media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } @page { margin: 0.6in; size: A4; } .no-print { display: none !important; } .page-break { page-break-before: always; } }
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e0e0e0;background:#0f1428;margin:0 auto;padding:32px;max-width:900px;line-height:1.5;}
-  h1{margin:0 0 4px;font-size:22px;color:#FF8C42;}h2{font-size:12px;margin:20px 0 8px;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:5px;color:#bbb;text-transform:uppercase;letter-spacing:0.5px;}
-  table{border-collapse:collapse;width:100%;margin-bottom:20px;}td,th{padding:6px 10px;border-bottom:1px solid rgba(128,128,128,0.08);font-size:13px;}th{text-align:left;font-size:11px;opacity:0.5;font-weight:600;}
+  h1{margin:0 0 4px;font-size:22px;color:#FF8C42;}
+  .section-label{font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin:20px 0 8px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:5px;}
   .toolbar{text-align:right;margin-bottom:16px;}.toolbar button{background:#FF8C42;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:13px;cursor:pointer;}
-  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}.kpi-tile{background:rgba(128,128,128,0.08);border:1px solid rgba(128,128,128,0.15);border-radius:8px;padding:10px 14px;text-align:center;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}
+  .kpi-tile{background:rgba(128,128,128,0.08);border:1px solid rgba(128,128,128,0.15);border-radius:8px;padding:10px 14px;text-align:center;}
+  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+  .card{border-radius:8px;padding:12px 14px;}
+  .page-break{page-break-before:always;margin-top:20px;}
+  table{border-collapse:collapse;width:100%;margin-bottom:20px;}td,th{padding:6px 10px;border-bottom:1px solid rgba(128,128,128,0.08);font-size:13px;}th{text-align:left;font-size:10px;opacity:0.5;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;}
 </style></head><body>
 <div class="toolbar no-print"><button onclick="window.print()">Print / Save PDF</button></div>
 <h1>🔥 Hotness Assist Report — NavigatorIQ</h1>
 <div style="font-size:11px;color:#888;margin-bottom:20px">${analysis.usableCount} buckets analyzed · ${analysis.hotBuckets} elevated · ${analysis.criticalBuckets} critical | Generated: ${ts}</div>
-<h2>Summary</h2><p style="font-size:13px;line-height:1.7">${analysis.summary}</p>
+
+<div class="section-label">Summary</div>
+<p style="font-size:13px;line-height:1.7;margin-top:0">${analysis.summary}</p>
+
 <div class="kpi-grid">
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}/${analysis.usableCount}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
   <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981"}">${analysis.criticalBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Critical Spikes</div></div>
   <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}σ</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
   <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}σ</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
 </div>
-<h2>Worst Bucket (#${analysis.worstIdx + 1}, Z=${analysis.worstZ.toFixed(2)})</h2>
-<table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.worstMetrics)}</table>
-${hasTwoWorst ? `<h2>2nd Worst Bucket (#${analysis.worst2Idx + 1}, Z=${analysis.worst2Z.toFixed(2)})</h2><table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.worst2Metrics)}</table>` : ""}
-<h2>Best Bucket (#${analysis.bestIdx + 1}, Z=${analysis.bestZ.toFixed(2)})</h2>
-<table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.bestMetrics)}</table>
-${hasTwoBest ? `<h2>2nd Best Bucket (#${analysis.best2Idx + 1}, Z=${analysis.best2Z.toFixed(2)})</h2><table><tr><th>Metric</th><th>Value</th><th>Z-score</th></tr>${rows(analysis.best2Metrics)}</table>` : ""}
-<h2>Insights</h2>${insHtml}
+
+<div class="section-label">Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)</div>
+${pdfSvg}
+
+<div class="card-grid" style="margin-top:16px">
+  <div class="card" style="background:${patternColor}12;border:1px solid ${patternColor}40">
+    <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:6px">Pattern Analysis</div>
+    <div style="font-size:15px;font-weight:700;color:${patternColor}">${patternLabel}</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:3px">${patternSub}</div>
+  </div>
+  <div class="card" style="background:${burstColor}12;border:1px solid ${burstColor}40">
+    <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:6px">Spike Duration</div>
+    <div style="font-size:15px;font-weight:700;color:${burstColor}">${burstLabel}</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:3px">${burstSub}</div>
+  </div>
+</div>
+
+${analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 ? `
+<div class="page-break"></div>
+<div class="section-label">What's Different — Worst #1 vs Best #1</div>
+<div class="card-grid">
+  <div class="card" style="background:rgba(255,7,58,0.06);border:1px solid rgba(255,7,58,0.2)">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#FF073A;margin-bottom:8px">▲ Worst #1 — Bucket ${analysis.worstIdx + 1} (Z=${analysis.worstZ.toFixed(2)})</div>
+    <table><tbody>${metricTableRows(analysis.worstMetrics)}</tbody></table>
+  </div>
+  <div class="card" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2)">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#10B981;margin-bottom:8px">▽ Best #1 — Bucket ${analysis.bestIdx + 1} (Z=${analysis.bestZ.toFixed(2)})</div>
+    <table><tbody>${metricTableRows(analysis.bestMetrics)}</tbody></table>
+  </div>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <thead><tr>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;opacity:0.5;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Metric</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#10B981">Best #1</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#FF073A">Worst #1</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Δ Z-score</th>
+  </tr></thead>
+  <tbody>${deltaTableRows}</tbody>
+</table>` : ""}
+
+${hasTwoWorst ? `
+<div class="page-break"></div>
+<div class="section-label">Common Bad Signals — Worst #1 vs Worst #2</div>
+<div class="card-grid">
+  <div class="card" style="background:rgba(255,7,58,0.06);border:1px solid rgba(255,7,58,0.2)">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#FF073A;margin-bottom:8px">▲ Worst #1 — Bucket ${analysis.worstIdx + 1} (Z=${analysis.worstZ.toFixed(2)})</div>
+    <table><tbody>${metricTableRows(analysis.worstMetrics)}</tbody></table>
+  </div>
+  <div class="card" style="background:rgba(255,61,154,0.06);border:1px solid rgba(255,61,154,0.2)">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#FF3D9A;margin-bottom:8px">▲ Worst #2 — Bucket ${analysis.worst2Idx + 1} (Z=${analysis.worst2Z.toFixed(2)})</div>
+    <table><tbody>${metricTableRows(analysis.worst2Metrics)}</tbody></table>
+  </div>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <thead><tr>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;opacity:0.5;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Metric</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#FF073A">Worst #1</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#FF3D9A">Worst #2</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Pattern</th>
+  </tr></thead>
+  <tbody>${commonTableRows(analysis.worstMetrics, analysis.worst2Metrics, "worst")}</tbody>
+</table>` : ""}
+
+${hasTwoBest ? `
+<div class="page-break"></div>
+<div class="section-label">Common Good Signals — Best #1 vs Best #2</div>
+<div class="card-grid">
+  <div class="card" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2)">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#10B981;margin-bottom:8px">▽ Best #1 — Bucket ${analysis.bestIdx + 1} (Z=${analysis.bestZ.toFixed(2)})</div>
+    <table><tbody>${metricTableRows(analysis.bestMetrics)}</tbody></table>
+  </div>
+  <div class="card" style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2)">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#34D399;margin-bottom:8px">▽ Best #2 — Bucket ${analysis.best2Idx + 1} (Z=${analysis.best2Z.toFixed(2)})</div>
+    <table><tbody>${metricTableRows(analysis.best2Metrics)}</tbody></table>
+  </div>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <thead><tr>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;opacity:0.5;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Metric</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#10B981">Best #1</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#34D399">Best #2</th>
+    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Pattern</th>
+  </tr></thead>
+  <tbody>${commonTableRows(analysis.bestMetrics, analysis.best2Metrics, "best")}</tbody>
+</table>` : ""}
+
+<div class="page-break"></div>
+<div class="section-label">Insights</div>
+${insHtml}
+${recsHtml}
+${davisHtml}
 </body></html>`;
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); }
-  }, [analysis, hasTwoWorst, hasTwoBest]);
+  }, [analysis, hasTwoWorst, hasTwoBest, heatScores, bucketLabel, problems]);
 
   // Per-user "installed apps" list — overrides probe results for reliable hiding of GitHub links
   const installedAppsState = useUserAppState({ key: INSTALLED_APPS_KEY });
@@ -572,16 +785,6 @@ ${hasTwoBest ? `<h2>2nd Best Bucket (#${analysis.best2Idx + 1}, Z=${analysis.bes
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deploymentStatuses]);
-  const burstLabels: Record<HotnessAnalysis["burstType"], string> = {
-    stable: "Stable — no elevated activity",
-    transient: "Transient spike — self-resolved",
-    sustained: "Sustained degradation",
-    chronic: "Chronic degradation",
-  };
-  const burstColors: Record<HotnessAnalysis["burstType"], string> = {
-    stable: "#10B981", transient: "#4589FF", sustained: "#FFF04D", chronic: "#FF073A",
-  };
-
   return createPortal(
     <div style={{
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9991, width: 700,
@@ -640,96 +843,99 @@ ${hasTwoBest ? `<h2>2nd Best Bucket (#${analysis.best2Idx + 1}, Z=${analysis.bes
           <MiniHotnessChart scores={heatScores.slice(0, -1)} worstIdx={analysis.worstIdx} worst2Idx={analysis.worst2Idx} bestIdx={analysis.bestIdx} best2Idx={analysis.best2Idx} />
         </div>
 
-        {/* Pattern card */}
-        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 16px", border: "1px solid rgba(255,255,255,0.07)" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Activity Pattern</div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: burstColors[analysis.burstType] }}>{burstLabels[analysis.burstType]}</div>
-              {analysis.maxConsecutiveHot > 0 && (
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>
-                  Max {analysis.maxConsecutiveHot} consecutive hot bucket{analysis.maxConsecutiveHot !== 1 ? "s" : ""}
-                </div>
-              )}
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Primary driver</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#FF8C42" }}>{analysis.worstDriver}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bucket metric cards: top 2 worst + top 2 best */}
-        {analysis.worstMetrics.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: hasTwoWorst ? "1fr 1fr" : "1fr", gap: 10 }}>
-            <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
-              {analysis.worstMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
-            </div>
-            {hasTwoWorst && (
-              <div style={{ background: "rgba(255,61,154,0.06)", border: "1px solid rgba(255,61,154,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF3D9A", marginBottom: 10 }}>▲ Worst #2 — Bucket {analysis.worst2Idx + 1} (Z={analysis.worst2Z.toFixed(2)})</div>
-                {analysis.worst2Metrics.map((m, i) => <MetricRow key={i} m={m} />)}
+        {/* Pattern Analysis + Spike Duration */}
+        {(() => {
+          const patternColor = analysis.alertPattern === "deployment" ? "#FF3D9A" : analysis.alertPattern === "load-induced" ? "#FFF04D" : analysis.alertPattern === "infrastructure" ? "#FF832B" : "#888";
+          const patternLabel = analysis.alertPattern === "deployment" ? "Deployment Regression" : analysis.alertPattern === "load-induced" ? "Load-Induced Overload" : analysis.alertPattern === "infrastructure" ? "Infrastructure Issue" : "Pattern Unknown";
+          const patternSubLabel = analysis.alertPattern === "deployment" ? "Code / config change most likely" : analysis.alertPattern === "load-induced" ? "Infrastructure capacity limit hit" : analysis.alertPattern === "infrastructure" ? "CDN, network, or origin saturation" : "Insufficient signal for classification";
+          const burstColor = analysis.burstType === "chronic" ? "#FF073A" : analysis.burstType === "sustained" ? "#FF3D9A" : analysis.burstType === "transient" ? "#FFF04D" : "#10B981";
+          const burstLabel = analysis.burstType === "chronic" ? `Chronic (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "sustained" ? `Sustained (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "transient" ? `Transient (${analysis.maxConsecutiveHot} consecutive)` : "Stable";
+          const burstSubLabel = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Appears self-resolved" : "No elevated buckets";
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ background: `${patternColor}12`, border: `1px solid ${patternColor}40`, borderRadius: 10, padding: "12px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Pattern Analysis</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: patternColor }}>{patternLabel}</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{patternSubLabel}</div>
               </div>
-            )}
-          </div>
-        )}
-        {analysis.bestMetrics.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: hasTwoBest ? "1fr 1fr" : "1fr", gap: 10 }}>
-            <div style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
-              {analysis.bestMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
-            </div>
-            {hasTwoBest && (
-              <div style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#34D399", marginBottom: 10 }}>▽ Best #2 — Bucket {analysis.best2Idx + 1} (Z={analysis.best2Z.toFixed(2)})</div>
-                {analysis.best2Metrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              <div style={{ background: `${burstColor}12`, border: `1px solid ${burstColor}40`, borderRadius: 10, padding: "12px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Spike Duration</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: burstColor }}>{burstLabel}</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{burstSubLabel}</div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
-        {/* Worst #1 vs Best #1 — direct card comparison */}
+        {/* Comparison Group 1: What's Different — Worst #1 vs Best #1 */}
         {analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 && (
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Worst #1 vs Best #1 — Direct Comparison</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>What's Different — Worst #1 vs Best #1</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
                 {analysis.worstMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
               </div>
               <div style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
                 {analysis.bestMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
               </div>
             </div>
+            <DiffTable
+              worstMetrics={analysis.worstMetrics} bestMetrics={analysis.bestMetrics}
+              worstLabel={`Worst #1 (B${analysis.worstIdx + 1})`} bestLabel={`Best #1 (B${analysis.bestIdx + 1})`}
+            />
           </div>
         )}
 
-        {/* Three comparison tables */}
-        <DiffTable
-          worstMetrics={analysis.worstMetrics} bestMetrics={analysis.bestMetrics}
-          worstLabel={`Worst #1 (B${analysis.worstIdx + 1})`} bestLabel={`Best #1 (B${analysis.bestIdx + 1})`}
-        />
+        {/* Comparison Group 2: Common Bad Signals — Worst #1 vs Worst #2 */}
         {hasTwoWorst && (
-          <CommonTable
-            metrics1={analysis.worstMetrics} metrics2={analysis.worst2Metrics}
-            label1={`Worst #1 (B${analysis.worstIdx + 1})`} label2={`Worst #2 (B${analysis.worst2Idx + 1})`}
-            title="Common Bad Signals — Worst #1 vs Worst #2" mode="worst"
-          />
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Common Bad Signals — Worst #1 vs Worst #2</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
+                {analysis.worstMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+              <div style={{ background: "rgba(255,61,154,0.06)", border: "1px solid rgba(255,61,154,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#FF3D9A", marginBottom: 10 }}>▲ Worst #2 — Bucket {analysis.worst2Idx + 1} (Z={analysis.worst2Z.toFixed(2)})</div>
+                {analysis.worst2Metrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+            </div>
+            <CommonTable
+              metrics1={analysis.worstMetrics} metrics2={analysis.worst2Metrics}
+              label1={`Worst #1 (B${analysis.worstIdx + 1})`} label2={`Worst #2 (B${analysis.worst2Idx + 1})`}
+              title="" mode="worst"
+            />
+          </div>
         )}
+
+        {/* Comparison Group 3: Common Good Signals — Best #1 vs Best #2 */}
         {hasTwoBest && (
-          <CommonTable
-            metrics1={analysis.bestMetrics} metrics2={analysis.best2Metrics}
-            label1={`Best #1 (B${analysis.bestIdx + 1})`} label2={`Best #2 (B${analysis.best2Idx + 1})`}
-            title="Common Good Signals — Best #1 vs Best #2" mode="best"
-          />
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Common Good Signals — Best #1 vs Best #2</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
+                {analysis.bestMetrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+              <div style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#34D399", marginBottom: 10 }}>▽ Best #2 — Bucket {analysis.best2Idx + 1} (Z={analysis.best2Z.toFixed(2)})</div>
+                {analysis.best2Metrics.map((m, i) => <MetricRow key={i} m={m} />)}
+              </div>
+            </div>
+            <CommonTable
+              metrics1={analysis.bestMetrics} metrics2={analysis.best2Metrics}
+              label1={`Best #1 (B${analysis.bestIdx + 1})`} label2={`Best #2 (B${analysis.best2Idx + 1})`}
+              title="" mode="best"
+            />
+          </div>
         )}
 
         {/* Insights */}
         {analysis.insights.length > 0 && (
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Insights & Recommendations</div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Insights</div>
             {analysis.insights.map((ins, i) => (
               <div key={i} style={{ display: "flex", gap: 10, padding: "9px 12px", marginBottom: 6, background: `${INSIGHT_COLORS[ins.severity]}08`, border: `1px solid ${INSIGHT_COLORS[ins.severity]}25`, borderRadius: 8 }}>
                 <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>{ins.icon}</span>
@@ -739,11 +945,27 @@ ${hasTwoBest ? `<h2>2nd Best Bucket (#${analysis.best2Idx + 1}, Z=${analysis.bes
           </div>
         )}
 
+        {/* Recommendations */}
+        {analysis.recommendations.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Recommendations</div>
+            {analysis.recommendations.map((rec, i) => {
+              const impactColor = rec.impact === "high" ? "#FF3D9A" : rec.impact === "medium" ? "#FFF04D" : "#4589FF";
+              return (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "9px 12px", marginBottom: 6, background: `${impactColor}08`, border: `1px solid ${impactColor}25`, borderRadius: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: impactColor, flexShrink: 0, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.06em" }}>{rec.impact}</span>
+                  <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)", lineHeight: 1.55 }}>{rec.text}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Davis Problems */}
         {problems && problems.count > 0 && (
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
-              ⚠️ Davis Problems · {problems.count} Open
+              ⚠️ Active Davis Problems · {problems.count} Open
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {problems.titles.slice(0, 5).map((title, i) => (
