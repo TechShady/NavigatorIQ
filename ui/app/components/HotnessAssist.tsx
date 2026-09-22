@@ -37,6 +37,11 @@ export interface HotnessAnalysis {
   alertPattern: "deployment" | "load-induced" | "infrastructure" | "unknown";
   recommendations: Array<{ impact: "high" | "medium" | "low"; text: string }>;
   insights: Array<{ severity: "critical" | "warning" | "info" | "good"; icon: string; text: string }>;
+  episodeCount: number;
+  longestEpisodeBuckets: number;
+  avgRecoveryBuckets: number;
+  driftSlope: number;
+  driftLabel: "worsening" | "stable" | "improving";
 }
 
 export function analyzeHotness(
@@ -56,6 +61,7 @@ export function analyzeHotness(
       alertPattern: "unknown",
       recommendations: [],
       insights: [{ severity: "info", icon: "ℹ️", text: "Collect more data to enable Hotness Assist analysis." }],
+      episodeCount: 0, longestEpisodeBuckets: 0, avgRecoveryBuckets: 0, driftSlope: 0, driftLabel: "stable" as const,
     };
   }
 
@@ -174,7 +180,43 @@ export function analyzeHotness(
     recommendations.push({ impact: "medium", text: `${burstType === "chronic" ? "Chronic" : "Sustained"} pattern (${maxRun} consecutive hot buckets) — configure auto-remediation or alerting to catch this pattern automatically.` });
   }
 
-  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, alertPattern, recommendations, insights };
+  // Spike episodes
+  const HOT_THRESH = 0.75;
+  const episodeList: { startIdx: number; endIdx: number; bucketCount: number }[] = [];
+  let inEp = false, epStart = 0;
+  for (let i = 0; i < usable.length; i++) {
+    if (usable[i] >= HOT_THRESH) {
+      if (!inEp) { inEp = true; epStart = i; }
+    } else if (inEp) {
+      episodeList.push({ startIdx: epStart, endIdx: i - 1, bucketCount: i - epStart });
+      inEp = false;
+    }
+  }
+  if (inEp) episodeList.push({ startIdx: epStart, endIdx: usable.length - 1, bucketCount: usable.length - epStart });
+  const episodeCount = episodeList.length;
+  const longestEpisodeBuckets = episodeList.reduce((m, ep) => Math.max(m, ep.bucketCount), 0);
+
+  // Recovery speed
+  const recoveryList = episodeList.map(ep => {
+    for (let i = ep.endIdx + 1; i < usable.length; i++) {
+      if (usable[i] < 0.3 || usable[i] >= HOT_THRESH) return i - ep.endIdx;
+    }
+    return usable.length - ep.endIdx;
+  });
+  const avgRecoveryBuckets = recoveryList.length > 0
+    ? Math.round(recoveryList.reduce((s, v) => s + v, 0) / recoveryList.length)
+    : 0;
+
+  // Drift trend (linear regression)
+  const dn = usable.length;
+  const dSumX = (dn * (dn - 1)) / 2;
+  const dSumX2 = (dn * (dn - 1) * (2 * dn - 1)) / 6;
+  const dSumY = usable.reduce((s, v) => s + v, 0);
+  const dSumXY = usable.reduce((s, v, i) => s + i * v, 0);
+  const driftSlope = dn > 1 ? (dn * dSumXY - dSumX * dSumY) / (dn * dSumX2 - dSumX * dSumX) : 0;
+  const driftLabel: "worsening" | "stable" | "improving" = driftSlope > 0.02 ? "worsening" : driftSlope < -0.02 ? "improving" : "stable";
+
+  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, alertPattern, recommendations, insights, episodeCount, longestEpisodeBuckets, avgRecoveryBuckets, driftSlope, driftLabel };
 }
 
 // ─── Button ────────────────────────────────────────────────────────────────
@@ -811,6 +853,19 @@ ${davisHtml}
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ verticalAlign: "middle" }}><path d="M4 1h5l4 4v9a1.5 1.5 0 01-1.5 1.5h-7A1.5 1.5 0 013 14V2.5A1.5 1.5 0 014 1z" stroke="currentColor" strokeWidth="1.5"/><path d="M9 1v4h4" stroke="currentColor" strokeWidth="1.5"/></svg>
             Export PDF
           </button>
+          <button
+            onMouseDown={e => e.stopPropagation()}
+            onClick={() => {
+              const appName = "NavigatorIQ";
+              const rec0 = analysis.recommendations[0]?.text ?? "Investigate root cause.";
+              const text = `${appName} detected a ${analysis.alertPattern}-pattern spike — ${analysis.episodeCount} episode${analysis.episodeCount !== 1 ? "s" : ""} (longest ${analysis.longestEpisodeBuckets} bucket${analysis.longestEpisodeBuckets !== 1 ? "s" : ""}, peak Z=${analysis.worstZ.toFixed(1)}). Drift: ${analysis.driftLabel}. Recovery: ${analysis.avgRecoveryBuckets === 0 ? "n/a" : `avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""}`}. Recommendation: ${rec0}`;
+              navigator.clipboard.writeText(text).catch(() => {});
+            }}
+            title="Copy executive summary to clipboard"
+            style={{ background: "rgba(128,128,128,0.12)", border: "1px solid rgba(128,128,128,0.2)", color: "rgba(255,255,255,0.6)", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4, fontWeight: 600 }}
+          >
+            📋
+          </button>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
         </div>
       </div>
@@ -862,6 +917,34 @@ ${davisHtml}
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Spike Duration</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: burstColor }}>{burstLabel}</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{burstSubLabel}</div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Spike Episodes + Recovery + Drift */}
+        {(() => {
+          const epColor = analysis.episodeCount === 0 ? "#10B981" : analysis.episodeCount === 1 ? "#FFF04D" : analysis.episodeCount <= 3 ? "#FF3D9A" : "#E00000";
+          const recLabel = analysis.episodeCount === 0 ? "N/A" : analysis.avgRecoveryBuckets <= 1 ? "Rapid" : analysis.avgRecoveryBuckets <= 3 ? "Fast" : analysis.avgRecoveryBuckets <= 6 ? "Moderate" : "Slow";
+          const recColor = analysis.episodeCount === 0 ? "#888" : analysis.avgRecoveryBuckets <= 1 ? "#10B981" : analysis.avgRecoveryBuckets <= 3 ? "#10B981" : analysis.avgRecoveryBuckets <= 6 ? "#FFF04D" : "#E00000";
+          const driftColor = analysis.driftLabel === "worsening" ? "#E00000" : analysis.driftLabel === "improving" ? "#10B981" : "#888";
+          const cs: React.CSSProperties = { flex: 1, borderRadius: 8, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 2 };
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div style={{ ...cs, background: `${epColor}0d`, border: `1px solid ${epColor}30` }}>
+                <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Spike Episodes</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: epColor }}>{analysis.episodeCount}</div>
+                <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "No hot buckets" : `Longest: ${analysis.longestEpisodeBuckets} bucket${analysis.longestEpisodeBuckets !== 1 ? "s" : ""}`}</div>
+              </div>
+              <div style={{ ...cs, background: `${recColor}0d`, border: `1px solid ${recColor}30` }}>
+                <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Recovery Speed</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: recColor }}>{recLabel}</div>
+                <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "—" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div>
+              </div>
+              <div style={{ ...cs, background: `${driftColor}0d`, border: `1px solid ${driftColor}30` }}>
+                <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Drift Trend</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: driftColor }}>{analysis.driftLabel.charAt(0).toUpperCase() + analysis.driftLabel.slice(1)}</div>
+                <div style={{ fontSize: 10, opacity: 0.6 }}>{`${analysis.driftSlope >= 0 ? "+" : ""}${analysis.driftSlope.toFixed(3)}Z/bucket`}</div>
               </div>
             </div>
           );
