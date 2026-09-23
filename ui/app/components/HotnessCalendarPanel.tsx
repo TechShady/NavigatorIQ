@@ -215,6 +215,7 @@ function exportHeatmapPdf(grid: (number | null)[][], analysis: HeatAnalysis, app
 
 export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, onClose, getRequeryData }: HotnessCalendarPanelProps) {
   const [scores, setScores]           = React.useState<number[]>(heatScores);
+  const [gridBucketMs, setGridBucketMs] = React.useState(bucketMs);
   const [loading, setLoading]         = React.useState(true);
   const [hover, setHover]             = React.useState<{ dow: number; hour: number; val: number | null } | null>(null);
   const [filterLevel, setFilterLevel] = React.useState<LevelKey | null>(null);
@@ -234,16 +235,22 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
-  // Always fetch exactly 7 days on mount
+  // Always fetch exactly 7 days on mount regardless of selected timeframe
   React.useEffect(() => {
     setLoading(true);
     getRequeryData(7)
-      .then(data => { if (data.length > 0) setScores(data); })
+      .then(data => {
+        if (data.length > 0) {
+          setScores(data);
+          // Derive actual bucket duration from data length: 7 days / N points
+          setGridBucketMs(Math.round((7 * 24 * 3600000) / data.length));
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const grid     = React.useMemo(() => buildGrid(scores, bucketMs), [scores, bucketMs]);
+  const grid     = React.useMemo(() => buildGrid(scores, gridBucketMs), [scores, gridBucketMs]);
   const analysis = React.useMemo(() => showAnalysis ? analyzeGrid(grid) : null, [grid, showAnalysis]);
 
   const toggleFilter = (key: LevelKey) => setFilterLevel(prev => prev === key ? null : key);
