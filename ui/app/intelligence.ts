@@ -880,7 +880,7 @@ export function computeAssessment(
       if (db) {
         heatScores = computeHeat([db.rtTimeline]);
         bucketDetails = buildBucketDetails(heatScores, [
-          { label: "DB Response Time", timeline: db.rtTimeline, fmt: fmtMs2, metricKey: "dt.database_service.db.response_time.total_avg" },
+          { label: "DB Response Time", timeline: db.rtTimeline, fmt: fmtMs2, metricKey: "dt.service.request.response_time" },
         ]);
       }
       break;

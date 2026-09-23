@@ -321,13 +321,15 @@ export function NavigatorIQ() {
     const map: Record<string, "red" | "yellow" | "green"> = {};
     for (const p of PERSONAS) {
       try {
+        // Active persona: use already-computed assessment (includes custom DQL metrics)
+        if (p.id === persona) { map[p.id] = assessment.overallHealth; continue; }
         const a = computeAssessment(curResults, prevResults, p.id, settings.personas[p.id]?.thresholds ?? {}, tf);
         map[p.id] = a.overallHealth;
       } catch { /* skip */ }
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curResults, prevResults, tf, settings]);
+  }, [curResults, prevResults, tf, settings, persona, assessment.overallHealth]);
 
   // ─── Health score history ───────────────────────────────────────────────
   const healthHistory: HealthHistory = useMemo(() => {
@@ -634,7 +636,7 @@ function PersonaChip({ persona, personas, onSelect, personaHealth }: PersonaChip
                   <div style={{ fontWeight: p.id === persona.id ? 700 : 600 }}>{p.label}</div>
                   <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{p.description}</div>
                 </div>
-                {dotCol && p.id !== persona.id && (
+                {dotCol && (
                   <div style={{ width: 7, height: 7, borderRadius: "50%", background: dotCol, boxShadow: `0 0 5px ${dotCol}`, flexShrink: 0 }} />
                 )}
               </button>
