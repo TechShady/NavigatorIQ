@@ -397,7 +397,7 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     : makeMetricFmt(metric.displayUnit);
   if (records.length === 0) {
     // Counter with no events in window — return zero baseline so metric still appears in heat chart.
-    return { label: metric.label, timeline: [0, 0], isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt };
+    return { label: metric.label, timeline: [0, 0], isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: metric.metricKey };
   }
   let timeline: number[];
   if (records.length === 1 && Array.isArray(records[0]["value"])) {
@@ -406,7 +406,7 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     timeline = records.map((r) => { const v = r["value"]; const n = Number(v); return isFinite(n) ? n : 0; });
   }
   if (timeline.length < 2) return null;
-  return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt };
+  return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: metric.metricKey };
 }
 
 const fmtMs = (v: number) => {
@@ -436,7 +436,7 @@ function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] 
   }
 }
 
-export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
+export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string }
 
 function isInverted(m: HeatMetricConfig): boolean {
   return m.warningThreshold !== undefined && m.criticalThreshold !== undefined && m.warningThreshold > m.criticalThreshold;
@@ -455,7 +455,7 @@ export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatM
           const den = denRaw[j] ?? 0;
           return den > 0 ? (num / den) * 100 : 0;
         });
-        return { label: m.label, timeline, isTraffic: m.isTraffic, inverted: isInverted(m), fmt: makeMetricFmt("pct") };
+        return { label: m.label, timeline, isTraffic: m.isTraffic, inverted: isInverted(m), fmt: makeMetricFmt("pct"), metricKey: m.metricKey };
       }
       return {
         label: m.label,
@@ -463,6 +463,7 @@ export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatM
         isTraffic: m.isTraffic,
         inverted: isInverted(m),
         fmt: makeMetricFmt(m.displayUnit),
+        metricKey: m.metricKey,
       };
     })
     .filter((pm) => pm.timeline.length > 1);

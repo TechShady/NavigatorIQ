@@ -49,7 +49,7 @@ function zToLevel(z: number): HeatBucketDetail["level"] {
   return z >= 2.5 ? "spike" : z >= 1.5 ? "warm" : z >= 0.75 ? "elevated" : "normal";
 }
 
-interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
+interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string }
 
 function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBucketDetail[] {
   const valid = metrics.filter((m) => m.timeline.length > 1);
@@ -66,7 +66,7 @@ function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBuc
     metrics: valid.map((m, mi): HeatBucketMetric => {
       const value = m.timeline[i] ?? stats[mi].mean;
       const rawZ = m.inverted ? (stats[mi].mean - value) / stats[mi].std : (value - stats[mi].mean) / stats[mi].std;
-      return { label: m.label, value, displayValue: m.fmt(value), zScore: rawZ, isTraffic: m.isTraffic };
+      return { label: m.label, value, displayValue: m.fmt(value), zScore: rawZ, isTraffic: m.isTraffic, metricKey: m.metricKey };
     }),
   }));
 }
@@ -767,6 +767,8 @@ function assessFromBucketDetails(
     const firstHalfAvg = halfIdx > 0 ? values.slice(0, halfIdx).reduce((a, b) => a + b, 0) / halfIdx : avg;
     const secondHalfAvg = (values.length - halfIdx) > 0 ? values.slice(halfIdx).reduce((a, b) => a + b, 0) / (values.length - halfIdx) : avg;
     const recovering = severity !== "red" && crit !== undefined && firstHalfAvg >= crit && secondHalfAvg < crit;
+    // Intra-window trend: compare second half of buckets to first half
+    const trendData = halfIdx >= 2 && (values.length - halfIdx) >= 2 ? calcTrend(secondHalfAvg, firstHalfAvg) : undefined;
 
     const suffix = cfg.displaySuffix ?? (
       cfg.displayUnit === "pct" ? "%" :
@@ -791,6 +793,8 @@ function assessFromBucketDetails(
       detail: `Average ${label} over the selected timeframe was ${displayValue}.`,
       metricValue: avg,
       metricUnit: suffix,
+      previousValue: halfIdx >= 2 ? firstHalfAvg : undefined,
+      ...trendData,
       metricLabel: cfg.label,
       needsThreshold: !hasThresholds,
       recovering,
@@ -814,7 +818,7 @@ function assessFromBucketDetails(
 
 // ─── Main entry point ──────────────────────────────────────────────────────
 
-export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string }
+export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string }
 
 export function computeAssessment(
   cur: AllQueryResults,
@@ -858,14 +862,14 @@ export function computeAssessment(
           const hasReqData = sh.requestTimeline.length > 1 && sh.requestTimeline.some((v) => v > 0);
           const defs: MetricDef[] = [];
           if (hasReqData) {
-            defs.push({ label: "Requests", timeline: sh.requestTimeline, isTraffic: true, fmt: fmtInt });
+            defs.push({ label: "Requests", timeline: sh.requestTimeline, isTraffic: true, fmt: fmtInt, metricKey: "dt.service.request.count" });
             const errRateTl = sh.requestTimeline.map((req, i) => req > 0 ? ((sh.errorTimeline[i] ?? 0) / req) * 100 : 0);
-            defs.push({ label: "Error Rate", timeline: errRateTl, fmt: fmtPct2 });
+            defs.push({ label: "Error Rate", timeline: errRateTl, fmt: fmtPct2, metricKey: "dt.service.request.failure_rate" });
           } else {
-            defs.push({ label: "Error Count", timeline: sh.errorTimeline, fmt: fmtInt });
+            defs.push({ label: "Error Count", timeline: sh.errorTimeline, fmt: fmtInt, metricKey: "dt.service.request.failure_count" });
           }
           if (persona !== "sre" && sh.rtTimeline.length > 1) {
-            defs.push({ label: "Response Time", timeline: sh.rtTimeline, fmt: fmtMs2 });
+            defs.push({ label: "Response Time", timeline: sh.rtTimeline, fmt: fmtMs2, metricKey: "dt.service.response.time" });
           }
           bucketDetails = buildBucketDetails(heatScores, defs);
         }
@@ -876,7 +880,7 @@ export function computeAssessment(
       if (db) {
         heatScores = computeHeat([db.rtTimeline]);
         bucketDetails = buildBucketDetails(heatScores, [
-          { label: "DB Response Time", timeline: db.rtTimeline, fmt: fmtMs2 },
+          { label: "DB Response Time", timeline: db.rtTimeline, fmt: fmtMs2, metricKey: "dt.database_service.db.response_time.total_avg" },
         ]);
       }
       break;
@@ -895,10 +899,10 @@ export function computeAssessment(
         heatScores = computeHeat([dtl.errorRateTimeline, dtl.lcpTimeline, dtl.durationTimeline]);
         bucketDetails = buildBucketDetails(heatScores, [
           { label: "Events", timeline: dtl.eventsTimeline, isTraffic: true, fmt: fmtInt },
-          { label: "Error Rate", timeline: dtl.errorRateTimeline, fmt: fmtPct2 },
-          { label: "Avg Duration", timeline: dtl.durationTimeline, fmt: fmtMs2 },
-          { label: "LCP", timeline: dtl.lcpTimeline, fmt: fmtMs2 },
-          { label: "TTFB", timeline: dtl.ttfbTimeline, fmt: fmtMs2 },
+          { label: "Error Rate", timeline: dtl.errorRateTimeline, fmt: fmtPct2, metricKey: "dt.rum.error.count" },
+          { label: "Avg Duration", timeline: dtl.durationTimeline, fmt: fmtMs2, metricKey: "dt.rum.useraction.duration" },
+          { label: "LCP", timeline: dtl.lcpTimeline, fmt: fmtMs2, metricKey: "dt.rum.useraction.largest_contentful_paint" },
+          { label: "TTFB", timeline: dtl.ttfbTimeline, fmt: fmtMs2, metricKey: "dt.rum.useraction.time_to_first_byte" },
         ]);
       }
       break;
@@ -906,8 +910,8 @@ export function computeAssessment(
       if (ptl) {
         heatScores = computeHeat([ptl.cpuTimeline, ptl.memTimeline]);
         bucketDetails = buildBucketDetails(heatScores, [
-          { label: "CPU Usage", timeline: ptl.cpuTimeline, fmt: fmtPct2 },
-          { label: "Memory Usage", timeline: ptl.memTimeline, fmt: fmtPct2 },
+          { label: "CPU Usage", timeline: ptl.cpuTimeline, fmt: fmtPct2, metricKey: "dt.host.cpu.usage" },
+          { label: "Memory Usage", timeline: ptl.memTimeline, fmt: fmtPct2, metricKey: "dt.host.mem.usage" },
         ]);
       }
       break;
@@ -928,6 +932,7 @@ export function computeAssessment(
         isTraffic: m.isTraffic,
         inverted: m.inverted,
         fmt: m.fmt,
+        metricKey: m.metricKey,
       })));
     }
   }

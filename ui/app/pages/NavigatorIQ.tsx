@@ -321,13 +321,13 @@ export function NavigatorIQ() {
     const map: Record<string, "red" | "yellow" | "green"> = {};
     for (const p of PERSONAS) {
       try {
-        const a = computeAssessment(curResults, prevResults, p.id, {}, tf);
+        const a = computeAssessment(curResults, prevResults, p.id, settings.personas[p.id]?.thresholds ?? {}, tf);
         map[p.id] = a.overallHealth;
       } catch { /* skip */ }
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curResults, prevResults, tf]);
+  }, [curResults, prevResults, tf, settings]);
 
   // ─── Health score history ───────────────────────────────────────────────
   const healthHistory: HealthHistory = useMemo(() => {
@@ -550,7 +550,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} />
+          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={tf.from} to={tf.to} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />
@@ -605,7 +605,8 @@ function PersonaChip({ persona, personas, onSelect, personaHealth }: PersonaChip
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const otherCritical = Object.entries(personaHealth ?? {}).some(([id, h]) => id !== persona.id && h === "red");
+  const otherIssue = Object.entries(personaHealth ?? {}).some(([id, h]) => id !== persona.id && (h === "red" || h === "yellow"));
+  const otherIssueColor = Object.entries(personaHealth ?? {}).some(([id, h]) => id !== persona.id && h === "red") ? "#EF4444" : "#F59E0B";
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <button
@@ -614,7 +615,7 @@ function PersonaChip({ persona, personas, onSelect, personaHealth }: PersonaChip
       >
         <span>{persona.icon}</span>
         <span>{persona.label}</span>
-        {otherCritical && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#EF4444", boxShadow: "0 0 5px #EF4444", flexShrink: 0 }} title="Another persona has critical issues" />}
+        {otherIssue && <div style={{ width: 6, height: 6, borderRadius: "50%", background: otherIssueColor, boxShadow: `0 0 5px ${otherIssueColor}`, flexShrink: 0 }} title="Another persona has issues" />}
         <span style={{ fontSize: 10, opacity: 0.7 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (

@@ -6,6 +6,7 @@ import type { DavisProblemsResult } from "../queries";
 import { HotnessAssistButton, HotnessAssistPanel } from "./HotnessAssist";
 import { HotnessForecastPanel } from "./HotnessForecastPanel";
 import { HotnessCalendarPanel } from "./HotnessCalendarPanel";
+import { ExploreModal } from "./ExploreModal";
 
 interface HealthReading { score: number; ts: number; }
 
@@ -21,6 +22,8 @@ interface AssessmentPanelProps {
   onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void;
   healthReadings?: HealthReading[];
   getHotnessHistory?: (days: number) => Promise<number[]>;
+  from?: string;
+  to?: string;
 }
 
 // ─── Drag hook ─────────────────────────────────────────────────────────────
@@ -81,7 +84,7 @@ function AppButton({ label, onClick, color = "#4589FF" }: { label: string; onCli
 // ─── Bucket Diagnosis Panel ─────────────────────────────────────────────────
 
 function BucketDiagPanel({
-  detail, bucketLabel, pos, onDragStart, onClose, heatMetrics, intervalMinutes,
+  detail, bucketLabel, pos, onDragStart, onClose, heatMetrics, intervalMinutes, from, to,
 }: {
   detail: HeatBucketDetail; bucketLabel: string;
   pos: { x: number; y: number };
@@ -89,7 +92,10 @@ function BucketDiagPanel({
   onClose: () => void;
   heatMetrics?: HeatMetricConfig[];
   intervalMinutes?: number;
+  from?: string;
+  to?: string;
 }) {
+  const [exploreMetric, setExploreMetric] = useState<{ key: string; label: string } | null>(null);
   const levelColor = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const levelLabel = (z: number) => z >= 2.5 ? "Critical Spike" : z >= 1.5 ? "Warm" : z >= 0.75 ? "Elevated" : "Normal";
 
@@ -174,10 +180,20 @@ function BucketDiagPanel({
         {detail.metrics.map((m, i) => {
           const barColor = metricColor(m.label, m.value, m.zScore, m.isTraffic);
           const barW = Math.min(100, Math.abs(m.zScore) / 3 * 100);
+          const canExplore = !m.isTraffic && !!m.metricKey;
           return (
             <div key={i} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{m.label}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{m.label}</span>
+                  {canExplore && (
+                    <button
+                      onClick={() => setExploreMetric({ key: m.metricKey!, label: m.label })}
+                      title="Follow the red — see impacted entities"
+                      style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 4, color: "#7ab4ff", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
+                    >↗</button>
+                  )}
+                </div>
                 <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{m.displayValue}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -194,6 +210,15 @@ function BucketDiagPanel({
             </div>
           );
         })}
+        {exploreMetric && (
+          <ExploreModal
+            metricKey={exploreMetric.key}
+            metricLabel={exploreMetric.label}
+            from={from ?? "now()-2h"}
+            to={to ?? "now()"}
+            onClose={() => setExploreMetric(null)}
+          />
+        )}
       </div>
       {/* Concurrent signals — other metrics also elevated in this bucket */}
       {(() => {
@@ -668,7 +693,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()" }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -819,6 +844,8 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onClose={() => { setDiagOpen(false); setSelectedBucket(null); }}
           heatMetrics={heatMetrics}
           intervalMinutes={Math.round(bucketMs / 60000)}
+          from={from}
+          to={to}
         />
       )}
 
