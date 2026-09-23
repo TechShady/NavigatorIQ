@@ -763,6 +763,11 @@ function assessFromBucketDetails(
       else if (warn !== undefined && avg >= warn) severity = "yellow";
     }
 
+    const halfIdx = Math.floor(values.length / 2);
+    const firstHalfAvg = halfIdx > 0 ? values.slice(0, halfIdx).reduce((a, b) => a + b, 0) / halfIdx : avg;
+    const secondHalfAvg = (values.length - halfIdx) > 0 ? values.slice(halfIdx).reduce((a, b) => a + b, 0) / (values.length - halfIdx) : avg;
+    const recovering = severity !== "red" && crit !== undefined && firstHalfAvg >= crit && secondHalfAvg < crit;
+
     const suffix = cfg.displaySuffix ?? (
       cfg.displayUnit === "pct" ? "%" :
       (cfg.displayUnit === "ms" || cfg.displayUnit === "ns->ms" || cfg.displayUnit === "µs->ms") ? "ms" : ""
@@ -788,6 +793,7 @@ function assessFromBucketDetails(
       metricUnit: suffix,
       metricLabel: cfg.label,
       needsThreshold: !hasThresholds,
+      recovering,
       recommendation: severity === "red"
         ? `${label} exceeded the critical threshold. Investigate recent activity in the environment.`
         : severity === "yellow"
@@ -945,6 +951,14 @@ export function computeAssessment(
       case "devops": allItems = assessDevops(cur, prev, t, tf); break;
       default: allItems = assessDeveloper(cur, prev, t, tf);
     }
+  }
+
+  // Mark recovering items for persona-based assessment (significantly improved vs prior period)
+  if (!useMetricAssessment) {
+    allItems = allItems.map(item => ({
+      ...item,
+      recovering: item.severity !== "red" && item.trend === "down" && (item.trendPct ?? 0) <= -30 && item.previousValue !== undefined,
+    }));
   }
 
   const redItems = allItems.filter((i) => i.severity === "red");

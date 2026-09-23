@@ -125,6 +125,8 @@ export interface AssessmentItem {
   metricLabel?: string;
   /** True when this item came from a heat metric with no thresholds configured */
   needsThreshold?: boolean;
+  /** True when this item was previously in a worse state but is now measurably improving */
+  recovering?: boolean;
 }
 
 export interface Assessment {

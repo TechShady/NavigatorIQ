@@ -195,6 +195,31 @@ function BucketDiagPanel({
           );
         })}
       </div>
+      {/* Concurrent signals — other metrics also elevated in this bucket */}
+      {(() => {
+        const concurrent = detail.metrics.filter(m => !m.isTraffic && m.zScore >= 0.75).sort((a, b) => b.zScore - a.zScore);
+        if (concurrent.length < 2) return null;
+        return (
+          <div style={{ padding: "10px 16px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "rgba(255,255,255,0.3)", marginBottom: 7 }}>
+              Concurrent signals ({concurrent.length})
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 5 }}>
+              {concurrent.map((m, i) => {
+                const col = m.zScore >= 2.5 ? "#FF073A" : m.zScore >= 1.5 ? "#FF3D9A" : "#FFF04D";
+                return (
+                  <span key={i} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${col}18`, border: `1px solid ${col}45`, color: col, fontWeight: 600 }}>
+                    {m.label} +{m.zScore.toFixed(1)}σ
+                  </span>
+                );
+              })}
+            </div>
+            {concurrent.length >= 3 && (
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 6 }}>Multiple signals elevated — likely cascade or systemic event.</div>
+            )}
+          </div>
+        );
+      })()}
     </div>,
     document.body
   );
@@ -450,7 +475,17 @@ function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
             ✎
           </button>
         )}
-        {item.trend && item.trend !== "stable" && <div style={{ flexShrink: 0 }}><TrendArrow trend={item.trend} pct={item.trendPct} /></div>}
+        {item.trend && item.trend !== "stable" && (
+          <div style={{ flexShrink: 0 }}>
+            {Math.abs(item.trendPct ?? 0) >= 25 && item.severity !== "green" ? (
+              <div style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: item.trend === "up" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: item.trend === "up" ? "#F87171" : "#34D399", border: `1px solid ${item.trend === "up" ? "rgba(239,68,68,0.35)" : "rgba(16,185,129,0.35)"}`, whiteSpace: "nowrap" as const }}>
+                {item.trend === "up" ? "↑" : "↓"} {Math.abs(item.trendPct ?? 0).toFixed(0)}% vs prior
+              </div>
+            ) : (
+              <TrendArrow trend={item.trend} pct={item.trendPct} />
+            )}
+          </div>
+        )}
         <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, marginLeft: 4 }}>{expanded ? "▲" : "▼"}</div>
       </div>
       {expanded && (
@@ -481,12 +516,12 @@ function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
 
 // ─── Severity section ─────────────────────────────────────────────────────
 
-function SeveritySection({ severity, items, label, defaultOpen, onForecast, onUpdateThreshold }: { severity: "red" | "yellow" | "green"; items: AssessmentItem[]; label: string; defaultOpen: boolean; onForecast?: (item: AssessmentItem) => void; onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void }) {
+function SeveritySection({ severity, items, label, defaultOpen, onForecast, onUpdateThreshold }: { severity: "red" | "yellow" | "green" | "recovering"; items: AssessmentItem[]; label: string; defaultOpen: boolean; onForecast?: (item: AssessmentItem) => void; onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void }) {
   const [open, setOpen] = useState(defaultOpen);
   if (items.length === 0) return null;
-  const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
-  const icons = { red: "🔴", yellow: "🟡", green: "🟢" };
-  const color = colors[severity];
+  const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981", recovering: "#F97316" };
+  const icons = { red: "🔴", yellow: "🟡", green: "🟢", recovering: "🔄" };
+  const color = colors[severity] ?? "#F97316";
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "8px 0", marginBottom: open ? 10 : 0 }} onClick={() => setOpen((v) => !v)}>
@@ -640,6 +675,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
   const [forecastOpen, setForecastOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [flashBucket, setFlashBucket] = useState<number | null>(null);
+  const [focusRed, setFocusRed] = useState(false);
 
   const diagDrag = useDrag({ x: 30, y: 120 });
   const assistDrag = useDrag({ x: 50, y: 90 });
@@ -745,9 +781,33 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
       {assessment.narrative && <TypewriterNarrative text={assessment.narrative} />}
 
       {/* Severity sections */}
-      <SeveritySection severity="red" items={assessment.redItems} label="Needs Immediate Attention" defaultOpen={true} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
-      <SeveritySection severity="yellow" items={assessment.yellowItems} label="Potential Issues" defaultOpen={assessment.redItems.length === 0} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
-      <SeveritySection severity="green" items={assessment.greenItems} label="Environment Healthy" defaultOpen={assessment.redItems.length === 0 && assessment.yellowItems.length === 0} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
+      {(() => {
+        const recoveringItems = [
+          ...assessment.yellowItems.filter(i => i.recovering),
+          ...assessment.greenItems.filter(i => i.recovering),
+        ];
+        const visibleYellow = assessment.yellowItems.filter(i => !i.recovering);
+        const visibleGreen = assessment.greenItems.filter(i => !i.recovering);
+        return (
+          <>
+            {(assessment.redItems.length > 0 || assessment.yellowItems.length > 0) && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+                <button
+                  onClick={() => setFocusRed(v => !v)}
+                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5, cursor: "pointer", background: focusRed ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.05)", border: `1px solid ${focusRed ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.15)"}`, color: focusRed ? "#F87171" : "rgba(255,255,255,0.4)", transition: "all 0.15s" }}
+                  title={focusRed ? "Show all items" : "Hide green items — focus on what needs attention"}
+                >
+                  {focusRed ? "● Focus mode" : "Focus mode"}
+                </button>
+              </div>
+            )}
+            <SeveritySection severity="red" items={assessment.redItems} label="Needs Immediate Attention" defaultOpen={true} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />
+            {!focusRed && <SeveritySection severity="yellow" items={visibleYellow} label="Potential Issues" defaultOpen={assessment.redItems.length === 0} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />}
+            {!focusRed && recoveringItems.length > 0 && <SeveritySection severity="recovering" items={recoveringItems} label="Recovering" defaultOpen={false} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />}
+            {!focusRed && <SeveritySection severity="green" items={visibleGreen} label="Environment Healthy" defaultOpen={assessment.redItems.length === 0 && assessment.yellowItems.length === 0} onForecast={onForecast} onUpdateThreshold={onUpdateThreshold} />}
+          </>
+        );
+      })()}
 
       {/* Bucket diagnosis panel */}
       {diagOpen && selectedDetail && (

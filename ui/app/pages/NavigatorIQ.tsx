@@ -316,6 +316,19 @@ export function NavigatorIQ() {
     [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dql3R.data, dql4R.data, dql5R.data, dql6R.data, dql7R.data, dql8R.data, dql9R.data, dqlMetrics, heatMetrics]
   );
 
+  // ─── Cross-persona health signals ──────────────────────────────────────
+  const personaHealthMap = useMemo((): Record<string, "red" | "yellow" | "green"> => {
+    const map: Record<string, "red" | "yellow" | "green"> = {};
+    for (const p of PERSONAS) {
+      try {
+        const a = computeAssessment(curResults, prevResults, p.id, {}, tf);
+        map[p.id] = a.overallHealth;
+      } catch { /* skip */ }
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curResults, prevResults, tf]);
+
   // ─── Health score history ───────────────────────────────────────────────
   const healthHistory: HealthHistory = useMemo(() => {
     try { return JSON.parse(healthHistoryState.data?.value as string ?? "{}"); } catch { return {}; }
@@ -490,7 +503,7 @@ export function NavigatorIQ() {
         </div>
 
         {/* Persona chip */}
-        <PersonaChip persona={activePersonaDef} personas={allPersonas} onSelect={setPersona} />
+        <PersonaChip persona={activePersonaDef} personas={allPersonas} onSelect={setPersona} personaHealth={personaHealthMap} />
 
         {/* Divider */}
         <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.12)", flexShrink: 0 }} />
@@ -576,9 +589,10 @@ interface PersonaChipProps {
   persona: { id: PersonaId; icon: string; label: string };
   personas: { id: PersonaId; icon: string; label: string; description: string }[];
   onSelect: (id: PersonaId) => void;
+  personaHealth?: Record<string, "red" | "yellow" | "green">;
 }
 
-function PersonaChip({ persona, personas, onSelect }: PersonaChipProps) {
+function PersonaChip({ persona, personas, onSelect, personaHealth }: PersonaChipProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -591,6 +605,7 @@ function PersonaChip({ persona, personas, onSelect }: PersonaChipProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  const otherCritical = Object.entries(personaHealth ?? {}).some(([id, h]) => id !== persona.id && h === "red");
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <button
@@ -599,23 +614,31 @@ function PersonaChip({ persona, personas, onSelect }: PersonaChipProps) {
       >
         <span>{persona.icon}</span>
         <span>{persona.label}</span>
+        {otherCritical && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#EF4444", boxShadow: "0 0 5px #EF4444", flexShrink: 0 }} title="Another persona has critical issues" />}
         <span style={{ fontSize: 10, opacity: 0.7 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 8px)", left: 0, background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 10, padding: 8, zIndex: 1000, minWidth: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
-          {personas.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => { onSelect(p.id); setOpen(false); }}
-              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px", border: "none", borderRadius: 6, background: p.id === persona.id ? "rgba(69,137,255,0.15)" : "transparent", color: p.id === persona.id ? "#7ab4ff" : "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: p.id === persona.id ? 700 : 400, cursor: "pointer", textAlign: "left" }}
-            >
-              <span style={{ fontSize: 16 }}>{p.icon}</span>
-              <div>
-                <div style={{ fontWeight: p.id === persona.id ? 700 : 600 }}>{p.label}</div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{p.description}</div>
-              </div>
-            </button>
-          ))}
+        <div style={{ position: "absolute", top: "calc(100% + 8px)", left: 0, background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 10, padding: 8, zIndex: 1000, minWidth: 220, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+          {personas.map((p) => {
+            const health = personaHealth?.[p.id];
+            const dotCol = health === "red" ? "#EF4444" : health === "yellow" ? "#F59E0B" : null;
+            return (
+              <button
+                key={p.id}
+                onClick={() => { onSelect(p.id); setOpen(false); }}
+                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px", border: "none", borderRadius: 6, background: p.id === persona.id ? "rgba(69,137,255,0.15)" : "transparent", color: p.id === persona.id ? "#7ab4ff" : "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: p.id === persona.id ? 700 : 400, cursor: "pointer", textAlign: "left" as const }}
+              >
+                <span style={{ fontSize: 16 }}>{p.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: p.id === persona.id ? 700 : 600 }}>{p.label}</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{p.description}</div>
+                </div>
+                {dotCol && p.id !== persona.id && (
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: dotCol, boxShadow: `0 0 5px ${dotCol}`, flexShrink: 0 }} />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
