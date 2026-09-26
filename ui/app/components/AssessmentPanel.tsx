@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, HeatMetricConfig } from "../types";
