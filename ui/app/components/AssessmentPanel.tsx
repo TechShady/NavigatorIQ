@@ -205,7 +205,7 @@ function BucketDiagPanel({
                 </span>
               </div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
-                {m.isTraffic ? "traffic volume vs avg" : m.zScore > 0 ? "\u2191 higher than avg \u2014 investigate" : "\u2713 within normal range"}
+                {m.isTraffic ? <>traffic volume vs avg</> : m.zScore > 0 ? <>{"\u2191"} higher than avg {"\u2014"} investigate</> : <>{"\u2713"} within normal range</>}
               </div>
             </div>
           );
