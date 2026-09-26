@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, HeatMetricConfig } from "../types";
@@ -52,11 +52,11 @@ function useDrag(initial: { x: number; y: number }) {
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
 function TrendArrow({ trend, pct }: { trend?: Trend; pct?: number }) {
-  if (!trend || trend === "stable") return <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>— stable</span>;
+  if (!trend || trend === "stable") return <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>{"\u2014"} stable</span>;
   const up = trend === "up";
   return (
     <span style={{ color: up ? "#F87171" : "#34D399", fontSize: 11, fontWeight: 600 }}>
-      {up ? "↑" : "↓"} {pct !== undefined ? `${Math.abs(pct).toFixed(1)}%` : ""}
+      {up ? "\u2191" : "\u2193"}{pct !== undefined ? ` ${Math.abs(pct).toFixed(1)}%` : ""}
     </span>
   );
 }
@@ -76,7 +76,7 @@ function AppButton({ label, onClick, color = "#4589FF" }: { label: string; onCli
       onMouseLeave={() => setHover(false)}
       style={{ background: hover ? `${color}30` : `${color}18`, border: `1px solid ${color}50`, borderRadius: 5, color, fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer", transition: "all 0.15s", whiteSpace: "nowrap" }}
     >
-      ↗ {label}
+      {"\u2197"} {label}
     </button>
   );
 }
@@ -149,9 +149,9 @@ function BucketDiagPanel({
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>🔎</span>
-          <span style={{ fontSize: 14, fontWeight: 800 }}>Bucket {detail.bucketIndex + 1} · Why is this hot?</span>
+          <span style={{ fontSize: 14, fontWeight: 800 }}>Bucket {detail.bucketIndex + 1} {"\u00B7"} Why is this hot?</span>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 20, cursor: "pointer", padding: "0 3px", lineHeight: 1 }}>×</button>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 20, cursor: "pointer", padding: "0 3px", lineHeight: 1 }}>{"\u00D7"}</button>
       </div>
 
       {/* Z-score summary */}
@@ -189,9 +189,9 @@ function BucketDiagPanel({
                   {canExplore && (
                     <button
                       onClick={() => setExploreMetric({ key: m.metricKey!, label: m.label })}
-                      title="Follow the red — see impacted entities"
+                      title="Follow the red \u2014 see impacted entities"
                       style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 4, color: "#7ab4ff", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
-                    >↗</button>
+                    >{"\u2197"}</button>
                   )}
                 </div>
                 <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{m.displayValue}</span>
@@ -205,7 +205,7 @@ function BucketDiagPanel({
                 </span>
               </div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
-                {m.isTraffic ? "traffic volume vs avg" : m.zScore > 0 ? "↑ higher than avg — investigate" : "✓ within normal range"}
+                {m.isTraffic ? "traffic volume vs avg" : m.zScore > 0 ? "\u2191 higher than avg \u2014 investigate" : "\u2713 within normal range"}
               </div>
             </div>
           );
@@ -240,7 +240,7 @@ function BucketDiagPanel({
               })}
             </div>
             {concurrent.length >= 3 && (
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 6 }}>Multiple signals elevated — likely cascade or systemic event.</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 6 }}>Multiple signals elevated {"\u2014"} likely cascade or systemic event.</div>
             )}
           </div>
         );
@@ -278,9 +278,9 @@ function ClickableHeatStrip({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}>
-            Activity Heat · {bucketLabel} buckets
+            Activity Heat {"\u00B7"} {bucketLabel} buckets
           </span>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals · click to diagnose)</span>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals {"\u00B7"} click to diagnose)</span>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <HotnessAssistButton onClick={onAssist} />
@@ -336,7 +336,7 @@ function ClickableHeatStrip({
                 />
               )}
               <div
-                title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""} — click to diagnose`}
+                title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " \u00B7 deployment" : ""} \u2014 click to diagnose`}
                 onClick={() => onSelectBucket(sel ? null : i)}
                 style={{
                   width: "100%", height: `${Math.max(10, (z / maxZ) * 100)}%`,
@@ -357,14 +357,14 @@ function ClickableHeatStrip({
 
       {/* Legend */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>← start</span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>{"\u2190"} start</span>
         <div style={{ display: "flex", gap: 10 }}>
           {[{ z: 0, label: "Normal", color: "#4589FF" }, { z: 0.75, label: "Elevated", color: "#FFF04D" }, { z: 1.5, label: "Warm", color: "#FF3D9A" }, { z: 2.5, label: "Spike", color: "#FF073A" }].map((l) => (
-            <span key={l.z} style={{ fontSize: 9, color: l.color }}>● {l.label}</span>
+            <span key={l.z} style={{ fontSize: 9, color: l.color }}>{"\u25CF"} {l.label}</span>
           ))}
-          {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>● Deployment</span>}
+          {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>{"\u25CF"} Deployment</span>}
         </div>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now →</span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now {"\u2192"}</span>
       </div>
     </div>
   );
@@ -387,7 +387,7 @@ function TypewriterNarrative({ text }: { text: string }) {
   return (
     <div style={{ background: "linear-gradient(135deg, rgba(69,137,255,0.07) 0%, rgba(124,58,237,0.04) 100%)", border: "1px solid rgba(69,137,255,0.2)", borderLeft: "3px solid #4589FF", borderRadius: "0 10px 10px 0", padding: "14px 18px", marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, color: "#7ab4ff", animation: done ? "none" : "iq-ai-star 2s ease-in-out infinite" }}>✦</span>
+        <span style={{ fontSize: 13, color: "#7ab4ff", animation: done ? "none" : "iq-ai-star 2s ease-in-out infinite" }}>{"\u2726"}</span>
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7ab4ff" }}>NavigatorIQ Launcher Intelligence</span>
         {!done && (
           <span style={{ display: "flex", gap: 3, alignItems: "center", marginLeft: 4 }}>
@@ -431,7 +431,7 @@ function ThresholdPopover({ item, onSave, onClose }: { item: AssessmentItem; onS
       onClick={(e) => e.stopPropagation()}
     >
       <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(69,137,255,0.9)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>
-        Set Thresholds — {item.metricLabel}
+        Set Thresholds {"\u2014"} {item.metricLabel}
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
         {[{ label: "Warning", value: warnStr, set: setWarnStr, accent: "#F59E0B" }, { label: "Critical", value: critStr, set: setCritStr, accent: "#EF4444" }].map(({ label, value, set, accent }) => (
@@ -497,21 +497,21 @@ function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
             onClick={(e) => { e.stopPropagation(); setEditingThreshold((v) => !v); setExpanded(true); }}
             style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 4, padding: "2px 6px", color: "#4589FF", fontSize: 12, cursor: "pointer", flexShrink: 0 }}
           >
-            ✎
+            {"\u270E"}
           </button>
         )}
         {item.trend && item.trend !== "stable" && (
           <div style={{ flexShrink: 0 }}>
             {Math.abs(item.trendPct ?? 0) >= 25 && item.severity !== "green" ? (
               <div style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: item.trend === "up" ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)", color: item.trend === "up" ? "#F87171" : "#34D399", border: `1px solid ${item.trend === "up" ? "rgba(239,68,68,0.35)" : "rgba(16,185,129,0.35)"}`, whiteSpace: "nowrap" as const }}>
-                {item.trend === "up" ? "↑" : "↓"} {Math.abs(item.trendPct ?? 0).toFixed(0)}% vs prior
+                {item.trend === "up" ? "\u2191" : "\u2193"} {Math.abs(item.trendPct ?? 0).toFixed(0)}% vs prior
               </div>
             ) : (
               <TrendArrow trend={item.trend} pct={item.trendPct} />
             )}
           </div>
         )}
-        <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, marginLeft: 4 }}>{expanded ? "▲" : "▼"}</div>
+        <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, marginLeft: 4 }}>{expanded ? "\u25B2" : "\u25BC"}</div>
       </div>
       {expanded && (
         <div style={{ padding: "0 14px 12px", borderTop: `1px solid ${color}20` }}>
@@ -555,7 +555,7 @@ function SeveritySection({ severity, items, label, defaultOpen, onForecast, onUp
           <span style={{ fontSize: 14, fontWeight: 700, color }}>{label}</span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginLeft: 8 }}>({items.length} item{items.length !== 1 ? "s" : ""})</span>
         </div>
-        <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 13 }}>{open ? "▲" : "▼"}</div>
+        <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 13 }}>{open ? "\u25B2" : "\u25BC"}</div>
       </div>
       {open && items.map((item, i) => <AssessmentItemRow key={i} item={item} onForecast={onForecast} index={i} onUpdateThreshold={onUpdateThreshold} />)}
     </div>
@@ -618,7 +618,7 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
             onMouseEnter={() => setBestHover(true)}
             onMouseLeave={() => setBestHover(false)}
             onClick={() => bestIdx >= 0 && onBestClick?.(bestIdx)}
-            title="Quietest bucket in this window — click to focus"
+            title="Quietest bucket in this window \u2014 click to focus"
           >
             <div style={{ fontSize: 17, fontWeight: 900, color: bestColor, lineHeight: 1, letterSpacing: -0.5 }}>
               {bestZ.toFixed(1)}{"\u03C3"}
@@ -633,7 +633,7 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
             onMouseEnter={() => setPeakHover(true)}
             onMouseLeave={() => setPeakHover(false)}
             onClick={() => peakIdx >= 0 && onPeakClick?.(peakIdx)}
-            title="Peak hotness in this window — click to focus that bucket"
+            title="Peak hotness in this window \u2014 click to focus that bucket"
           >
             <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
               {peakZ.toFixed(1)}{"\u03C3"}
@@ -652,14 +652,14 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
           <circle cx={xOf(plotData.length - 1)} cy={yOf(lastV)} r={2.5} fill={color} />
         </svg>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: W }}>
-          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>← start</span>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>{"\u2190"} start</span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <svg width={18} height={7} style={{ flexShrink: 0 }}>
               <line x1={0} y1={3.5} x2={18} y2={3.5} stroke={color} strokeWidth={1.5} strokeOpacity={0.7} />
             </svg>
-            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.32)" }}>activity heat · {plotData.length} intervals</span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.32)" }}>activity heat {"\u00B7"} {plotData.length} intervals</span>
           </div>
-          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>now →</span>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>now {"\u2192"}</span>
         </div>
       </div>
 
@@ -667,7 +667,7 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
       <div style={{ textAlign: "right", flexShrink: 0 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color, lineHeight: 1 }}>{currentScore}</div>
         <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
-          Health {trend > 0 ? "↑" : trend < 0 ? "↓" : "→"}
+          Health {trend > 0 ? "\u2191" : trend < 0 ? "\u2193" : "\u2192"}
         </div>
       </div>
     </div>
@@ -732,8 +732,8 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
   if (isLoading) {
     return (
       <div style={{ padding: 32, textAlign: "center" }}>
-        <div style={{ fontSize: 28, marginBottom: 12, animation: "iq-spin 1.5s linear infinite", display: "inline-block" }}>⟳</div>
-        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>Running assessment queries…</div>
+        <div style={{ fontSize: 28, marginBottom: 12, animation: "iq-spin 1.5s linear infinite", display: "inline-block" }}>{"\u27F3"}</div>
+        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>Running assessment queries{"\u2026"}</div>
         <style>{`@keyframes iq-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -764,7 +764,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           <HealthBadge health={assessment.overallHealth} />
         </div>
         {assessment.heatScores.length > 1 && (
-          <div title="Activity heat sparkline — line mirrors the bar graph below. Click a pill to focus that bucket.">
+          <div title="Activity heat sparkline \u2014 line mirrors the bar graph below. Click a pill to focus that bucket.">
             <HealthSparkline
               readings={healthReadings ?? []}
               currentScore={assessment.healthScore}
@@ -776,7 +776,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
         )}
         <div
           style={{ display: "flex", gap: 16, cursor: "help" }}
-          title="Assessment item counts — not hotness scores. Expand the sections below (Needs Immediate Attention, Potential Issues, Environment Healthy) to see per-metric details."
+          title="Assessment item counts \u2014 not hotness scores. Expand the sections below (Needs Immediate Attention, Potential Issues, Environment Healthy) to see per-metric details."
         >
           {[{ v: assessment.redItems.length, label: "Critical", color: "#EF4444" }, { v: assessment.yellowItems.length, label: "Warning", color: "#F59E0B" }, { v: assessment.greenItems.length, label: "Healthy", color: "#10B981" }, { v: total, label: "Total", color: "rgba(255,255,255,0.6)" }].map((s) => (
             <div key={s.label} style={{ textAlign: "center" }}>
@@ -820,9 +820,9 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
                 <button
                   onClick={() => setFocusRed(v => !v)}
                   style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5, cursor: "pointer", background: focusRed ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.05)", border: `1px solid ${focusRed ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.15)"}`, color: focusRed ? "#F87171" : "rgba(255,255,255,0.4)", transition: "all 0.15s" }}
-                  title={focusRed ? "Show all items" : "Hide green items — focus on what needs attention"}
+                  title={focusRed ? "Show all items" : "Hide green items \u2014 focus on what needs attention"}
                 >
-                  {focusRed ? "● Focus mode" : "Focus mode"}
+                  {focusRed ? "\u25CF Focus mode" : "Focus mode"}
                 </button>
               </div>
             )}
