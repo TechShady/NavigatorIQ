@@ -111,7 +111,7 @@ export function analyzeHotness(
   const insights: HotnessAnalysis["insights"] = [];
 
   if (worstZ >= 2.5) {
-    const metricNote = perfMetrics[0] ? ` ${perfMetrics[0].label}: ${perfMetrics[0].displayValue} (+${perfMetrics[0].zScore.toFixed(1)}σ).` : "";
+    const metricNote = perfMetrics[0] ? ` ${perfMetrics[0].label}: ${perfMetrics[0].displayValue} (+${perfMetrics[0].zScore.toFixed(1)}\u03C3).` : "";
     insights.push({ severity: "critical", icon: "🔥", text: `Critical spike at bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}) driven by ${worstDriver.toLowerCase()}.${metricNote}` });
   } else if (worstZ >= 1.5) {
     insights.push({ severity: "warning", icon: "⚠️", text: `Elevated activity at bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}) — ${worstDriver.toLowerCase()}.` });
@@ -331,7 +331,7 @@ function MetricRow({ m }: { m: HeatBucketMetric }) {
         <div style={{ flex: 1, height: 3, background: "rgba(255,255,255,0.08)", borderRadius: 2 }}>
           <div style={{ width: `${barW}%`, height: "100%", background: barColor, borderRadius: 2 }} />
         </div>
-        <span style={{ fontSize: 10, color: barColor, width: 36, textAlign: "right" }}>{m.zScore > 0 ? "+" : ""}{m.zScore.toFixed(1)}σ</span>
+        <span style={{ fontSize: 10, color: barColor, width: 36, textAlign: "right" }}>{m.zScore > 0 ? "+" : ""}{m.zScore.toFixed(1)}{"\u03C3"}</span>
       </div>
     </div>
   );
@@ -397,8 +397,8 @@ function CommonTable({ metrics1, metrics2, label1, label2, title, mode }: {
             return (
               <React.Fragment key={i}>
                 <div style={{ ...CELL, borderTop: bt, background: bg, color: "rgba(255,255,255,0.75)", fontWeight: row.common ? 700 : 400 }}>{row.label}</div>
-                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 600, color: zColor(row.z1, row.isTraffic ?? false) }}>{row.val1} <span style={{ fontSize: 10, opacity: 0.6 }}>{row.z1 > 0 ? "+" : ""}{row.z1.toFixed(1)}σ</span></div>
-                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 600, color: zColor(row.z2, row.isTraffic ?? false) }}>{row.val2} <span style={{ fontSize: 10, opacity: 0.6 }}>{row.z2 > 0 ? "+" : ""}{row.z2.toFixed(1)}σ</span></div>
+                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 600, color: zColor(row.z1, row.isTraffic ?? false) }}>{row.val1} <span style={{ fontSize: 10, opacity: 0.6 }}>{row.z1 > 0 ? "+" : ""}{row.z1.toFixed(1)}{"\u03C3"}</span></div>
+                <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 600, color: zColor(row.z2, row.isTraffic ?? false) }}>{row.val2} <span style={{ fontSize: 10, opacity: 0.6 }}>{row.z2 > 0 ? "+" : ""}{row.z2.toFixed(1)}{"\u03C3"}</span></div>
                 <div style={{ ...CELL, borderTop: bt, background: bg, fontWeight: 700, color: row.common ? signalColor : "rgba(255,255,255,0.2)", fontSize: 11 }}>{row.common ? (mode === "worst" ? "Both hot" : "Both healthy") : "—"}</div>
               </React.Fragment>
             );
@@ -638,7 +638,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
 
     // Metric table rows for PDF
     const metricTableRows = (metrics: HeatBucketMetric[]) => metrics.map(m =>
-      `<tr><td style="padding:3px 10px;opacity:0.7;font-size:12px">${m.label}</td><td style="padding:3px 10px;font-weight:600;font-size:12px;color:${m.zScore >= 1.5 ? "#FF3D9A" : m.zScore >= 0.75 ? "#FFF04D" : "#10B981"}">${m.displayValue} <span style="font-size:10px;opacity:0.6">${m.zScore > 0 ? "+" : ""}${m.zScore.toFixed(1)}σ</span></td></tr>`
+      `<tr><td style="padding:3px 10px;opacity:0.7;font-size:12px">${m.label}</td><td style="padding:3px 10px;font-weight:600;font-size:12px;color:${m.zScore >= 1.5 ? "#FF3D9A" : m.zScore >= 0.75 ? "#FFF04D" : "#10B981"}">${m.displayValue} <span style="font-size:10px;opacity:0.6">${m.zScore > 0 ? "+" : ""}${m.zScore.toFixed(1)}\u03C3</span></td></tr>`
     ).join("");
 
     // Delta table for W1 vs B1
@@ -658,7 +658,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
       const zColor = (z: number, isT: boolean) => isT ? "#4589FF" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#10B981";
       const signalColor = mode === "worst" ? "#FF3D9A" : "#10B981";
       const bg = isCommon ? `${signalColor}18` : "transparent";
-      return `<tr style="background:${bg}"><td style="padding:5px 10px;font-size:12px;font-weight:${isCommon ? 700 : 400}">${m1.label}</td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${zColor(m1.zScore, m1.isTraffic ?? false)}">${m1.displayValue} <span style="font-size:10px;opacity:0.6">${m1.zScore > 0 ? "+" : ""}${m1.zScore.toFixed(1)}σ</span></td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${zColor(z2, m1.isTraffic ?? false)}">${m2?.displayValue ?? "—"} <span style="font-size:10px;opacity:0.6">${z2 > 0 ? "+" : ""}${z2.toFixed(1)}σ</span></td><td style="padding:5px 10px;font-size:12px;font-weight:700;color:${isCommon ? signalColor : "rgba(255,255,255,0.2)"}">${isCommon ? (mode === "worst" ? "Both hot" : "Both healthy") : "—"}</td></tr>`;
+      return `<tr style="background:${bg}"><td style="padding:5px 10px;font-size:12px;font-weight:${isCommon ? 700 : 400}">${m1.label}</td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${zColor(m1.zScore, m1.isTraffic ?? false)}">${m1.displayValue} <span style="font-size:10px;opacity:0.6">${m1.zScore > 0 ? "+" : ""}${m1.zScore.toFixed(1)}\u03C3</span></td><td style="padding:5px 10px;font-size:12px;font-weight:600;color:${zColor(z2, m1.isTraffic ?? false)}">${m2?.displayValue ?? "—"} <span style="font-size:10px;opacity:0.6">${z2 > 0 ? "+" : ""}${z2.toFixed(1)}\u03C3</span></td><td style="padding:5px 10px;font-size:12px;font-weight:700;color:${isCommon ? signalColor : "rgba(255,255,255,0.2)"}">${isCommon ? (mode === "worst" ? "Both hot" : "Both healthy") : "—"}</td></tr>`;
     }).join("");
 
     // Pattern/burst info
@@ -711,8 +711,8 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
 <div class="kpi-grid">
   <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}/${analysis.usableCount}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
   <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981"}">${analysis.criticalBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Critical Spikes</div></div>
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}σ</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}σ</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
+  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
 </div>
 
 <div class="section-label">Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)</div>
@@ -894,8 +894,8 @@ ${davisHtml}
           {[
             { label: "Hot Buckets", value: `${analysis.hotBuckets}/${analysis.usableCount}`, color: analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981" },
             { label: "Critical Spikes", value: String(analysis.criticalBuckets), color: analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981" },
-            { label: "Worst Z-score", value: analysis.worstZ.toFixed(2) + "σ", color: analysis.worstZ >= 2.5 ? "#FF073A" : analysis.worstZ >= 1.5 ? "#FF3D9A" : analysis.worstZ >= 0.75 ? "#FFF04D" : "#4589FF" },
-            { label: "Best Z-score", value: analysis.bestZ.toFixed(2) + "σ", color: "#10B981" },
+            { label: "Worst Z-score", value: analysis.worstZ.toFixed(2) + "\u03C3", color: analysis.worstZ >= 2.5 ? "#FF073A" : analysis.worstZ >= 1.5 ? "#FF3D9A" : analysis.worstZ >= 0.75 ? "#FFF04D" : "#4589FF" },
+            { label: "Best Z-score", value: analysis.bestZ.toFixed(2) + "\u03C3", color: "#10B981" },
           ].map((kpi) => (
             <div key={kpi.label} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${kpi.color}25`, borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: kpi.color, lineHeight: 1.1 }}>{kpi.value}</div>

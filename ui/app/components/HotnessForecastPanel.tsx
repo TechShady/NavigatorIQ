@@ -416,7 +416,7 @@ export function HotnessForecastPanel({
               <>
                 <circle cx={cx} cy={cy} r={6} fill={hotnessColor(peakZ)} stroke="white" strokeWidth={2} />
                 <text x={cx} y={cy - 11} textAnchor="middle" fill={hotnessColor(peakZ)} fontSize={12} fontWeight="bold">
-                  ↑ {peakZ.toFixed(1)}σ
+                  ↑ {peakZ.toFixed(1)}{"\\u03C3"}
                 </text>
               </>
             );
@@ -437,7 +437,7 @@ export function HotnessForecastPanel({
                 <rect x={cx - 52} y={cy - 20} width={104} height={22} rx={5}
                   fill="rgba(14,18,36,0.94)" stroke="rgba(255,255,255,0.18)" strokeWidth={0.9} />
                 <text x={cx} y={cy - 4} textAnchor="middle" fill="white" fontSize={12} fontWeight="bold">
-                  {isForecast ? "~" : ""}{v.toFixed(2)}σ{isForecast ? " (fcst)" : ""}
+                  {isForecast ? "~" : ""}{v.toFixed(2)}{"\\u03C3"}{isForecast ? " (fcst)" : ""}
                 </text>
               </g>
             );
@@ -453,7 +453,7 @@ export function HotnessForecastPanel({
             <text x={mL + halfW} y={mT + cH + 18} textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize={12}>Now</text>
           )}
           <text x={mL + cW} y={mT + cH + 18} textAnchor="end" fill="rgba(255,255,255,0.38)" fontSize={12}>+{appliedForecast}d</text>
-          <text x={mL} y={mT + cH + 38} textAnchor="start" fill="rgba(255,255,255,0.22)" fontSize={11} fontStyle="italic">Hotness Z-score (σ)</text>
+          <text x={mL} y={mT + cH + 38} textAnchor="start" fill="rgba(255,255,255,0.22)" fontSize={11} fontStyle="italic">Hotness Z-score ({"\\u03C3"})</text>
         </svg>
       </div>
 
@@ -464,7 +464,7 @@ export function HotnessForecastPanel({
       }}>
         <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", flexDirection: "column", gap: 4 }}>
           {peakZ >= 0.75
-            ? <span>Forecast peak: <span style={{ color: hotnessColor(peakZ), fontWeight: 700 }}>z={peakZ.toFixed(2)}</span> at +{peakIdx + 1} bucket(s) into forecast window{peakZ > maxY ? <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}> (off-scale — bars capped at {maxY.toFixed(1)}σ)</span> : null}</span>
+            ? <span>Forecast peak: <span style={{ color: hotnessColor(peakZ), fontWeight: 700 }}>z={peakZ.toFixed(2)}</span> at +{peakIdx + 1} bucket(s) into forecast window{peakZ > maxY ? <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}> (off-scale — bars capped at {maxY.toFixed(1)}{"\\u03C3"})</span> : null}</span>
             : <span style={{ color: "#3EC96A" }}>No significant hotness spikes projected in forecast window</span>
           }
           {method === "seasonal" && (

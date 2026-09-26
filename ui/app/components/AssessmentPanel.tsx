@@ -161,7 +161,7 @@ function BucketDiagPanel({
           <div style={{ fontSize: 13, fontWeight: 700, color: lc, marginTop: 2 }}>{levelLabel(detail.zScore)}</div>
           {perfMetrics.length > 0 && (
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 5 }}>
-              Primary driver: <span style={{ fontWeight: 700, color: lc }}>{perfMetrics[0].label}</span> (+{perfMetrics[0].zScore.toFixed(1)}σ)
+              Primary driver: <span style={{ fontWeight: 700, color: lc }}>{perfMetrics[0].label}</span> (+{perfMetrics[0].zScore.toFixed(1)}{"\u03C3"})
             </div>
           )}
         </div>
@@ -201,7 +201,7 @@ function BucketDiagPanel({
                   <div style={{ width: `${barW}%`, height: "100%", background: barColor, borderRadius: 2, transition: "width 0.3s" }} />
                 </div>
                 <span style={{ fontSize: 11, color: barColor, width: 42, textAlign: "right", fontWeight: 600 }}>
-                  {m.zScore > 0 ? "+" : ""}{m.zScore.toFixed(1)}σ
+                  {m.zScore > 0 ? "+" : ""}{m.zScore.toFixed(1)}{"\u03C3"}
                 </span>
               </div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
@@ -234,7 +234,7 @@ function BucketDiagPanel({
                 const col = m.zScore >= 2.5 ? "#FF073A" : m.zScore >= 1.5 ? "#FF3D9A" : "#FFF04D";
                 return (
                   <span key={i} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${col}18`, border: `1px solid ${col}45`, color: col, fontWeight: 600 }}>
-                    {m.label} +{m.zScore.toFixed(1)}σ
+                    {m.label} +{m.zScore.toFixed(1)}{"\u03C3"}
                   </span>
                 );
               })}
@@ -621,7 +621,7 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
             title="Quietest bucket in this window — click to focus"
           >
             <div style={{ fontSize: 17, fontWeight: 900, color: bestColor, lineHeight: 1, letterSpacing: -0.5 }}>
-              {bestZ.toFixed(1)}σ
+              {bestZ.toFixed(1)}{"\u03C3"}
             </div>
             <div style={{ fontSize: 8, fontWeight: 800, color: bestColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
               {bestLabel}
@@ -636,7 +636,7 @@ function HealthSparkline({ readings, currentScore, heatScores, onPeakClick, onBe
             title="Peak hotness in this window — click to focus that bucket"
           >
             <div style={{ fontSize: 17, fontWeight: 900, color: heatColor, lineHeight: 1, letterSpacing: -0.5 }}>
-              {peakZ.toFixed(1)}σ
+              {peakZ.toFixed(1)}{"\u03C3"}
             </div>
             <div style={{ fontSize: 8, fontWeight: 800, color: heatColor, opacity: 0.85, letterSpacing: "0.12em", marginTop: 2 }}>
               {heatLabel}
