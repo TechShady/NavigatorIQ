@@ -341,8 +341,10 @@ function buildEntitySparklineQuery(
       lines.push(`| filter isNotNull(${fieldExpr})`);
       lines.push(`| summarize avg=percentile(${fieldExpr}, 75), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else {
+      // Use page summary events for dense, reliable coverage — they carry all web vitals and duration
+      // and are not filtered by user_type (which is commonly null for page summaries)
+      lines[1] = `| filter characteristics.has_page_summary == true`;
       lines.push(`| filter isNotNull(${fieldExpr})`);
-      if (isDurationField) lines.push(`| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)`);
       lines.push(`| summarize rawAvg=toLong(percentile(${fieldExpr}, 75)), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
       lines.push(`| fieldsAdd avg = rawAvg / ${divisor}`);
     }
@@ -881,7 +883,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
     const isErrorRate = metricKey === "dt.rum.error.count" || (lbl.includes("ERROR") && lbl.includes("RATE"));
     const isDuration = !vitalField && !isErrorRate && (lbl.includes("DURATION") || lbl.includes("LOAD"));
     const unit: string | undefined = vitalField === "web_vitals.cumulative_layout_shift" ? "" : vitalField ? "s" : isDuration ? "ms" : isErrorRate ? "%" : undefined;
-    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : isDuration ? `| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)` : "";
+    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : isDuration ? `| filter characteristics.has_page_summary == true` : "";
     const buildExpr = (pct: string, field: string, divisor: number, useLong = false) => {
       const p = parseInt(pct.replace(/\D/g, ""), 10);
       const conv = useLong ? "toLong" : "toDouble";

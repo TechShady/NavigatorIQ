@@ -30,6 +30,7 @@ const LEVELS: { key: LevelKey; label: string; color: string; tip: string }[] = [
 ];
 
 function formatVal(val: number, unit?: string): string {
+  if (unit === "ms") return val >= 1000 ? `${(val / 1000).toFixed(2)} s` : `${val.toFixed(0)} ms`;
   if (unit === "s") return val >= 1 ? `${val.toFixed(2)} s` : `${(val * 1000).toFixed(0)} ms`;
   if (unit === "%") return `${val.toFixed(1)}%`;
   return val.toFixed(2);

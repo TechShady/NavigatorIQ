@@ -18,6 +18,7 @@ const PCT_OPTIONS = ["P50", "P75", "P90", "P95", "P99"] as const;
 type PctOption = typeof PCT_OPTIONS[number];
 
 function formatAvg(avg: number, unit?: string): string {
+  if (unit === "ms") return avg >= 1000 ? `${(avg / 1000).toFixed(2)} s` : `${avg.toFixed(0)} ms`;
   if (unit === "s") return avg >= 1 ? `${avg.toFixed(2)} s` : `${(avg * 1000).toFixed(0)} ms`;
   if (unit === "%") return `${avg.toFixed(1)}%`;
   return avg.toFixed(2);
