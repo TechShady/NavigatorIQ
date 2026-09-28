@@ -324,15 +324,15 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
       {/* Header */}
       <div onMouseDown={onDragStart} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 10px", cursor: "grab", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
         <span style={{ fontSize: 15 }}>&#x1F4C5;</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             <span style={{ color, marginRight: 5 }}>&#x25CF;</span>{label} Heatmap
           </div>
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
             {loading ? "Loading 7-day window…" : "Hour-of-day × Day-of-week · 7-day view"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
           <button
             onClick={() => exportKpiHeatmapPdf(grid, zGrid, analysis ?? analyzeGrid(grid, label, unit), label, unit)}
             style={{ fontSize: 10, padding: "3px 9px", background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 5, color: "#4589FF", cursor: "pointer", fontWeight: 600 }}

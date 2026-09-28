@@ -820,6 +820,197 @@ function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589F
   );
 }
 
+// ─── Entity Impact Overlay ────────────────────────────────────────────────────
+// Adapted from UserJourney KpiPanelOverlay (panel === "impact")
+
+function exportImpactPdf(label: string, curr: number, pMax: number, pMin: number, mean: number, trendLabel: string, stabilityLabel: string, execSummary: string, nextStep: string, color: string) {
+  const w = window.open("", "_blank");
+  if (!w) return;
+  const fmt = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v >= 10 ? v.toFixed(0) : v.toFixed(2);
+  const rows = [
+    { label: "Current value", value: fmt(curr) }, { label: "Peak (period)", value: fmt(pMax) },
+    { label: "Trough (period)", value: fmt(pMin) }, { label: "Mean (period)", value: fmt(mean) },
+    { label: "Recent trend", value: trendLabel }, { label: "Data stability", value: stabilityLabel },
+  ].map(r => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2e4a"><span style="color:#9ca3af">${r.label}</span><strong>${r.value}</strong></div>`).join("");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Impact Analysis - ${label}</title><style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1221;color:#e8eaf0;padding:32px;font-size:13px}h1{margin-bottom:4px}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}strong{color:#111}}</style></head><body><h1>Impact Analysis</h1><p style="color:#6b7280;font-size:12px;margin-bottom:20px">${label} - Generated ${new Date().toLocaleString()}</p><div style="padding:10px 14px;background:#1a2036;border-left:3px solid ${color};border-radius:6px;margin-bottom:16px;font-size:13px;font-weight:600">${execSummary}</div><div style="margin-bottom:16px">${rows}</div><div style="padding:10px 14px;background:#1a2036;border-left:3px solid ${color};border-radius:6px;font-size:12px;color:#9ca3af"><strong style="display:block;margin-bottom:4px">Recommended Next Step:</strong>${nextStep}</div></body></html>`;
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
+interface EntityImpactOverlayProps {
+  label: string;
+  rawValue: number;
+  sparkline: number[];
+  color?: string;
+  effectiveHigherIsBetter: boolean;
+  onClose: () => void;
+}
+
+function EntityImpactOverlay({ label, rawValue, sparkline, color = "#4589FF", effectiveHigherIsBetter, onClose }: EntityImpactOverlayProps) {
+  const valid = sparkline.filter((v) => isFinite(v) && v != null);
+  const mean = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+  const std = valid.length > 1 ? Math.sqrt(valid.reduce((a, v) => a + (v - mean) ** 2, 0) / valid.length) : 0;
+  const curr = rawValue;
+  const deviation = std > 0 ? (curr - mean) / std : 0;
+  const pMin = valid.length ? Math.min(...valid) : 0;
+  const pMax = valid.length ? Math.max(...valid) : 0;
+  const lastFew = valid.slice(-4);
+  const recentTrend = lastFew.length >= 2 ? (lastFew[lastFew.length - 1] - lastFew[0]) / (lastFew[0] || 1) * 100 : 0;
+  const trendLabel = Math.abs(recentTrend) < 3 ? "Stable" : recentTrend > 0 ? (effectiveHigherIsBetter ? "Improving ↑" : "Worsening ↑") : (effectiveHigherIsBetter ? "Declining ↓" : "Improving ↓");
+  const trendColor = recentTrend > 0 && effectiveHigherIsBetter ? "#0D9C29" : recentTrend < 0 && !effectiveHigherIsBetter ? "#0D9C29" : Math.abs(recentTrend) < 3 ? "rgba(255,255,255,0.6)" : "#E00000";
+  const cv = mean > 0 ? std / Math.abs(mean) : 0;
+  const stabilityLabel = cv < 0.05 ? "Very stable" : cv < 0.15 ? "Stable" : cv < 0.3 ? "Moderate variability" : "High variability";
+  const fmt = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v >= 10 ? v.toFixed(0) : v.toFixed(2);
+  const panelSeverity = Math.abs(deviation) > 2 ? "critical" : Math.abs(deviation) > 1 ? "warning" : "ok";
+  const sevColor: Record<string, string> = { ok: "#0D9C29", warning: "#FFC800", critical: "#E00000" };
+  const sevLabel: Record<string, string> = { ok: "OK", warning: "REVIEW", critical: "CRITICAL" };
+  const execSummary = Math.abs(deviation) < 0.5 ? `${label} is within normal range — stable at ${fmt(curr)}.` : `${label} is ${Math.abs(deviation).toFixed(1)}σ ${deviation > 0 ? "above" : "below"} the period mean${effectiveHigherIsBetter === (deviation > 0) ? ", trending positively" : ", trending negatively"}.`;
+  const nextStep = Math.abs(deviation) > 2 ? `Investigate root cause — open Diagnose or check Dimension breakdown for anomalous segments.` : Math.abs(deviation) > 1 ? `Monitor closely. Consider setting a Dynatrace alert for ${label}.` : `No immediate action needed. Continue monitoring with existing alerts.`;
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 480, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>&#x1F465; Impact Analysis</div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${sevColor[panelSeverity]}20`, color: sevColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{sevLabel[panelSeverity]}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+            <button onClick={() => exportImpactPdf(label, curr, pMax, pMin, mean, trendLabel, stabilityLabel, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
+            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
+          </div>
+        </div>
+        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${sevColor[panelSeverity]}12`, borderLeft: `3px solid ${sevColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+          {execSummary}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[
+            { label: "Current value", value: fmt(curr), col: color },
+            { label: "Peak (period)", value: fmt(pMax), col: effectiveHigherIsBetter ? "#0D9C29" : "#E00000" },
+            { label: "Trough (period)", value: fmt(pMin), col: effectiveHigherIsBetter ? "#E00000" : "#0D9C29" },
+            { label: "Mean (period)", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
+            { label: "Recent trend", value: trendLabel, col: trendColor },
+            { label: "Data stability", value: stabilityLabel, col: "rgba(255,255,255,0.6)" },
+          ].map((r, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 6, padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
+            {effectiveHigherIsBetter ? `Higher ${label} positively impacts user outcomes and revenue.` : `Lower ${label} indicates a better user experience.`}{" "}Current value is {Math.abs(deviation) < 0.5 ? "within" : deviation > 0 ? "above" : "below"} the period mean.
+          </div>
+        </div>
+        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Entity Anomaly Overlay ───────────────────────────────────────────────────
+// Adapted from UserJourney KpiPanelOverlay (panel === "anomaly")
+
+function exportAnomalyPdf(label: string, curr: number, mean: number, std: number, deviation: number, anomalyStatus: { label: string; color: string }, execSummary: string, nextStep: string, color: string) {
+  const w = window.open("", "_blank");
+  if (!w) return;
+  const fmt = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v >= 10 ? v.toFixed(0) : v.toFixed(2);
+  const rows = [
+    { label: "Status", value: anomalyStatus.label }, { label: "Deviation", value: `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}σ` },
+    { label: "Historical mean", value: fmt(mean) }, { label: "Normal range", value: `${fmt(Math.max(0, mean - std))} to ${fmt(mean + std)}` },
+    { label: "Current value", value: fmt(curr) },
+  ].map(r => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2e4a"><span style="color:#9ca3af">${r.label}</span><strong>${r.value}</strong></div>`).join("");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Anomaly Detection - ${label}</title><style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1221;color:#e8eaf0;padding:32px;font-size:13px}h1{margin-bottom:4px}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}strong{color:#111}}</style></head><body><h1>Anomaly Detection</h1><p style="color:#6b7280;font-size:12px;margin-bottom:20px">${label} - Generated ${new Date().toLocaleString()}</p><div style="padding:10px 14px;background:#1a2036;border-left:3px solid ${anomalyStatus.color};border-radius:6px;margin-bottom:16px;font-size:13px;font-weight:600">${execSummary}</div><div style="margin-bottom:16px">${rows}</div><div style="padding:10px 14px;background:#1a2036;border-left:3px solid ${color};border-radius:6px;font-size:12px;color:#9ca3af"><strong style="display:block;margin-bottom:4px">Recommended Next Step:</strong>${nextStep}</div></body></html>`;
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
+interface EntityAnomalyOverlayProps {
+  label: string;
+  rawValue: number;
+  sparkline: number[];
+  color?: string;
+  effectiveHigherIsBetter: boolean;
+  onClose: () => void;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function EntityAnomalyOverlay({ label, rawValue, sparkline, color = "#4589FF", effectiveHigherIsBetter: _hib, onClose }: EntityAnomalyOverlayProps) {
+  const valid = sparkline.filter((v) => isFinite(v) && v != null);
+  const mean = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+  const std = valid.length > 1 ? Math.sqrt(valid.reduce((a, v) => a + (v - mean) ** 2, 0) / valid.length) : 0;
+  const curr = rawValue;
+  const deviation = std > 0 ? (curr - mean) / std : 0;
+  const anomalyStatus = Math.abs(deviation) < 1 ? { label: "Normal", color: "#0D9C29" } : Math.abs(deviation) < 2 ? { label: "Slightly Elevated", color: "#FFC800" } : { label: "Anomalous", color: "#E00000" };
+  const fmt = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v >= 10 ? v.toFixed(0) : v.toFixed(2);
+  const panelSeverity = anomalyStatus.label === "Anomalous" ? "critical" : anomalyStatus.label !== "Normal" ? "warning" : "ok";
+  const sevColor: Record<string, string> = { ok: "#0D9C29", warning: "#FFC800", critical: "#E00000" };
+  const sevLabel: Record<string, string> = { ok: "OK", warning: "REVIEW", critical: "CRITICAL" };
+  const execSummary = `${label} is ${anomalyStatus.label} — ${Math.abs(deviation).toFixed(2)}σ from the period mean.`;
+  const nextStep = anomalyStatus.label === "Anomalous" ? `Investigate immediately — check Dimension breakdown for geo/browser segments and open Diagnose for pattern correlation.` : anomalyStatus.label !== "Normal" ? `Monitor for continued movement. Set an alert at ${fmt(Math.max(0, mean + 2 * std))} to catch escalation early.` : `No action needed. ${label} is behaving normally.`;
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 480, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>&#x1F50D; Anomaly Detection</div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${sevColor[panelSeverity]}20`, color: sevColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{sevLabel[panelSeverity]}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+            <button onClick={() => exportAnomalyPdf(label, curr, mean, std, deviation, anomalyStatus, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
+            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
+          </div>
+        </div>
+        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${anomalyStatus.color}12`, borderLeft: `3px solid ${anomalyStatus.color}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+          {execSummary}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+            <div style={{ textAlign: "center", padding: "12px 20px", borderRadius: 10, background: `${anomalyStatus.color}18`, border: `1px solid ${anomalyStatus.color}40` }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: anomalyStatus.color }}>{anomalyStatus.label}</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{Math.abs(deviation).toFixed(2)}&sigma; from mean</div>
+            </div>
+          </div>
+          {[
+            { label: "Current value", value: fmt(curr), col: color },
+            { label: "Historical mean", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
+            { label: "Std deviation (±1σ)", value: `±${fmt(std)}`, col: "rgba(255,255,255,0.6)" },
+            { label: "Normal range", value: `${fmt(Math.max(0, mean - std))} – ${fmt(mean + std)}`, col: "#0D9C29" },
+            { label: "Deviation", value: `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}σ`, col: anomalyStatus.color },
+          ].map((r, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 4, padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
+            {Math.abs(deviation) < 1 ? `${label} is behaving normally for this timeframe. No action needed.` : Math.abs(deviation) < 2 ? `${label} shows slight deviation. Monitor for continued movement.` : `${label} is significantly outside the normal range. Investigate potential causes.`}
+          </div>
+        </div>
+        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Row shape ───────────────────────────────────────────────────────────────
 
 interface EntityRow {
@@ -848,7 +1039,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
   const cfg = detectEntityConfig(metricKey, metricLabel);
 
   // ── Chip modals ────────────────────────────────────────────────────────────
-  type ChipModal = { type: "forecast" | "diagnose" | "cost" | "baseline" | "heatmap" | "dimension"; row: EntityRow };
+  type ChipModal = { type: "forecast" | "diagnose" | "cost" | "baseline" | "heatmap" | "dimension" | "impact" | "anomaly"; row: EntityRow };
   const [activeChip, setActiveChip] = useState<ChipModal | null>(null);
   const [entitySparkline, setEntitySparkline] = useState<number[] | null>(null);
   const [sparklineLoading, setSparklineLoading] = useState(false);
@@ -858,7 +1049,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
 
   const higherIsBetter = useMemo(() => isHigherBetter(metricKey, metricLabel), [metricKey, metricLabel]);
 
-  function openChip(type: "forecast" | "diagnose" | "cost" | "baseline" | "heatmap" | "dimension", row: EntityRow) {
+  function openChip(type: "forecast" | "diagnose" | "cost" | "baseline" | "heatmap" | "dimension" | "impact" | "anomaly", row: EntityRow) {
     if (!cfg) return;
     setActiveChip({ type, row });
     setEntitySparkline(null);
@@ -1105,6 +1296,16 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
                       title="Geographic & browser breakdown for this entity"
                     >Dimension</button>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openChip("impact", row); }}
+                    style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 5, color: "#a78bfa", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                    title="Impact analysis for this entity"
+                  >Impact</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openChip("anomaly", row); }}
+                    style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 5, color: "#f87171", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                    title="Anomaly detection for this entity"
+                  >Anomaly</button>
                 </div>
               </div>
             );
@@ -1243,6 +1444,56 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
           />
         );
       })()}
+
+      {/* Impact overlay */}
+      {activeChip?.type === "impact" && chipRow && (
+        sparklineLoading ? createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Loading impact data…</div>
+          </div>,
+          document.body
+        ) : sparklineError ? createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setActiveChip(null)}>
+            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+          </div>,
+          document.body
+        ) : entitySparkline ? (
+          <EntityImpactOverlay
+            label={chipLabel}
+            rawValue={chipRow.avgValue}
+            sparkline={entitySparkline.length > 0 ? entitySparkline : [chipRow.avgValue]}
+            color="#a78bfa"
+            effectiveHigherIsBetter={higherIsBetter}
+            onClose={() => setActiveChip(null)}
+          />
+        ) : null
+      )}
+
+      {/* Anomaly overlay */}
+      {activeChip?.type === "anomaly" && chipRow && (
+        sparklineLoading ? createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Analyzing anomalies…</div>
+          </div>,
+          document.body
+        ) : sparklineError ? createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setActiveChip(null)}>
+            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+          </div>,
+          document.body
+        ) : entitySparkline ? (
+          <EntityAnomalyOverlay
+            label={chipLabel}
+            rawValue={chipRow.avgValue}
+            sparkline={entitySparkline.length > 0 ? entitySparkline : [chipRow.avgValue]}
+            color="#f87171"
+            effectiveHigherIsBetter={higherIsBetter}
+            onClose={() => setActiveChip(null)}
+          />
+        ) : null
+      )}
     </>
   );
 }
