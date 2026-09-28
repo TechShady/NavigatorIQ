@@ -343,7 +343,7 @@ function buildEntitySparklineQuery(
       lines.push(`| summarize avg=percentile(${fieldExpr}, 75), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else {
       lines.push(`| filter isNotNull(${fieldExpr})`);
-      if (isDurationField) lines.push(`| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)`);
+      if (isDurationField) lines.push(`| filter isFalseOrNull(characteristics.has_page_summary)`);
       lines.push(`| summarize rawAvg=toLong(percentile(${fieldExpr}, 75)), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
       lines.push(`| fieldsAdd avg = rawAvg / ${divisor}`);
     }
