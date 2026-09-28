@@ -531,6 +531,28 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   const isForecastPoint = hoverIdx !== null && hoverIdx >= historicalData.length;
   const nowX = historicalData.length > 0 && forecastData.length > 0 ? xScale(historicalData.length) : historicalData.length > 0 ? xScale(historicalData.length - 1) : null;
 
+  const exportForecastPdf = () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const fmtV = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v >= 10 ? v.toFixed(0) : v.toFixed(2);
+    const currentVal = historicalData.length > 0 ? historicalData[historicalData.length - 1] : null;
+    const projectedVal = forecastData.length > 0 ? forecastData[forecastData.length - 1] : null;
+    const rows = [
+      { lbl: "Historical data points", val: String(historicalData.length) },
+      { lbl: "Current value", val: currentVal != null ? fmtV(currentVal) : "N/A" },
+      { lbl: `${appliedForecastDays}-day projection`, val: projectedVal != null ? fmtV(projectedVal) : "N/A" },
+      { lbl: "Forecast confidence", val: confidenceScore != null ? `${confidenceScore}%` : "N/A" },
+      { lbl: "Forecast method", val: method },
+      { lbl: "Analysis period", val: `${appliedAnalyzeDays} days` },
+      { lbl: "Data interval", val: datapointLabel(appliedDatapoints) },
+      { lbl: "Forecast horizon", val: `${appliedForecastDays} days` },
+    ].map(r => `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2a2e4a"><span style="color:#9ca3af">${r.lbl}</span><strong>${r.val}</strong></div>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Forecast — ${label}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f1221;color:#e8eaf0;font-family:'Segoe UI',system-ui,sans-serif;padding:32px;font-size:13px}h1{font-size:20px;margin-bottom:4px}.sub{color:#6b7280;font-size:12px;margin-bottom:20px}.content{margin-bottom:16px}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}strong{color:#111}@page{margin:1cm}}</style></head><body><h1>📈 ${label} — ${appliedForecastDays}-Day Forecast</h1><div class="sub">Generated ${new Date().toLocaleString()}</div><div class="content">${rows}</div></body></html>`;
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -552,6 +574,9 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
                 { value: "linear", label: "Linear Regression" },
               ]}
             />
+            <button onClick={exportForecastPdf} style={{ background: "rgba(69,137,255,0.15)", color: "#4589FF", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+              📄 PDF
+            </button>
             <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", color: "#fff", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>✕ Close</button>
           </div>
         </div>

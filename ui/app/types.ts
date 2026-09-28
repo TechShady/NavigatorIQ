@@ -100,6 +100,7 @@ export interface HeatBucketMetric {
   zScore: number;
   isTraffic?: boolean;
   metricKey?: string;
+  exploreAppPath?: string;
 }
 
 export interface HeatBucketDetail {

@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { queryExecutionClient } from "@dynatrace-sdk/client-query";
 import { ForecastModal } from "./ForecastModal";
+import { KpiHeatmapPanel } from "./KpiHeatmapPanel";
+import { DimensionModal } from "./DimensionModal";
+import type { DimSlice } from "./DimensionModal";
 
 // ─── Entity config ───────────────────────────────────────────────────────────
 
@@ -325,10 +328,6 @@ function buildEntitySparklineQuery(
       `| filterOut dt.rum.user_type == "synthetic" OR isNull(dt.rum.user_type)`,
       `| filter isNotNull(frontend.name) and frontend.name == "${safeDisplay}"`,
     ];
-    if (safeSub) {
-      lines.push(`| fieldsAdd cleanSub = ${CLEAN_SUB}`);
-      lines.push(`| filter cleanSub == "${safeSub}"`);
-    }
     if (isErrorRate) {
       lines.push(`| filter characteristics.has_page_summary or characteristics.has_w3c_navigation_timings`);
       lines.push(`| fieldsAdd __e = ${errorFields}`);
@@ -384,6 +383,17 @@ async function fetchEntitySparkline(query: string, valueField: string, scale: nu
 // ─── Entity Diagnose Overlay ──────────────────────────────────────────────────
 // Adapted from UserJourney KpiPanelOverlay (panel === "diagnose") — logic identical,
 // entity context passed via label.
+
+function exportDiagnosePdf(label: string, scenarios: Array<{id: string; icon: string; title: string; status: string; finding: string; rec: string}>, color: string) {
+  const w = window.open("", "_blank");
+  if (!w) return;
+  const sc: Record<string, string> = { ok: "#0D9C29", warning: "#FFC800", critical: "#E00000", info: "#4589FF" };
+  const rows = scenarios.map(s => `<div style="margin:6px 0;padding:8px 12px;background:#1a1e36;border-radius:6px;border-left:3px solid ${sc[s.status]}"><strong style="color:#fff">${s.icon} ${s.title}</strong> <span style="font-size:10px;color:${sc[s.status]};float:right;font-weight:bold">${s.status.toUpperCase()}</span><br><span style="color:#9ca3af;font-size:11px">${s.finding}</span><br><span style="color:#6b7280;font-size:11px">→ ${s.rec}</span></div>`).join("");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Diagnose — ${label}</title><style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1221;color:#e8eaf0;padding:32px;font-size:13px}h1{margin-bottom:4px}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}strong{color:#111}}</style></head><body><h1>🩺 Diagnose — ${label}</h1><p style="color:#6b7280;font-size:12px;margin-bottom:20px">Generated ${new Date().toLocaleString()}</p>${rows}</body></html>`;
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
 
 interface EntityDiagnoseOverlayProps {
   label: string;
@@ -516,6 +526,7 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{label}</div>
           </div>
+          <button onClick={() => exportDiagnosePdf(label, diagnoseScenarios, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
           <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
         </div>
         <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
@@ -538,6 +549,246 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
           <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
         </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Entity Cost / Baseline Overlay ──────────────────────────────────────────
+
+interface EntityCostBaselineProps {
+  label: string;
+  rawValue: number;
+  sparkline: number[];
+  color?: string;
+  effectiveHigherIsBetter: boolean;
+  panel: "cost" | "baseline";
+  onClose: () => void;
+  onOpenPanel?: (p: "cost" | "baseline") => void;
+}
+
+function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589FF", effectiveHigherIsBetter, panel, onClose, onOpenPanel }: EntityCostBaselineProps) {
+  const valid = sparkline.filter((v) => isFinite(v) && v != null);
+  const mean = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+  const std = valid.length > 1 ? Math.sqrt(valid.reduce((a, v) => a + (v - mean) ** 2, 0) / valid.length) : 0;
+  const curr = rawValue;
+  const pMax = valid.length ? Math.max(...valid) : 0;
+  const pMin = valid.length ? Math.min(...valid) : 0;
+  const fmt = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v >= 10 ? v.toFixed(0) : v.toFixed(2);
+
+  // Baseline: split period in half
+  const n = valid.length;
+  const mid = Math.floor(n / 2);
+  const baselineMean = mid > 0 ? valid.slice(0, mid).reduce((a, b) => a + b, 0) / mid : mean;
+  const currentHalfMean = n - mid > 0 ? valid.slice(mid).reduce((a, b) => a + b, 0) / (n - mid) : mean;
+  const bDelta = baselineMean > 0 ? ((currentHalfMean - baselineMean) / baselineMean) * 100 : 0;
+  const bDeltaGood = effectiveHigherIsBetter ? bDelta > 0 : bDelta < 0;
+
+  // Seasonality strength (lag-1 autocorrelation proxy)
+  const centered = valid.map(v => v - mean);
+  let acfNum = 0, acfDen = 0;
+  for (let i = 0; i < n - 1; i++) { acfNum += centered[i] * centered[i + 1]; acfDen += centered[i] * centered[i]; }
+  const seasonalStrength = acfDen > 0 ? Math.abs(acfNum / acfDen) : 0;
+  const seasonalLabel = seasonalStrength > 0.5 ? "Strong" : seasonalStrength > 0.25 ? "Moderate" : "Low";
+
+  // Thirds
+  const t1 = valid.slice(0, Math.floor(n / 3));
+  const t2 = valid.slice(Math.floor(n / 3), Math.floor(2 * n / 3));
+  const t3 = valid.slice(Math.floor(2 * n / 3));
+  const t1avg = t1.length ? t1.reduce((a, b) => a + b, 0) / t1.length : 0;
+  const t2avg = t2.length ? t2.reduce((a, b) => a + b, 0) / t2.length : 0;
+  const t3avg = t3.length ? t3.reduce((a, b) => a + b, 0) / t3.length : 0;
+  const thirdAvgs = [t1avg, t2avg, t3avg];
+  const peakThird = thirdAvgs.indexOf(effectiveHigherIsBetter ? Math.max(...thirdAvgs) : Math.min(...thirdAvgs));
+  const peakSegment = peakThird === 0 ? "Early period" : peakThird === 1 ? "Mid period" : "Late period";
+
+  // Cost Impact
+  const isBusinessOutcome = /revenue|conversion.?rate|^cr$|cvr|conv\.?\s*rate/i.test(label);
+  const degradationRaw = curr - mean;
+  const degradationPct = mean > 0 ? Math.abs(degradationRaw) / mean * 100 : 0;
+  const lbl = label.toUpperCase();
+  const convRatePerPct =
+    /\bLCP\b|LARGEST.CONTENTFUL/.test(lbl) ? 0.7 :
+    /\bFCP\b|FIRST.CONTENTFUL/.test(lbl) ? 0.4 :
+    /\bINP\b|INTERACTION.TO.NEXT/.test(lbl) ? 0.3 :
+    /\bTTFB\b|TIME.TO.FIRST.BYTE/.test(lbl) ? 0.3 :
+    /ERROR.?RATE|ERROR\s*%/.test(lbl) ? 2 :
+    /DURATION|LOAD.TIME/.test(lbl) ? 0.5 : 0;
+  const isBadDirection = effectiveHigherIsBetter ? degradationRaw < 0 : degradationRaw > 0;
+  const conversionImpactPct = isBadDirection ? Math.min(25, degradationPct * convRatePerPct / 100) : 0;
+  const conversionNote =
+    /\bLCP\b|LARGEST.CONTENTFUL/.test(lbl) ? "Each 100ms above 2.5s LCP reduces conversion ~0.7% (Google/Deloitte benchmark)." :
+    /ERROR.?RATE/.test(lbl) ? "Each 1% error rate increase drives ~2% conversion drop (industry benchmark)." :
+    /DURATION/.test(lbl) ? "100ms page load increase reduces conversion ~0.5% (Akamai benchmark)." : "";
+
+  // Severity
+  const panelSeverity =
+    panel === "baseline" ? (Math.abs(bDelta) > 15 && !bDeltaGood ? "critical" : Math.abs(bDelta) > 8 && !bDeltaGood ? "warning" : "ok") :
+    (isBusinessOutcome ? "info" : degradationPct > 20 ? "critical" : degradationPct > 10 ? "warning" : "ok");
+  const severityColor: Record<string, string> = { ok: "#0D9C29", warning: "#FFC800", critical: "#E00000", info: "#4589FF" };
+  const severityLabel: Record<string, string> = { ok: "OK", warning: "REVIEW", critical: "CRITICAL", info: "INFO" };
+
+  const execSummary =
+    panel === "baseline" ? (Math.abs(bDelta) < 3 ? `${label} is consistent with its earlier baseline — no significant drift.` : `${label} is ${Math.abs(bDelta).toFixed(1)}% ${bDelta > 0 ? "higher" : "lower"} than the first-half baseline.`) :
+    (isBusinessOutcome ? `${label} is a business outcome metric — optimize the performance drivers below.` : conversionImpactPct > 0 ? `Estimated ~${conversionImpactPct.toFixed(1)}% conversion impact based on ${fmt(Math.max(0, degradationRaw))} deviation from mean.` : `${label} appears within normal range — minimal cost impact.`);
+
+  const nextStep =
+    panel === "baseline" ? (Math.abs(bDelta) > 8 && !bDeltaGood ? `Investigate the drift. Use a longer timeframe in Dynatrace to compare same-day or same-hour baselines.` : `Baseline is stable. No immediate action needed.`) :
+    (isBusinessOutcome ? `Prioritize optimization of LCP, Error Rate, and INP — they have the highest leverage on ${label}.` : degradationPct > 10 ? `Prioritize optimization. Connect Dynatrace Business Analytics for precise revenue impact.` : `Cost impact minimal at current levels. Continue monitoring.`);
+
+  const titles: Record<string, string> = { cost: "💰 Cost Impact", baseline: "📊 Baseline Compare" };
+  const crossPanel = panel === "cost" ? "baseline" : "cost";
+  const crossLabel = panel === "cost" ? "📊 Baseline" : "💰 Cost Impact";
+
+  const exportPdf = () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const sc2: Record<string, string> = { ok: "#0D9C29", warning: "#FFC800", critical: "#E00000", info: "#4589FF" };
+    const panelRows = panel === "baseline" ? [
+      { lbl: "Baseline avg (first half)", val: fmt(baselineMean) }, { lbl: "Current avg (second half)", val: fmt(currentHalfMean) },
+      { lbl: "Change from baseline", val: `${bDelta >= 0 ? "+" : ""}${bDelta.toFixed(1)}%` }, { lbl: "Cyclical strength", val: seasonalLabel },
+      { lbl: "Peak segment", val: peakSegment }, { lbl: "Early avg", val: fmt(t1avg) }, { lbl: "Mid avg", val: fmt(t2avg) }, { lbl: "Late avg", val: fmt(t3avg) },
+    ].map(r => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2e4a"><span style="color:#9ca3af">${r.lbl}</span><strong>${r.val}</strong></div>`).join("")
+    : [
+      { lbl: "Deviation from mean", val: `${degradationPct.toFixed(1)}%` },
+      { lbl: "Est. conversion impact", val: conversionImpactPct > 0 ? `-${conversionImpactPct.toFixed(1)}%` : "Minimal" },
+      { lbl: "Severity", val: degradationPct > 20 ? "Severe" : degradationPct > 10 ? "Moderate" : degradationPct > 3 ? "Minor" : "Negligible" },
+    ].map(r => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2e4a"><span style="color:#9ca3af">${r.lbl}</span><strong>${r.val}</strong></div>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${titles[panel]} — ${label}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f1221;color:#e8eaf0;font-family:'Segoe UI',system-ui,sans-serif;padding:32px;font-size:13px}h1{font-size:20px;margin-bottom:4px}.sub{color:#6b7280;font-size:12px;margin-bottom:20px}.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase}.exec{padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;font-weight:600}.next{padding:12px 16px;background:#1a2036;border-left:3px solid ${color};border-radius:6px;font-size:12px;color:#9ca3af}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}}</style></head><body><h1>${titles[panel]} <span class="badge" style="background:${sc2[panelSeverity]}22;color:${sc2[panelSeverity]}">${severityLabel[panelSeverity]}</span></h1><div class="sub">${label} &middot; Generated ${new Date().toLocaleString()}</div><div class="exec" style="background:${sc2[panelSeverity]}15;border-left:3px solid ${sc2[panelSeverity]}">${execSummary}</div><div class="content">${panelRows}</div><div class="next"><strong>Recommended Next Step:</strong><br>${nextStep}</div></body></html>`;
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  };
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 480, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{titles[panel]}</div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${severityColor[panelSeverity]}20`, color: severityColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{severityLabel[panelSeverity]}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{label}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button onClick={exportPdf} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
+            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
+          </div>
+        </div>
+        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+          {execSummary}
+        </div>
+
+        {panel === "baseline" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>Period Comparison (First Half vs Second Half)</div>
+              {[
+                { label: "Baseline avg (first half)", value: fmt(baselineMean), col: "rgba(255,255,255,0.7)" },
+                { label: "Current avg (second half)", value: fmt(currentHalfMean), col: color },
+                { label: "Change from baseline", value: `${bDelta >= 0 ? "+" : ""}${bDelta.toFixed(1)}%`, col: Math.abs(bDelta) < 3 ? "rgba(255,255,255,0.6)" : bDeltaGood ? "#0D9C29" : "#E00000" },
+                { label: "Data stability", value: seasonalLabel, col: "rgba(255,255,255,0.6)" },
+              ].map((r, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>Period Segments</div>
+              {[
+                { label: "Cyclical strength", value: seasonalLabel, col: seasonalStrength > 0.3 ? "#FFC800" : "rgba(255,255,255,0.6)" },
+                { label: "Peak segment", value: peakSegment, col: "rgba(255,255,255,0.7)" },
+                { label: "Early period avg", value: fmt(t1avg), col: "rgba(255,255,255,0.6)" },
+                { label: "Mid period avg", value: fmt(t2avg), col: "rgba(255,255,255,0.6)" },
+                { label: "Late period avg", value: fmt(t3avg), col: "rgba(255,255,255,0.6)" },
+              ].map((r, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: i < 4 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
+              {Math.abs(bDelta) < 3 ? `${label} is consistent with its earlier baseline — no significant drift detected.` : bDeltaGood ? `${label} has ${effectiveHigherIsBetter ? "improved" : "decreased"} ${Math.abs(bDelta).toFixed(1)}% vs baseline.` : `${label} has ${effectiveHigherIsBetter ? "declined" : "increased"} ${Math.abs(bDelta).toFixed(1)}% vs baseline. Investigate root cause.`}
+            </div>
+          </div>
+        )}
+
+        {panel === "cost" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ padding: "10px 12px", background: "rgba(255,200,0,0.06)", border: "1px solid rgba(255,200,0,0.2)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.65)", lineHeight: 1.6 }}>
+              {isBusinessOutcome ? `${label} is a business outcome metric. The analysis below identifies which performance metrics drive it most.` : "Estimates based on industry benchmarks. Connect revenue data in Dynatrace Business Analytics for precision."}
+            </div>
+            {isBusinessOutcome ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", padding: "0 2px" }}>Top performance drivers for {label}</div>
+                {[
+                  { metric: "LCP (Page Load Speed)", impact: "High", note: "Each 100ms above 2.5s reduces conversion ~0.7%", col: "#E00000" },
+                  { metric: "Error Rate", impact: "High", note: "Each 1% error rate increase → ~2% conversion drop", col: "#E00000" },
+                  { metric: "INP (Interactivity)", impact: "Medium", note: "Slow interactions reduce task completion rate", col: "#FFC800" },
+                  { metric: "TTFB", impact: "Medium", note: "High TTFB inflates all downstream timings", col: "#FFC800" },
+                  { metric: "Apdex / Satisfaction", impact: "Medium", note: "Low Apdex correlates with early abandonment", col: "#FFC800" },
+                ].map((r, i) => (
+                  <div key={i} style={{ padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{r.metric}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: r.col }}>{r.impact}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{r.note}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                <div style={{ padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>Metric Deviation vs Mean</div>
+                  {[
+                    { label: "Current value", value: fmt(curr), col: color },
+                    { label: "Period mean", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
+                    { label: "Deviation from mean", value: `${degradationRaw >= 0 ? "+" : ""}${degradationPct.toFixed(1)}%`, col: isBadDirection ? "#E00000" : "#0D9C29" },
+                    { label: "Est. conversion impact", value: conversionImpactPct > 0 ? `-${conversionImpactPct.toFixed(1)}%` : "Minimal", col: conversionImpactPct > 5 ? "#E00000" : conversionImpactPct > 2 ? "#FFC800" : "#0D9C29" },
+                    { label: "Severity", value: degradationPct > 20 ? "Severe" : degradationPct > 10 ? "Moderate" : degradationPct > 3 ? "Minor" : "Negligible", col: degradationPct > 20 ? "#E00000" : degradationPct > 10 ? "#FFC800" : "#0D9C29" },
+                    { label: "Peak-to-mean ratio", value: mean > 0 ? `${(pMax / mean).toFixed(1)}x` : "N/A", col: pMax > mean * 3 ? "#E00000" : pMax > mean * 1.5 ? "#FFC800" : "#0D9C29" },
+                  ].map((r, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: i < 5 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+                {conversionNote && <div style={{ padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}><span style={{ color: "rgba(255,255,255,0.75)", fontWeight: 600 }}>Benchmark: </span>{conversionNote}</div>}
+              </>
+            )}
+          </div>
+        )}
+
+        {valid.length >= 4 && panel === "baseline" && (() => {
+          const mn = Math.min(...valid), mx = Math.max(...valid), rng = mx - mn || 1;
+          const pts = valid.map((d, i) => `${(i / (valid.length - 1) * 100).toFixed(1)},${(100 - (d - mn) / rng * 100).toFixed(1)}`).join(" ");
+          return (
+            <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
+              <div style={{ fontSize: 9, opacity: 0.35, textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 4 }}>Period trend</div>
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: "100%", height: 36, display: "block" }}>
+                <polyline points={pts} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+              </svg>
+            </div>
+          );
+        })()}
+
+        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+        </div>
+
+        {onOpenPanel && (
+          <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={() => onOpenPanel(crossPanel as "cost" | "baseline")} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 6, color: "rgba(255,255,255,0.6)", padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>{crossLabel}</button>
+          </div>
+        )}
       </div>
     </div>,
     document.body
@@ -572,15 +823,17 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
   const cfg = detectEntityConfig(metricKey, metricLabel);
 
   // ── Chip modals ────────────────────────────────────────────────────────────
-  type ChipModal = { type: "forecast" | "diagnose"; row: EntityRow };
+  type ChipModal = { type: "forecast" | "diagnose" | "cost" | "baseline" | "heatmap" | "dimension"; row: EntityRow };
   const [activeChip, setActiveChip] = useState<ChipModal | null>(null);
   const [entitySparkline, setEntitySparkline] = useState<number[] | null>(null);
   const [sparklineLoading, setSparklineLoading] = useState(false);
   const [sparklineError, setSparklineError] = useState<string | null>(null);
+  const [heatmapPos, setHeatmapPos] = useState({ x: 280, y: 120 });
+  const heatmapDragRef = React.useRef<{ startX: number; startY: number; startPosX: number; startPosY: number } | null>(null);
 
   const higherIsBetter = useMemo(() => isHigherBetter(metricKey, metricLabel), [metricKey, metricLabel]);
 
-  function openChip(type: "forecast" | "diagnose", row: EntityRow) {
+  function openChip(type: "forecast" | "diagnose" | "cost" | "baseline" | "heatmap" | "dimension", row: EntityRow) {
     if (!cfg) return;
     setActiveChip({ type, row });
     setEntitySparkline(null);
@@ -600,6 +853,84 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       return fetchEntitySparkline(query, valueField, scale, isArray);
     };
   }
+
+  function makeGetHeatmapData(row: EntityRow) {
+    return async (days: number): Promise<{ values: number[]; bucketMs: number; unit?: string }> => {
+      if (!cfg) return { values: [], bucketMs: 3600000 };
+      const { query, valueField, scale, isArray } = buildEntitySparklineQuery(metricKey, metricLabel, cfg, row.entityId, row.displayName, row.sub, days, 60);
+      const values = await fetchEntitySparkline(query, valueField, scale, isArray);
+      const unit = cfg.valueUnit;
+      return { values, bucketMs: 3600000, unit };
+    };
+  }
+
+  function makeDimensionFetchers(row: EntityRow) {
+    if (!cfg || cfg.queryType !== "frontend") return { fetchGeo: undefined, fetchBrowser: undefined };
+    const safeDisplay = row.displayName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const lbl = metricLabel.toUpperCase();
+    const vitalMap: Array<[RegExp, string, number]> = [
+      [/\bLCP\b|LARGEST.CONTENTFUL/, "web_vitals.largest_contentful_paint", 1e6],
+      [/\bFCP\b|FIRST.CONTENTFUL/, "web_vitals.first_contentful_paint", 1e6],
+      [/\bCLS\b|CUMULATIVE.LAYOUT/, "web_vitals.cumulative_layout_shift", 1],
+      [/\bINP\b|INTERACTION.TO.NEXT/, "web_vitals.interaction_to_next_paint", 1e6],
+      [/\bTTFB\b|TIME.TO.FIRST.BYTE/, "web_vitals.time_to_first_byte", 1e6],
+    ];
+    const vitalEntry = vitalMap.find(([pat]) => pat.test(lbl));
+    const vitalField = vitalEntry ? vitalEntry[1] : null;
+    const vitalDivisor = vitalEntry ? vitalEntry[2] : 1e6;
+    const isErrorRate = metricKey === "dt.rum.error.count" || (lbl.includes("ERROR") && lbl.includes("RATE"));
+    const isDuration = !vitalField && !isErrorRate && (lbl.includes("DURATION") || lbl.includes("LOAD"));
+    const unit: string | undefined = vitalField === "web_vitals.cumulative_layout_shift" ? "" : (vitalField || isDuration) ? "s" : isErrorRate ? "%" : undefined;
+    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : "";
+    const buildExpr = (pct: string, field: string, divisor: number) => {
+      const p = parseInt(pct.replace(/\D/g, ""), 10);
+      const aggFn = isNaN(p) ? `avg(toDouble(${field}))` : `percentile(toDouble(${field}), ${p})`;
+      return divisor !== 1 ? `${aggFn} / ${divisor}` : aggFn;
+    };
+    const baseFilter = `fetch user.events, from: now()-7d\n| filterOut dt.rum.user_type == "synthetic" OR isNull(dt.rum.user_type)\n| filter isNotNull(frontend.name) and frontend.name == "${safeDisplay}"`;
+    const fetchGeo = async (pct: string): Promise<DimSlice[]> => {
+      try {
+        const metricExpr = vitalField ? `, avgVal = ${buildExpr(pct, vitalField, vitalDivisor)}` : isDuration ? `, avgVal = ${buildExpr(pct, "duration", 1e9)}` : "";
+        let q: string;
+        if (isErrorRate) {
+          q = `${baseFilter}\n| filter isNotNull(geo.country.name)\n| summarize count = count(), errors = countIf(characteristics.has_error == true), by: {country = geo.country.name}\n| fieldsAdd avgVal = if(count > 0, toDouble(errors) / toDouble(count) * 100.0, else: 0.0)\n| sort count desc\n| limit 8`;
+        } else {
+          q = `${baseFilter}\n| filter isNotNull(geo.country.name)\n${vitalFilter ? vitalFilter + "\n" : ""}| summarize count = count()${metricExpr}, by: {country = geo.country.name}\n| sort count desc\n| limit 8`;
+        }
+        const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 15000 } });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const recs: any[] = (res.result as any)?.records ?? [];
+        return recs.map(r => ({ name: String(r.country ?? "Unknown"), value: Number(r.count ?? 0), avg: r.avgVal != null ? Number(r.avgVal) : undefined, unit }));
+      } catch { return []; }
+    };
+    const fetchBrowser = async (pct: string): Promise<DimSlice[]> => {
+      try {
+        const metricExpr = vitalField ? `, avgVal = ${buildExpr(pct, vitalField, vitalDivisor)}` : isDuration ? `, avgVal = ${buildExpr(pct, "duration", 1e9)}` : "";
+        let q: string;
+        if (isErrorRate) {
+          q = `${baseFilter}\n| filter isNotNull(browser.name)\n| summarize count = count(), errors = countIf(characteristics.has_error == true), by: {browser = browser.name}\n| fieldsAdd avgVal = if(count > 0, toDouble(errors) / toDouble(count) * 100.0, else: 0.0)\n| sort count desc\n| limit 6`;
+        } else {
+          q = `${baseFilter}\n| filter isNotNull(browser.name)\n${vitalFilter ? vitalFilter + "\n" : ""}| summarize count = count()${metricExpr}, by: {browser = browser.name}\n| sort count desc\n| limit 6`;
+        }
+        const res = await queryExecutionClient.queryExecute({ body: { query: q, requestTimeoutMilliseconds: 15000 } });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const recs: any[] = (res.result as any)?.records ?? [];
+        return recs.map(r => ({ name: String(r.browser ?? "Unknown"), value: Number(r.count ?? 0), avg: r.avgVal != null ? Number(r.avgVal) : undefined, unit }));
+      } catch { return []; }
+    };
+    return { fetchGeo, fetchBrowser };
+  }
+
+  const onHeatmapDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
+    heatmapDragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: heatmapPos.x, startPosY: heatmapPos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!heatmapDragRef.current) return;
+      setHeatmapPos({ x: heatmapDragRef.current.startPosX + ev.clientX - heatmapDragRef.current.startX, y: heatmapDragRef.current.startPosY + ev.clientY - heatmapDragRef.current.startY });
+    };
+    const onUp = () => { heatmapDragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
     if (!cfg) return;
@@ -726,6 +1057,28 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
                     style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 5, color: "#6ee7b7", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
                     title="Diagnose this metric for this entity"
                   >Diagnose</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openChip("baseline", row); }}
+                    style={{ background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.25)", borderRadius: 5, color: "#FFC800", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                    title="Baseline comparison for this entity"
+                  >Baseline</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openChip("cost", row); }}
+                    style={{ background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.25)", borderRadius: 5, color: "#FFC800", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                    title="Cost impact analysis for this entity"
+                  >Cost Impact</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openChip("heatmap", row); }}
+                    style={{ background: "rgba(255,61,154,0.08)", border: "1px solid rgba(255,61,154,0.25)", borderRadius: 5, color: "#FF3D9A", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                    title="Time-of-day heatmap for this entity"
+                  >Heatmap</button>
+                  {cfg.queryType === "frontend" && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openChip("dimension", row); }}
+                      style={{ background: "rgba(35,165,208,0.08)", border: "1px solid rgba(35,165,208,0.25)", borderRadius: 5, color: "#23A5D0", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                      title="Geographic & browser breakdown for this entity"
+                    >Dimension</button>
+                  )}
                 </div>
               </div>
             );
@@ -811,6 +1164,59 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
           />
         ) : null
       )}
+
+      {/* Baseline overlay */}
+      {(activeChip?.type === "baseline" || activeChip?.type === "cost") && chipRow && (
+        sparklineLoading ? createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Loading data…</div>
+          </div>,
+          document.body
+        ) : sparklineError ? createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setActiveChip(null)}>
+            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+          </div>,
+          document.body
+        ) : entitySparkline ? (
+          <EntityCostBaselineOverlay
+            label={chipLabel}
+            rawValue={chipRow.avgValue}
+            sparkline={entitySparkline.length > 0 ? entitySparkline : [chipRow.avgValue]}
+            color="#4589FF"
+            effectiveHigherIsBetter={higherIsBetter}
+            panel={activeChip.type as "cost" | "baseline"}
+            onClose={() => setActiveChip(null)}
+            onOpenPanel={(p) => setActiveChip({ type: p, row: chipRow })}
+          />
+        ) : null
+      )}
+
+      {/* Heatmap panel */}
+      {activeChip?.type === "heatmap" && chipRow && cfg && (
+        <KpiHeatmapPanel
+          label={chipLabel}
+          color="#4589FF"
+          pos={heatmapPos}
+          onDragStart={onHeatmapDragStart}
+          onClose={() => setActiveChip(null)}
+          getRequeryData={makeGetHeatmapData(chipRow)}
+        />
+      )}
+
+      {/* Dimension modal */}
+      {activeChip?.type === "dimension" && chipRow && (() => {
+        const { fetchGeo, fetchBrowser } = makeDimensionFetchers(chipRow);
+        return (
+          <DimensionModal
+            label={chipLabel}
+            color="#4589FF"
+            onClose={() => setActiveChip(null)}
+            fetchGeo={fetchGeo}
+            fetchBrowser={fetchBrowser}
+          />
+        );
+      })()}
     </>
   );
 }

@@ -319,17 +319,67 @@ export function NavigatorIQ() {
   // ─── Cross-persona health signals ──────────────────────────────────────
   const personaHealthMap = useMemo((): Record<string, "red" | "yellow" | "green"> => {
     const map: Record<string, "red" | "yellow" | "green"> = {};
-    for (const p of PERSONAS) {
+    const standardIds = new Set(PERSONAS.map((p) => p.id));
+    const all = [...PERSONAS, ...(settings.customPersonas ?? [])];
+
+    // Propagate signals from active assessment's hot buckets to related standard personas
+    const crossSignals: Record<string, "red" | "yellow"> = {};
+    const METRIC_PERSONA: [RegExp, string[]][] = [
+      [/^dt\.service\.|^dt\.database_service\./, ["developer", "sre", "devops"]],
+      [/^dt\.database\.|^dt\.db\./, ["dba"]],
+      [/^dt\.host\.|^dt\.process\.(?!network)/, ["platform", "k8s"]],
+      [/^dt\.process\.network\.|^dt\.network\./, ["network"]],
+      [/^dt\.rum\.|^dt\.frontend\./, ["digital"]],
+      [/^dt\.kubernetes\.|^dt\.k8s\./, ["k8s", "platform"]],
+    ];
+    for (const bd of assessment.bucketDetails) {
+      if (bd.level === "normal" || bd.level === "elevated") continue;
+      const sev: "red" | "yellow" = bd.level === "spike" ? "red" : "yellow";
+      for (const m of bd.metrics) {
+        if (!m.metricKey) continue;
+        for (const [pat, pids] of METRIC_PERSONA) {
+          if (pat.test(m.metricKey)) {
+            for (const pid of pids) {
+              if (!crossSignals[pid] || (crossSignals[pid] === "yellow" && sev === "red")) crossSignals[pid] = sev;
+            }
+          }
+        }
+      }
+    }
+
+    for (const p of all) {
       try {
-        // Active persona: use already-computed assessment (includes custom DQL metrics)
         if (p.id === persona) { map[p.id] = assessment.overallHealth; continue; }
+        if (!standardIds.has(p.id)) { map[p.id] = "green"; continue; }
         const a = computeAssessment(curResults, prevResults, p.id, settings.personas[p.id]?.thresholds ?? {}, tf);
-        map[p.id] = a.overallHealth;
+        const cross = crossSignals[p.id];
+        const std = a.overallHealth;
+        if (!cross || std === "red") { map[p.id] = std; }
+        else if (cross === "red") { map[p.id] = "red"; }
+        else if (std === "green") { map[p.id] = "yellow"; }
+        else { map[p.id] = std; }
       } catch { /* skip */ }
+    }
+
+    // Adjacency: when active persona is non-green, nudge related personas to at least yellow
+    if (assessment.overallHealth !== "green") {
+      const ADJACENT: Record<string, string[]> = {
+        developer: ["sre", "devops"],
+        sre:       ["developer", "devops"],
+        platform:  ["k8s"],
+        k8s:       ["platform"],
+        dba:       ["developer", "sre"],
+        network:   ["platform"],
+        digital:   ["developer", "sre"],
+        devops:    ["developer", "sre"],
+      };
+      for (const pid of ADJACENT[persona] ?? []) {
+        if (map[pid] === "green") map[pid] = "yellow";
+      }
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curResults, prevResults, tf, settings, persona, assessment.overallHealth]);
+  }, [curResults, prevResults, tf, settings, persona, assessment.overallHealth, assessment.bucketDetails]);
 
   // ─── Health score history ───────────────────────────────────────────────
   const healthHistory: HealthHistory = useMemo(() => {

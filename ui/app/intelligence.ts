@@ -49,7 +49,7 @@ function zToLevel(z: number): HeatBucketDetail["level"] {
   return z >= 2.5 ? "spike" : z >= 1.5 ? "warm" : z >= 0.75 ? "elevated" : "normal";
 }
 
-interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string }
+interface MetricDef { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string; exploreAppPath?: string }
 
 function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBucketDetail[] {
   const valid = metrics.filter((m) => m.timeline.length > 1);
@@ -66,7 +66,7 @@ function buildBucketDetails(heatScores: number[], metrics: MetricDef[]): HeatBuc
     metrics: valid.map((m, mi): HeatBucketMetric => {
       const value = m.timeline[i] ?? stats[mi].mean;
       const rawZ = m.inverted ? (stats[mi].mean - value) / stats[mi].std : (value - stats[mi].mean) / stats[mi].std;
-      return { label: m.label, value, displayValue: m.fmt(value), zScore: rawZ, isTraffic: m.isTraffic, metricKey: m.metricKey };
+      return { label: m.label, value, displayValue: m.fmt(value), zScore: rawZ, isTraffic: m.isTraffic, metricKey: m.metricKey, exploreAppPath: m.exploreAppPath };
     }),
   }));
 }
@@ -818,7 +818,7 @@ function assessFromBucketDetails(
 
 // ─── Main entry point ──────────────────────────────────────────────────────
 
-export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string }
+export interface CustomHeatMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string; exploreAppPath?: string }
 
 export function computeAssessment(
   cur: AllQueryResults,
@@ -933,6 +933,7 @@ export function computeAssessment(
         inverted: m.inverted,
         fmt: m.fmt,
         metricKey: m.metricKey,
+        exploreAppPath: m.exploreAppPath,
       })));
     }
   }

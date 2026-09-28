@@ -390,14 +390,22 @@ export function buildDqlHeatQuery(metric: HeatMetricConfig, from: string, to: st
   return query;
 }
 
+// Extract the DT metric key from a simple timeseries DQL query, e.g. "timeseries val=avg(dt.host.cpu.usage), ..."
+function extractMetricKeyFromDql(dqlQuery?: string): string | undefined {
+  if (!dqlQuery) return undefined;
+  const m = /timeseries\s+\w+\s*=\s*\w+\s*\(\s*`?([\w.]+)`?\s*\)/i.exec(dqlQuery);
+  return m ? m[1] : undefined;
+}
+
 export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: HeatMetricConfig): ParsedCustomMetric | null {
   if (!records) return null;
   const fmt = metric.displaySuffix?.trim()
     ? (v: number) => (Number.isInteger(v) ? String(v) : parseFloat(v.toFixed(2)).toString()) + metric.displaySuffix!.trim()
     : makeMetricFmt(metric.displayUnit);
+  const effectiveMetricKey = metric.metricKey || extractMetricKeyFromDql(metric.dqlQuery);
   if (records.length === 0) {
     // Counter with no events in window — return zero baseline so metric still appears in heat chart.
-    return { label: metric.label, timeline: [0, 0], isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: metric.metricKey };
+    return { label: metric.label, timeline: [0, 0], isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: effectiveMetricKey, exploreAppPath: metric.exploreAppPath };
   }
   let timeline: number[];
   if (records.length === 1 && Array.isArray(records[0]["value"])) {
@@ -406,7 +414,7 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     timeline = records.map((r) => { const v = r["value"]; const n = Number(v); return isFinite(n) ? n : 0; });
   }
   if (timeline.length < 2) return null;
-  return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: metric.metricKey };
+  return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: effectiveMetricKey, exploreAppPath: metric.exploreAppPath };
 }
 
 const fmtMs = (v: number) => {
@@ -436,7 +444,7 @@ function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] 
   }
 }
 
-export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string }
+export interface ParsedCustomMetric { label: string; timeline: number[]; isTraffic?: boolean; inverted?: boolean; fmt: (v: number) => string; metricKey?: string; exploreAppPath?: string }
 
 function isInverted(m: HeatMetricConfig): boolean {
   return m.warningThreshold !== undefined && m.criticalThreshold !== undefined && m.warningThreshold > m.criticalThreshold;
