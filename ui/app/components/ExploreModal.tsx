@@ -290,7 +290,7 @@ function buildEntitySparklineQuery(
   sub: string | undefined,
   analyzeDays: number,
   datapointMinutes: number,
-): { query: string; valueField: string } {
+): { query: string; valueField: string; scale: number; isArray: boolean } {
   const fromStr = `now()-${analyzeDays}d`;
   const intervalStr = `${datapointMinutes}m`;
 
@@ -317,6 +317,8 @@ function buildEntitySparklineQuery(
     const safeDisplay = displayName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     const safeSub = sub ? sub.replace(/\\/g, "\\\\").replace(/"/g, '\\"') : null;
 
+    // Use summarize+bin instead of makeTimeseries — makeTimeseries rejects compound
+    // expressions like toLong(percentile(...))/divisor and countIf(...)/count() as aggregation args.
     const errorFields = `coalesce(error.csp_violation_count, 0) + coalesce(error.exception_count, 0) + coalesce(error.http_4xx_count, 0) + coalesce(error.http_5xx_count, 0) + coalesce(error.http_other_count, 0)`;
     const lines: string[] = [
       `fetch user.events, from:${fromStr}, to:now(), samplingRatio:1, scanLimitGBytes:500`,
@@ -330,26 +332,28 @@ function buildEntitySparklineQuery(
     if (isErrorRate) {
       lines.push(`| filter characteristics.has_page_summary or characteristics.has_w3c_navigation_timings`);
       lines.push(`| fieldsAdd __e = ${errorFields}`);
-      lines.push(`| makeTimeseries avg=countIf(__e > 0) * 100.0 / count(), interval:${intervalStr}`);
+      lines.push(`| summarize errors=countIf(__e > 0), total=count(), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
+      lines.push(`| fieldsAdd avg = if(total > 0, errors * 100.0 / total, 0.0)`);
     } else if (isCount) {
       lines.push(`| filter characteristics.has_page_summary or characteristics.has_w3c_navigation_timings`);
       lines.push(`| fieldsAdd __e = ${errorFields}`);
-      lines.push(`| makeTimeseries avg=sum(__e), interval:${intervalStr}`);
+      lines.push(`| summarize avg=sum(__e), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else if (isCls) {
       lines.push(`| filter isNotNull(${fieldExpr})`);
-      lines.push(`| makeTimeseries avg=percentile(${fieldExpr}, 75), interval:${intervalStr}`);
+      lines.push(`| summarize avg=percentile(${fieldExpr}, 75), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else {
       lines.push(`| filter isNotNull(${fieldExpr})`);
       if (isDurationField) lines.push(`| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)`);
-      lines.push(`| makeTimeseries avg=toLong(percentile(${fieldExpr}, 75)) / ${divisor}, interval:${intervalStr}`);
+      lines.push(`| summarize rawAvg=toLong(percentile(${fieldExpr}, 75)), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
+      lines.push(`| fieldsAdd avg = rawAvg / ${divisor}`);
     }
+    lines.push(`| sort timeBucket asc`);
     lines.push(`| fields avg`);
-    return { query: lines.join("\n"), valueField: "avg" };
+    return { query: lines.join("\n"), valueField: "avg", scale: 1, isArray: false };
   }
 
+  // For timeseries metrics (services, hosts, k8s, etc.) — timeseries command returns val as an array
   const scale = cfg.valueMultiplier ?? 1;
-  const scaleExpr = scale !== 1 ? `arrayAvg(val) * ${scale}` : `arrayAvg(val)`;
-  // timeseries returns val as an array per bucket row — we want the per-interval series
   return {
     query: [
       `timeseries val=avg(${metricKey}), from:${fromStr}, to:now(), interval:${intervalStr}, by:{${cfg.entityField}}`,
@@ -357,18 +361,24 @@ function buildEntitySparklineQuery(
       `| fields val`,
     ].join("\n"),
     valueField: "val",
+    scale,
+    isArray: true,
   };
 }
 
-async function fetchEntitySparkline(query: string, valueField: string): Promise<number[]> {
+async function fetchEntitySparkline(query: string, valueField: string, scale: number, isArray: boolean): Promise<number[]> {
   const res = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 30000 } });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const records: any[] = (res.result as any)?.records ?? [];
   if (records.length === 0) return [];
-  const first = records[0];
-  const raw = first[valueField];
-  if (Array.isArray(raw)) return (raw as unknown[]).map(Number).filter(isFinite);
-  return records.map((r) => Number(r[valueField])).filter(isFinite);
+  if (isArray) {
+    // timeseries command: single row, val is an array of bucket values
+    const raw = records[0][valueField];
+    if (Array.isArray(raw)) return (raw as unknown[]).map(v => Number(v) * scale).filter(isFinite);
+    return [];
+  }
+  // summarize+bin: one row per bucket, each with a scalar value
+  return records.map((r) => Number(r[valueField]) * scale).filter(isFinite);
 }
 
 // ─── Entity Diagnose Overlay ──────────────────────────────────────────────────
@@ -576,8 +586,8 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
     setEntitySparkline(null);
     setSparklineError(null);
     setSparklineLoading(true);
-    const { query, valueField } = buildEntitySparklineQuery(metricKey, metricLabel, cfg, row.entityId, row.displayName, row.sub, 30, 15);
-    fetchEntitySparkline(query, valueField)
+    const { query, valueField, scale, isArray } = buildEntitySparklineQuery(metricKey, metricLabel, cfg, row.entityId, row.displayName, row.sub, 30, 15);
+    fetchEntitySparkline(query, valueField, scale, isArray)
       .then((data) => { setEntitySparkline(data); })
       .catch((e) => { setSparklineError(String(e)); })
       .finally(() => setSparklineLoading(false));
@@ -586,8 +596,8 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
   function makeGetRequeryData(row: EntityRow) {
     return async (analyzeDays: number, datapointMinutes: number): Promise<number[]> => {
       if (!cfg) return [];
-      const { query, valueField } = buildEntitySparklineQuery(metricKey, metricLabel, cfg, row.entityId, row.displayName, row.sub, analyzeDays, datapointMinutes);
-      return fetchEntitySparkline(query, valueField);
+      const { query, valueField, scale, isArray } = buildEntitySparklineQuery(metricKey, metricLabel, cfg, row.entityId, row.displayName, row.sub, analyzeDays, datapointMinutes);
+      return fetchEntitySparkline(query, valueField, scale, isArray);
     };
   }
 
