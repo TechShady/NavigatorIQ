@@ -773,7 +773,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
             <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load sparkline: {sparklineError}</div>
           </div>,
           document.body
-        ) : entitySparkline ? (
+        ) : entitySparkline ? createPortal(
           <ForecastModal
             label={chipLabel}
             sparkline={entitySparkline.length > 0 ? entitySparkline : [chipRow.avgValue]}
@@ -782,7 +782,8 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
             toMs={Date.now()}
             onClose={() => setActiveChip(null)}
             getRequeryData={makeGetRequeryData(chipRow)}
-          />
+          />,
+          document.body
         ) : null
       )}
 
