@@ -337,17 +337,31 @@ function buildEntitySparklineQuery(
       lines.push(`| filter characteristics.has_page_summary or characteristics.has_w3c_navigation_timings`);
       lines.push(`| fieldsAdd __e = ${errorFields}`);
       lines.push(`| summarize avg=sum(__e), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
-    } else if (isCls) {
-      lines.push(`| filter isNotNull(${fieldExpr})`);
-      lines.push(`| summarize avg=percentile(${fieldExpr}, 75), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else {
-      // Target page-load navigation events (have LCP, not aggregated page summaries).
-      // Remove the filterOut so synthetic monitoring traffic is included — synthetic runs every
-      // few minutes and provides the dense coverage needed for 30-day sparklines in low-traffic environments.
-      lines[1] = `| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)`;
-      lines.push(`| filter isNotNull(${fieldExpr})`);
-      lines.push(`| summarize rawAvg=toLong(percentile(${fieldExpr}, 75)), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
-      lines.push(`| fieldsAdd avg = rawAvg / ${divisor}`);
+      // Use the pre-aggregated metric API for dense, consistent coverage.
+      // user.events LCP/Duration events are sparse in low-traffic demo environments (scan-limit
+      // and real-user-only population both contribute). The metric API covers real + synthetic
+      // traffic and has no scan issues over 30 days.
+      // Dynatrace frontend RUM metrics are stored in microseconds; × 0.001 converts to ms.
+      // CLS is dimensionless — no unit conversion.
+      const tsMetricMap: Record<string, string> = {
+        "dt.rum.useraction.duration":                  "dt.frontend.user_action.duration",
+        "dt.rum.useraction.largest_contentful_paint":  "dt.frontend.web.page.largest_contentful_paint",
+        "dt.rum.useraction.time_to_first_byte":        "dt.frontend.web.navigation.time_to_first_byte",
+        "dt.rum.useraction.interaction_to_next_paint": "dt.frontend.web.page.interaction_to_next_paint",
+      };
+      const tsKey = tsMetricMap[metricKey] ?? metricKey;
+      const tsScale = isCls ? 1 : 0.001;
+      return {
+        query: [
+          `timeseries val=percentile(${tsKey}, 75), from:${fromStr}, to:now(), interval:${intervalStr}, by:{dt.smartscape.frontend}`,
+          `| filter toString(dt.smartscape.frontend) == "${entityId}"`,
+          `| fields val`,
+        ].join("\n"),
+        valueField: "val",
+        scale: tsScale,
+        isArray: true,
+      };
     }
     lines.push(`| sort timeBucket asc`);
     lines.push(`| fields avg`);
