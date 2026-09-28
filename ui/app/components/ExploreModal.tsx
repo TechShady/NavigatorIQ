@@ -342,7 +342,7 @@ function buildEntitySparklineQuery(
       lines.push(`| summarize avg=percentile(${fieldExpr}, 75), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else {
       lines.push(`| filter isNotNull(${fieldExpr})`);
-      if (isDurationField) lines.push(`| filter isFalseOrNull(characteristics.has_page_summary)`);
+      if (isDurationField) lines.push(`| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)`);
       lines.push(`| summarize rawAvg=toLong(percentile(${fieldExpr}, 75)), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
       lines.push(`| fieldsAdd avg = rawAvg / ${divisor}`);
     }
@@ -880,17 +880,18 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
     const vitalDivisor = vitalEntry ? vitalEntry[2] : 1e6;
     const isErrorRate = metricKey === "dt.rum.error.count" || (lbl.includes("ERROR") && lbl.includes("RATE"));
     const isDuration = !vitalField && !isErrorRate && (lbl.includes("DURATION") || lbl.includes("LOAD"));
-    const unit: string | undefined = vitalField === "web_vitals.cumulative_layout_shift" ? "" : (vitalField || isDuration) ? "s" : isErrorRate ? "%" : undefined;
-    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : "";
-    const buildExpr = (pct: string, field: string, divisor: number) => {
+    const unit: string | undefined = vitalField === "web_vitals.cumulative_layout_shift" ? "" : vitalField ? "s" : isDuration ? "ms" : isErrorRate ? "%" : undefined;
+    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : isDuration ? `| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)` : "";
+    const buildExpr = (pct: string, field: string, divisor: number, useLong = false) => {
       const p = parseInt(pct.replace(/\D/g, ""), 10);
-      const aggFn = isNaN(p) ? `avg(toDouble(${field}))` : `percentile(toDouble(${field}), ${p})`;
+      const conv = useLong ? "toLong" : "toDouble";
+      const aggFn = isNaN(p) ? `avg(${conv}(${field}))` : `percentile(${conv}(${field}), ${p})`;
       return divisor !== 1 ? `${aggFn} / ${divisor}` : aggFn;
     };
     const baseFilter = `fetch user.events, from: now()-7d\n| filterOut dt.rum.user_type == "synthetic" OR isNull(dt.rum.user_type)\n| filter isNotNull(frontend.name) and frontend.name == "${safeDisplay}"`;
     const fetchGeo = async (pct: string): Promise<DimSlice[]> => {
       try {
-        const metricExpr = vitalField ? `, avgVal = ${buildExpr(pct, vitalField, vitalDivisor)}` : isDuration ? `, avgVal = ${buildExpr(pct, "duration", 1e9)}` : "";
+        const metricExpr = vitalField ? `, avgVal = ${buildExpr(pct, vitalField, vitalDivisor)}` : isDuration ? `, avgVal = ${buildExpr(pct, "duration", 10000000, true)}` : "";
         let q: string;
         if (isErrorRate) {
           q = `${baseFilter}\n| filter isNotNull(geo.country.name)\n| summarize count = count(), errors = countIf(characteristics.has_error == true), by: {country = geo.country.name}\n| fieldsAdd avgVal = if(count > 0, toDouble(errors) / toDouble(count) * 100.0, else: 0.0)\n| sort count desc\n| limit 8`;
@@ -905,7 +906,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
     };
     const fetchBrowser = async (pct: string): Promise<DimSlice[]> => {
       try {
-        const metricExpr = vitalField ? `, avgVal = ${buildExpr(pct, vitalField, vitalDivisor)}` : isDuration ? `, avgVal = ${buildExpr(pct, "duration", 1e9)}` : "";
+        const metricExpr = vitalField ? `, avgVal = ${buildExpr(pct, vitalField, vitalDivisor)}` : isDuration ? `, avgVal = ${buildExpr(pct, "duration", 10000000, true)}` : "";
         let q: string;
         if (isErrorRate) {
           q = `${baseFilter}\n| filter isNotNull(browser.name)\n| summarize count = count(), errors = countIf(characteristics.has_error == true), by: {browser = browser.name}\n| fieldsAdd avgVal = if(count > 0, toDouble(errors) / toDouble(count) * 100.0, else: 0.0)\n| sort count desc\n| limit 6`;

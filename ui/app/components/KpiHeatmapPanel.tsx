@@ -313,7 +313,7 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
 
   return createPortal(
     <div style={{
-      position: "fixed", left: pos.x, top: pos.y, zIndex: 9002,
+      position: "fixed", left: pos.x, top: pos.y, zIndex: 100012,
       background: "linear-gradient(135deg, #0f1117 0%, #131720 100%)",
       border: "1px solid rgba(69,137,255,0.3)", borderRadius: 12,
       boxShadow: "0 8px 40px rgba(0,0,0,0.7)", width: panelW,
