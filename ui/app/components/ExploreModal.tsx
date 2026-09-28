@@ -341,9 +341,10 @@ function buildEntitySparklineQuery(
       lines.push(`| filter isNotNull(${fieldExpr})`);
       lines.push(`| summarize avg=percentile(${fieldExpr}, 75), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
     } else {
-      // Use page summary events for dense, reliable coverage — they carry all web vitals and duration
-      // and are not filtered by user_type (which is commonly null for page summaries)
-      lines[1] = `| filter characteristics.has_page_summary == true`;
+      // Target page-load navigation events (have LCP, not aggregated page summaries).
+      // Remove the filterOut so synthetic monitoring traffic is included — synthetic runs every
+      // few minutes and provides the dense coverage needed for 30-day sparklines in low-traffic environments.
+      lines[1] = `| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)`;
       lines.push(`| filter isNotNull(${fieldExpr})`);
       lines.push(`| summarize rawAvg=toLong(percentile(${fieldExpr}, 75)), by:{timeBucket=bin(timestamp, ${intervalStr})}`);
       lines.push(`| fieldsAdd avg = rawAvg / ${divisor}`);
@@ -478,13 +479,21 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
       finding: isBusinessOutcome ? `${label} IS the conversion/revenue metric. Focus on what drives it: LCP, Error Rate, TTFB, INP, and Apdex have the strongest correlation.` : isWorsening ? `Recent ${worsePct.toFixed(1)}% ${effectiveHigherIsBetter ? "decline" : "increase"} may drive early funnel exits. Est. ~${funnelImpact.toFixed(1)}% conversion impact.` : `${label} is relatively stable. Low funnel exit risk at current values.`,
       rec: isBusinessOutcome ? "Use the KPI cards for LCP, Error Rate, TTFB, and INP — those metrics have the highest leverage on your conversion/revenue outcomes." : isWorsening ? `A ${worsePct.toFixed(0)}% worsening adds ~${funnelImpact.toFixed(1)}% abandonment. Check Business Analytics revenue data.` : "Continue monitoring. Set an alert if the trend reverses." },
     { id: "browser-geo", icon: "🌍", title: "Browser / Geo Specificity",
-      status: "info" as const,
-      finding: "Sparkline data is aggregated — browser and geo segmentation is not derivable at this level.",
-      rec: "Open Dynatrace Digital Experience and break down by browser/OS and geo. Flag any segment with values 2x+ the overall average." },
+      status: (std > mean * 0.25 ? "warning" : "info") as "warning" | "info",
+      finding: std > mean * 0.25
+        ? `High variance detected (σ/μ = ${(std / Math.max(mean, 0.001) * 100).toFixed(0)}%) — a specific browser or region may be an outlier. Mean: ${fmt(mean)}, σ: ${fmt(std)}.`
+        : `Consistent performance (σ/μ = ${(std / Math.max(mean, 0.001) * 100).toFixed(0)}%). No strong signal that a single browser or geo is driving the metric.`,
+      rec: std > mean * 0.25
+        ? `Open the Dimension chip to check if any browser or country has values ≥2× the avg of ${fmt(mean)}. Prioritize segments with both high traffic share and high metric values.`
+        : `Open the Dimension chip to confirm uniform distribution. No immediate action required unless a low-traffic segment shows extreme values.` },
     { id: "pages", icon: "📋", title: "Pages / Actions Focus",
-      status: "info" as const,
-      finding: "Page-level breakdown requires per-page dimension data beyond this KPI sparkline.",
-      rec: "In Dynatrace, split by page/action. Prioritize pages with high traffic AND poor metric values." },
+      status: (peakToMean > 2 ? "warning" : "info") as "warning" | "info",
+      finding: peakToMean > 2
+        ? `Peak ${fmt(pMax)} is ${peakToMean.toFixed(1)}× the mean ${fmt(mean)} — specific pages likely drive the overall metric up. Aggregate P75 may mask page-level hot spots.`
+        : `Peak-to-mean ratio is ${peakToMean.toFixed(1)}× — performance is relatively uniform. Individual pages are unlikely to be dramatically worse than the aggregate.`,
+      rec: peakToMean > 2
+        ? `Use the Dimension chip or Dynatrace Digital Experience to split by page. Focus on pages with both high session share and values ≥${fmt(mean * 1.5)}.`
+        : `Page-level breakdown is optional here. If you do split, prioritize pages with the highest traffic volume for optimization ROI.` },
     { id: "change", icon: "🔄", title: "Change / Deployment",
       status: changeDetected ? (changePct > 20 ? "critical" : "warning") : "ok",
       finding: changeDetected ? `Significant change point at ~${changePos}% into the period. Values shifted by ~${changePct.toFixed(0)}% (${fmt(maxShift)}).` : "No significant change point detected. Values appear to transition smoothly.",
@@ -883,7 +892,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
     const isErrorRate = metricKey === "dt.rum.error.count" || (lbl.includes("ERROR") && lbl.includes("RATE"));
     const isDuration = !vitalField && !isErrorRate && (lbl.includes("DURATION") || lbl.includes("LOAD"));
     const unit: string | undefined = vitalField === "web_vitals.cumulative_layout_shift" ? "" : vitalField ? "s" : isDuration ? "ms" : isErrorRate ? "%" : undefined;
-    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : isDuration ? `| filter characteristics.has_page_summary == true` : "";
+    const vitalFilter = vitalField ? `| filter isNotNull(${vitalField}) and toDouble(${vitalField}) > 0` : isDuration ? `| filter isNotNull(web_vitals.largest_contentful_paint) and isFalseOrNull(characteristics.has_page_summary)` : "";
     const buildExpr = (pct: string, field: string, divisor: number, useLong = false) => {
       const p = parseInt(pct.replace(/\D/g, ""), 10);
       const conv = useLong ? "toLong" : "toDouble";
