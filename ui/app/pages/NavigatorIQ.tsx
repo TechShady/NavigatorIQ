@@ -318,7 +318,11 @@ export function NavigatorIQ() {
     const result = Array.from({ length: nBuckets }, (_, i) => {
       const bStart = fromMs + i * bucketMs;
       const bEnd = bStart + bucketMs;
-      return rawDavisProblems.some((p) => p.startMs < bEnd && (p.endMs ?? nowMs) > bStart);
+      return rawDavisProblems.some((p) => {
+        // Active problems span from their open time to now; closed problems mark only their opening bucket
+        const pEnd = p.isActive ? nowMs : p.startMs + bucketMs;
+        return p.startMs < bEnd && pEnd > bStart;
+      });
     });
     return result.some(Boolean) ? result : null;
   }, [rawDavisProblems, tf]);

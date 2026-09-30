@@ -144,20 +144,25 @@ export function davisProblemsQuery(from: string, to: string): string {
 | summarize count=count(), titles=collectDistinct(event.title)`;
 }
 
-// Fetch raw Davis problem start/end timestamps from a wide look-back window so
-// problems opened before the current tab window are still captured for bucket mapping.
+// Fetch raw Davis problem start timestamps + status from a wide look-back window.
+// We avoid event.end because it returns 0 (not null) for open problems, making
+// null-coalescing unreliable. Instead: active problems span startMs→now; closed
+// problems mark only their opening bucket.
 export function davisProblemsRawQuery(to: string): string {
   return `fetch events, from:now()-30d, to:${to}
 | filter event.type == "DAVIS_PROBLEM"
-| fields startMs = toLong(timestamp), endMs = toLong(event.end)`;
+| fields startMs = toLong(timestamp), status = event.status`;
 }
 
-export interface DavisProblemSpan { startMs: number; endMs: number | null }
+export interface DavisProblemSpan { startMs: number; isActive: boolean }
 
 export function parseDavisProblemsRaw(records: DqlRecord[] | undefined): DavisProblemSpan[] {
   if (!records || records.length === 0) return [];
   return records
-    .map((r) => ({ startMs: num(r, "startMs"), endMs: r["endMs"] != null ? num(r, "endMs") : null }))
+    .map((r) => {
+      const s = String(r["status"] ?? "").toUpperCase();
+      return { startMs: num(r, "startMs"), isActive: s === "ACTIVE" || s === "OPEN" };
+    })
     .filter((p) => p.startMs > 0);
 }
 
