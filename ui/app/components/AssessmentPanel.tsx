@@ -397,17 +397,34 @@ function ClickableHeatStrip({
 // ─── Typewriter narrative ─────────────────────────────────────────────────
 
 function TypewriterNarrative({ text }: { text: string }) {
-  const [displayed, setDisplayed] = useState("");
+  const [charCount, setCharCount] = useState(0);
   const lastText = useRef("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { if (lastText.current !== text) { lastText.current = text; setDisplayed(""); } }, [text]);
   useEffect(() => {
-    if (displayed.length >= text.length) return;
-    const id = setTimeout(() => setDisplayed(text.slice(0, displayed.length + 4)), 18);
-    return () => clearTimeout(id);
-  }, [displayed, text]);
+    if (lastText.current !== text) {
+      lastText.current = text;
+      setCharCount(0);
+    }
+  }, [text]);
 
-  const done = displayed.length >= text.length;
+  useEffect(() => {
+    if (charCount >= text.length) return;
+    // Word-boundary aware: advance to end of next word for smoother feel
+    const nextSpace = text.indexOf(" ", charCount + 1);
+    const nextStop = nextSpace === -1 ? text.length : nextSpace + 1;
+    // Slight pause after sentence-ending punctuation
+    const lastChar = text[charCount - 1];
+    const delay = lastChar === "." || lastChar === "!" || lastChar === "?" ? 120
+      : lastChar === "," ? 55
+      : 28 + Math.random() * 14;
+    timerRef.current = setTimeout(() => setCharCount(nextStop), delay);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [charCount, text]);
+
+  const done = charCount >= text.length;
+  const displayed = text.slice(0, charCount);
+
   return (
     <div style={{ background: "linear-gradient(135deg, rgba(69,137,255,0.07) 0%, rgba(124,58,237,0.04) 100%)", border: "1px solid rgba(69,137,255,0.2)", borderLeft: "3px solid #4589FF", borderRadius: "0 10px 10px 0", padding: "14px 18px", marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -423,7 +440,7 @@ function TypewriterNarrative({ text }: { text: string }) {
       </div>
       <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)", lineHeight: 1.78 }}>
         {displayed}
-        {!done && <span style={{ color: "#7ab4ff", animation: "iq-blink 0.8s step-end infinite", fontWeight: 100 }}>|</span>}
+        {!done && <span style={{ color: "#7ab4ff", animation: "iq-blink 0.7s step-end infinite", fontWeight: 100 }}>▋</span>}
       </div>
       <style>{`
         @keyframes iq-ai-star { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.85)} }

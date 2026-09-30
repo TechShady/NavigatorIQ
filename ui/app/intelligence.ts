@@ -696,37 +696,55 @@ function buildNarrative(
 ): string {
   const reds = items.filter((i) => i.severity === "red");
   const yellows = items.filter((i) => i.severity === "yellow");
+  const greens = items.filter((i) => i.severity === "green");
+
+  const sh = cur.serviceHealth;
+  const psh = prev.serviceHealth;
 
   if (reds.length === 0 && yellows.length === 0) {
-    return `Your ${tf.label.toLowerCase()} environment looks healthy for the ${persona} persona. All monitored metrics are within acceptable thresholds. Review the app links below to explore your observability data in context.`;
+    const reqNote = sh && sh.totalRequests > 0
+      ? ` ${sh.totalRequests.toLocaleString()} requests processed with ${sh.errorRatePct < 0.1 ? "near-zero" : pct(sh.errorRatePct)} error rate.`
+      : "";
+    const greenNote = greens.length > 0 ? ` ${greens.length} metric${greens.length !== 1 ? "s" : ""} confirmed healthy.` : "";
+    return `All systems are operating within expected thresholds for the ${persona} persona during ${tf.label}.${reqNote}${greenNote} No immediate action required — continue monitoring for early signals.`;
   }
 
   const parts: string[] = [];
 
-  if (reds.length > 0) {
-    parts.push(`${reds.length} critical issue${reds.length !== 1 ? "s" : ""} require${reds.length === 1 ? "s" : ""} immediate attention:`);
-    reds.slice(0, 2).forEach((r) => {
-      if (r.metricValue != null && r.trendPct != null && Math.abs(r.trendPct) >= 10) {
-        parts.push(`${r.title} — ${r.metricValue.toFixed(1)}${r.metricUnit ?? ""}, ${Math.abs(r.trendPct)}% ${r.trend === "up" ? "worse" : "better"} vs ${tf.prevLabel}.`);
-      } else {
-        parts.push(`${r.title}.`);
-      }
-    });
+  // Opening context sentence
+  const totalIssues = reds.length + yellows.length;
+  if (reds.length > 0 && yellows.length > 0) {
+    parts.push(`${tf.label} shows ${reds.length} critical issue${reds.length !== 1 ? "s" : ""} and ${yellows.length} warning${yellows.length !== 1 ? "s" : ""} for the ${persona} persona.`);
+  } else if (reds.length > 0) {
+    parts.push(`${reds.length} critical issue${reds.length !== 1 ? "s" : ""} detected during ${tf.label} that require${reds.length === 1 ? "s" : ""} immediate attention.`);
+  } else {
+    parts.push(`${yellows.length} area${yellows.length !== 1 ? "s" : ""} flagged for monitoring during ${tf.label}.`);
   }
 
+  // Critical items — title already includes the metric value for custom heat items, so don't repeat it
+  reds.slice(0, 3).forEach((r) => {
+    const hasTrend = r.trendPct != null && Math.abs(r.trendPct) >= 5;
+    const trendClause = hasTrend
+      ? ` — ${Math.abs(r.trendPct!)}% ${r.trend === "up" ? "worse" : "better"} than ${tf.prevLabel}`
+      : "";
+    const recClause = r.recommendation ? ` ${r.recommendation}` : "";
+    parts.push(`${r.title}${trendClause}.${recClause}`);
+  });
+
+  // Warning items
   if (yellows.length > 0) {
-    parts.push(`${yellows.length} area${yellows.length !== 1 ? "s" : ""} to monitor:`);
-    yellows.slice(0, 2).forEach((y) => {
-      parts.push(`${y.title}.`);
+    const yellowTitles = yellows.slice(0, 2).map((y) => {
+      const hasTrend = y.trendPct != null && Math.abs(y.trendPct) >= 5;
+      return y.title + (hasTrend ? ` (${Math.abs(y.trendPct!)}% ${y.trend === "up" ? "↑" : "↓"} vs ${tf.prevLabel})` : "");
     });
+    parts.push(`Also watching: ${yellowTitles.join("; ")}.`);
   }
 
-  const sh = cur.serviceHealth;
-  const psh = prev.serviceHealth;
+  // Traffic context
   if (sh && psh && sh.totalRequests > 0) {
     const reqChange = Math.round(((sh.totalRequests - psh.totalRequests) / Math.max(1, psh.totalRequests)) * 100);
     if (Math.abs(reqChange) >= 15) {
-      parts.push(`Request volume ${reqChange > 0 ? "up" : "down"} ${Math.abs(reqChange)}% vs ${tf.prevLabel} (${sh.totalRequests.toLocaleString()} requests).`);
+      parts.push(`Note: request volume is ${reqChange > 0 ? "up" : "down"} ${Math.abs(reqChange)}% vs ${tf.prevLabel} (${sh.totalRequests.toLocaleString()} total) — factor this into your analysis.`);
     }
   }
 

@@ -23,7 +23,7 @@ import {
   deploymentQuery, workflowQuery, parseDeployments,
   deploymentTimelineQuery, parseDeploymentTimeline,
   davisProblemsQuery, parseDavisProblems,
-  davisProblemsTimelineQuery, parseDavisProblemsTimeline,
+  davisProblemsRawQuery, parseDavisProblemsRaw, DavisProblemSpan,
   digitalTimelapseQuery, parseDigitalTimelapse,
   platformTimelineQuery, parsePlatformTimeline,
   securityTimelapseQuery, parseSecurityTimelapse,
@@ -220,7 +220,7 @@ export function NavigatorIQ() {
   const secTlQ   = isTabLoaded ? withSeed(securityTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
   const deplTlQ  = isTabLoaded ? withSeed(deploymentTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
   const davisQ   = isTabLoaded ? withSeed(davisProblemsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
-  const davisTlQ = isTabLoaded ? withSeed(davisProblemsTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const davisTlQ = isTabLoaded ? withSeed(davisProblemsRawQuery(tf.to), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
   const svcR      = useDql({ query: svcQ });
@@ -292,7 +292,36 @@ export function NavigatorIQ() {
   // ─── Loading state ──────────────────────────────────────────────────────
   const deploymentBuckets = useMemo(() => parseDeploymentTimeline(recs(deplTlR)), [deplTlR.data]);
   const davisProblems: DavisProblemsResult | null = useMemo(() => parseDavisProblems(recs(davisR)), [davisR.data]);
-  const davisProblemBuckets = useMemo(() => parseDavisProblemsTimeline(recs(davisTlR)), [davisTlR.data]);
+  const rawDavisProblems: DavisProblemSpan[] = useMemo(() => parseDavisProblemsRaw(recs(davisTlR)), [davisTlR.data]);
+  const davisProblemBuckets = useMemo(() => {
+    if (rawDavisProblems.length === 0) return null;
+    const parseDqlMs = (s: string): number => {
+      if (s === "now()") return Date.now();
+      const m = s.match(/now\(\)\s*-\s*(\d+)([hdm])/);
+      if (!m) return Date.now();
+      const n = parseInt(m[1]);
+      const u = m[2];
+      return Date.now() - n * (u === "d" ? 86400000 : u === "h" ? 3600000 : 60000);
+    };
+    const parseIntervalMs = (iv: string): number => {
+      const m = iv.match(/(\d+)([hdm])/);
+      if (!m) return 3600000;
+      const n = parseInt(m[1]);
+      const u = m[2];
+      return n * (u === "h" ? 3600000 : u === "d" ? 86400000 : 60000);
+    };
+    const fromMs = parseDqlMs(tf.from);
+    const toMs = tf.to === "now()" ? Date.now() : parseDqlMs(tf.to);
+    const bucketMs = parseIntervalMs(tf.interval);
+    const nBuckets = Math.max(1, Math.round((toMs - fromMs) / bucketMs));
+    const nowMs = Date.now();
+    const result = Array.from({ length: nBuckets }, (_, i) => {
+      const bStart = fromMs + i * bucketMs;
+      const bEnd = bStart + bucketMs;
+      return rawDavisProblems.some((p) => p.startMs < bEnd && (p.endMs ?? nowMs) > bStart);
+    });
+    return result.some(Boolean) ? result : null;
+  }, [rawDavisProblems, tf]);
 
   const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, deplTlR, davisR, davisTlR, customHeatR, dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R].some((r) => r.isLoading);
 

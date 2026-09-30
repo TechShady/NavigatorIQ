@@ -144,20 +144,21 @@ export function davisProblemsQuery(from: string, to: string): string {
 | summarize count=count(), titles=collectDistinct(event.title)`;
 }
 
-export function davisProblemsTimelineQuery(from: string, to: string, interval = "auto"): string {
-  return `fetch events, from:${from}, to:${to}
+// Fetch raw Davis problem start/end timestamps from a wide look-back window so
+// problems opened before the current tab window are still captured for bucket mapping.
+export function davisProblemsRawQuery(to: string): string {
+  return `fetch events, from:now()-30d, to:${to}
 | filter event.type == "DAVIS_PROBLEM"
-| fieldsAdd _c = 1.0
-| makeTimeseries { value = sum(_c) }, interval:${interval}`;
+| fields startMs = toLong(timestamp), endMs = toLong(event.end)`;
 }
 
-export function parseDavisProblemsTimeline(records: DqlRecord[] | undefined): boolean[] | null {
-  const r = records?.[0];
-  if (!r) return null;
-  const values = arr(r, "value");
-  if (values.length < 2) return null;
-  if (!values.some((v) => v > 0)) return null;
-  return values.map((v) => v > 0);
+export interface DavisProblemSpan { startMs: number; endMs: number | null }
+
+export function parseDavisProblemsRaw(records: DqlRecord[] | undefined): DavisProblemSpan[] {
+  if (!records || records.length === 0) return [];
+  return records
+    .map((r) => ({ startMs: num(r, "startMs"), endMs: r["endMs"] != null ? num(r, "endMs") : null }))
+    .filter((p) => p.startMs > 0);
 }
 
 // Per-bucket RUM timelapse — drives Digital Experience heat strip
