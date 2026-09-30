@@ -113,9 +113,31 @@ export function NavigatorIQ() {
     return () => clearInterval(id);
   }, [refreshMs]);
 
+  // ─── Zoom: custom time window from drag-select on heat strip ───────────
+  const [zoom, setZoom] = useState<{ from: string; to: string; interval: string; label: string } | null>(null);
+
+  const handleZoomRange = useCallback((fromIso: string, toIso: string) => {
+    const durMs = new Date(toIso).getTime() - new Date(fromIso).getTime();
+    const interval = durMs <= 30 * 60000 ? "1m" : durMs <= 3 * 3600000 ? "5m" : durMs <= 12 * 3600000 ? "10m" : "1h";
+    const fmt = (iso: string) => {
+      const d = new Date(iso);
+      return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+    };
+    setZoom({ from: fromIso, to: toIso, interval, label: `${fmt(fromIso)} → ${fmt(toIso)}` });
+    setRefreshSeed((s) => s + 1);
+  }, []);
+
   // ─── Timeframe info for current & previous period ───────────────────────
   const tf = useMemo(() => getTimeframeInfo(tab), [tab]);
   const isTabLoaded = visitedTabs.has(tab);
+
+  // Clear zoom when user changes the tab
+  const handleSetTab = useCallback((t: typeof tab) => { setTab(t); setZoom(null); }, []);
+
+  // Effective timeframe: zoom overrides tab when active
+  const effectiveFrom = zoom?.from ?? tf.from;
+  const effectiveTo = zoom?.to ?? tf.to;
+  const effectiveInterval = zoom?.interval ?? tf.interval;
 
   const personaSettings = settings.personas[persona];
   const heatMetrics = useMemo(() => {
@@ -150,25 +172,25 @@ export function NavigatorIQ() {
   const dqlMetrics = useMemo(() => heatMetrics.filter((m) => m.type === "dql" || Boolean(m.dqlQuery?.trim())), [JSON.stringify(heatMetrics)]); // eslint-disable-line react-hooks/exhaustive-deps
   const customHeatQ = useMemo(
     () => (isTabLoaded && heatMetrics.length > 0)
-      ? withSeed(buildCustomHeatQuery(heatMetrics, tf.from, tf.to, tf.interval), refreshSeed)
+      ? withSeed(buildCustomHeatQuery(heatMetrics, effectiveFrom, effectiveTo, effectiveInterval), refreshSeed)
       : withSeed(NOOP_QUERY, refreshSeed),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isTabLoaded, JSON.stringify(heatMetrics), persona, tf.from, tf.to, tf.interval, refreshSeed]
+    [isTabLoaded, JSON.stringify(heatMetrics), persona, effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]
   );
   const customHeatR = useDql({ query: customHeatQ });
   // DQL heat metric slots — fixed hooks (React rules); noop when slot unused.
   // Must use useDql (not queryExecutionClient) — it runs in the platform context that
   // allows fetch user.events and other dataset reads the app OAuth token cannot access.
-  const dql0Q = useMemo(() => isTabLoaded && dqlMetrics[0] ? withSeed(buildDqlHeatQuery(dqlMetrics[0], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[0]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql1Q = useMemo(() => isTabLoaded && dqlMetrics[1] ? withSeed(buildDqlHeatQuery(dqlMetrics[1], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[1]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql2Q = useMemo(() => isTabLoaded && dqlMetrics[2] ? withSeed(buildDqlHeatQuery(dqlMetrics[2], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[2]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql3Q = useMemo(() => isTabLoaded && dqlMetrics[3] ? withSeed(buildDqlHeatQuery(dqlMetrics[3], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[3]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql4Q = useMemo(() => isTabLoaded && dqlMetrics[4] ? withSeed(buildDqlHeatQuery(dqlMetrics[4], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[4]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql5Q = useMemo(() => isTabLoaded && dqlMetrics[5] ? withSeed(buildDqlHeatQuery(dqlMetrics[5], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[5]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql6Q = useMemo(() => isTabLoaded && dqlMetrics[6] ? withSeed(buildDqlHeatQuery(dqlMetrics[6], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[6]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql7Q = useMemo(() => isTabLoaded && dqlMetrics[7] ? withSeed(buildDqlHeatQuery(dqlMetrics[7], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[7]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql8Q = useMemo(() => isTabLoaded && dqlMetrics[8] ? withSeed(buildDqlHeatQuery(dqlMetrics[8], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[8]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dql9Q = useMemo(() => isTabLoaded && dqlMetrics[9] ? withSeed(buildDqlHeatQuery(dqlMetrics[9], tf.from, tf.to, tf.interval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[9]), tf.from, tf.to, tf.interval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql0Q = useMemo(() => isTabLoaded && dqlMetrics[0] ? withSeed(buildDqlHeatQuery(dqlMetrics[0], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[0]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql1Q = useMemo(() => isTabLoaded && dqlMetrics[1] ? withSeed(buildDqlHeatQuery(dqlMetrics[1], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[1]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql2Q = useMemo(() => isTabLoaded && dqlMetrics[2] ? withSeed(buildDqlHeatQuery(dqlMetrics[2], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[2]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql3Q = useMemo(() => isTabLoaded && dqlMetrics[3] ? withSeed(buildDqlHeatQuery(dqlMetrics[3], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[3]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql4Q = useMemo(() => isTabLoaded && dqlMetrics[4] ? withSeed(buildDqlHeatQuery(dqlMetrics[4], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[4]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql5Q = useMemo(() => isTabLoaded && dqlMetrics[5] ? withSeed(buildDqlHeatQuery(dqlMetrics[5], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[5]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql6Q = useMemo(() => isTabLoaded && dqlMetrics[6] ? withSeed(buildDqlHeatQuery(dqlMetrics[6], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[6]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql7Q = useMemo(() => isTabLoaded && dqlMetrics[7] ? withSeed(buildDqlHeatQuery(dqlMetrics[7], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[7]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql8Q = useMemo(() => isTabLoaded && dqlMetrics[8] ? withSeed(buildDqlHeatQuery(dqlMetrics[8], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[8]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dql9Q = useMemo(() => isTabLoaded && dqlMetrics[9] ? withSeed(buildDqlHeatQuery(dqlMetrics[9], effectiveFrom, effectiveTo, effectiveInterval), refreshSeed) : withSeed(NOOP_QUERY, refreshSeed), [isTabLoaded, JSON.stringify(dqlMetrics[9]), effectiveFrom, effectiveTo, effectiveInterval, refreshSeed]); // eslint-disable-line react-hooks/exhaustive-deps
   const dql0R = useDql({ query: dql0Q });
   const dql1R = useDql({ query: dql1Q });
   const dql2R = useDql({ query: dql2Q });
@@ -182,45 +204,46 @@ export function NavigatorIQ() {
 
   const handleTabChange = (newTab: TimeframeTab) => {
     setTab(newTab);
+    setZoom(null);
     setVisitedTabs((prev) => new Set([...prev, newTab]));
   };
 
   // ─── Query strings: only run real queries for visited tabs ──────────────
   const seed = refreshSeed;
-  const svcQ     = isTabLoaded ? withSeed(serviceHealthQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
-  const svcPrevQ = isTabLoaded ? withSeed(serviceHealthQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
-  const logQ     = isTabLoaded ? withSeed(logErrorsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const svcQ     = isTabLoaded ? withSeed(serviceHealthQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
+  const svcPrevQ = isTabLoaded ? withSeed(serviceHealthQuery(tf.prevFrom, tf.prevTo, effectiveInterval), seed) : NOOP_QUERY;
+  const logQ     = isTabLoaded ? withSeed(logErrorsQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const logPrevQ = isTabLoaded ? withSeed(logErrorsQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const hostQ    = isTabLoaded ? withSeed(hostHealthQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const hostQ    = isTabLoaded ? withSeed(hostHealthQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const hostPrevQ= isTabLoaded ? withSeed(hostHealthQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const k8sQ     = isTabLoaded ? withSeed(k8sQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const k8sQ     = isTabLoaded ? withSeed(k8sQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const k8sPrevQ = isTabLoaded ? withSeed(k8sQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const secQ     = isTabLoaded ? withSeed(securityQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const secQ     = isTabLoaded ? withSeed(securityQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const secPrevQ = isTabLoaded ? withSeed(securityQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const atkQ     = isTabLoaded ? withSeed(attacksQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const atkQ     = isTabLoaded ? withSeed(attacksQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const atkPrevQ = isTabLoaded ? withSeed(attacksQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const dbQ      = isTabLoaded ? withSeed(databaseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
-  const dbPrevQ  = isTabLoaded ? withSeed(databaseQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
-  const netErrQ  = isTabLoaded ? withSeed(networkErrorsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const dbQ      = isTabLoaded ? withSeed(databaseQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
+  const dbPrevQ  = isTabLoaded ? withSeed(databaseQuery(tf.prevFrom, tf.prevTo, effectiveInterval), seed) : NOOP_QUERY;
+  const netErrQ  = isTabLoaded ? withSeed(networkErrorsQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const netErrPQ = isTabLoaded ? withSeed(networkErrorsQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const netConQ  = isTabLoaded ? withSeed(networkQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const netConQ  = isTabLoaded ? withSeed(networkQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const netConPQ = isTabLoaded ? withSeed(networkQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const dxQ      = isTabLoaded ? withSeed(digitalExpQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const dxQ      = isTabLoaded ? withSeed(digitalExpQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const dxPrevQ  = isTabLoaded ? withSeed(digitalExpQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const synthQ   = isTabLoaded ? withSeed(syntheticQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const synthQ   = isTabLoaded ? withSeed(syntheticQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const synthPQ  = isTabLoaded ? withSeed(syntheticQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const deplQ    = isTabLoaded ? withSeed(deploymentQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const deplQ    = isTabLoaded ? withSeed(deploymentQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const deplPQ   = isTabLoaded ? withSeed(deploymentQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const wfQ      = isTabLoaded ? withSeed(workflowQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const wfQ      = isTabLoaded ? withSeed(workflowQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
   const wfPQ     = isTabLoaded ? withSeed(workflowQuery(tf.prevFrom, tf.prevTo), seed) : NOOP_QUERY;
-  const dxTlQ    = isTabLoaded ? withSeed(digitalTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
-  const dxTlPQ   = isTabLoaded ? withSeed(digitalTimelapseQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
-  const ptlQ     = isTabLoaded ? withSeed(platformTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
-  const ptlPQ    = isTabLoaded ? withSeed(platformTimelineQuery(tf.prevFrom, tf.prevTo, tf.interval), seed) : NOOP_QUERY;
-  const secTlQ   = isTabLoaded ? withSeed(securityTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
-  const deplTlQ  = isTabLoaded ? withSeed(deploymentTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
-  const davisQ   = isTabLoaded ? withSeed(davisProblemsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
-  const davisTlQ = isTabLoaded ? withSeed(davisProblemsRawQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
+  const dxTlQ    = isTabLoaded ? withSeed(digitalTimelapseQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
+  const dxTlPQ   = isTabLoaded ? withSeed(digitalTimelapseQuery(tf.prevFrom, tf.prevTo, effectiveInterval), seed) : NOOP_QUERY;
+  const ptlQ     = isTabLoaded ? withSeed(platformTimelineQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
+  const ptlPQ    = isTabLoaded ? withSeed(platformTimelineQuery(tf.prevFrom, tf.prevTo, effectiveInterval), seed) : NOOP_QUERY;
+  const secTlQ   = isTabLoaded ? withSeed(securityTimelapseQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
+  const deplTlQ  = isTabLoaded ? withSeed(deploymentTimelineQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
+  const davisQ   = isTabLoaded ? withSeed(davisProblemsQuery(effectiveFrom, effectiveTo), seed) : NOOP_QUERY;
+  const davisTlQ = isTabLoaded ? withSeed(davisProblemsRawQuery(effectiveFrom, effectiveTo, effectiveInterval), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
   const svcR      = useDql({ query: svcQ });
@@ -629,10 +652,25 @@ export function NavigatorIQ() {
         </div>
       </div>
 
+      {/* ── Zoom banner ── */}
+      {zoom && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 16px", background: "rgba(69,137,255,0.1)", borderBottom: "1px solid rgba(69,137,255,0.3)" }}>
+          <span style={{ fontSize: 11, color: "#7ab4ff", fontWeight: 700 }}>🔍 Zoomed:</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", fontFamily: "monospace" }}>{zoom.label}</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>({effectiveInterval} buckets)</span>
+          <button
+            onClick={() => setZoom(null)}
+            style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 5, cursor: "pointer", background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.4)", color: "#7ab4ff" }}
+          >
+            ✕ Exit zoom
+          </button>
+        </div>
+      )}
+
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessmentWithSparklines} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblemCounts={davisProblemCounts} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={tf.from} to={tf.to} />
+          <AssessmentPanel assessment={assessmentWithSparklines} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblemCounts={davisProblemCounts} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = effectiveInterval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={effectiveFrom} to={effectiveTo} onZoomRange={handleZoomRange} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />

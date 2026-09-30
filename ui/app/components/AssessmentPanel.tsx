@@ -25,6 +25,7 @@ interface AssessmentPanelProps {
   getHotnessHistory?: (days: number) => Promise<number[]>;
   from?: string;
   to?: string;
+  onZoomRange?: (from: string, to: string) => void;
 }
 
 // ─── Drag hook ─────────────────────────────────────────────────────────────
@@ -258,12 +259,31 @@ function BucketDiagPanel({
 
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
+function parseDqlTime(s: string): number {
+  const now = Date.now();
+  if (!s || s === "now()") return now;
+  const m = s.match(/^now\(\)-(\d+)([mhd])$/);
+  if (!m) return now;
+  const n = parseInt(m[1]);
+  const mult = m[2] === "m" ? 60000 : m[2] === "h" ? 3600000 : 86400000;
+  return now - n * mult;
+}
+
+function fmtZoomTime(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDuration(ms: number): string {
+  if (ms < 3600000) return `${Math.round(ms / 60000)}m`;
+  if (ms < 86400000) return `${(ms / 3600000).toFixed(1)}h`;
+  return `${(ms / 86400000).toFixed(1)}d`;
+}
+
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onSelectRange, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket, from = "now()-2h", to = "now()", onZoomRange,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
-  onSelectRange: (start: number, end: number) => void;
   onAssist: () => void;
   onForecast: () => void;
   onCalendar?: () => void;
@@ -272,6 +292,9 @@ function ClickableHeatStrip({
   davisProblemCounts?: number[] | null;
   davisProblems?: DavisProblemsResult | null;
   flashBucket?: number | null;
+  from?: string;
+  to?: string;
+  onZoomRange?: (from: string, to: string) => void;
 }) {
   if (scores.length < 2) return null;
   const maxZ = Math.max(...scores, 1);
@@ -290,13 +313,22 @@ function ClickableHeatStrip({
   const rangeMax = isDragging ? Math.max(dragStart, dragEnd) : null;
   const isRange = isDragging && dragStart !== dragEnd;
 
+  // Zoom popup: shown after drag release when range > 1 bucket
+  const [zoomPopup, setZoomPopup] = useState<{ startBucket: number; endBucket: number } | null>(null);
+
+  // Compute bucket timestamps from from/to props
+  const fromMs = parseDqlTime(from);
+  const toMs = parseDqlTime(to);
+  const bucketDurMs = scores.length > 0 ? (toMs - fromMs) / scores.length : 0;
+
   useEffect(() => {
     const handleMouseUp = () => {
       if (dragStart !== null && dragEnd !== null) {
         if (dragStart === dragEnd) {
           onSelectBucket(selectedBucket === dragStart ? null : dragStart);
         } else {
-          onSelectRange(Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd));
+          // Show zoom popup instead of immediately drilling in
+          setZoomPopup({ startBucket: Math.min(dragStart, dragEnd), endBucket: Math.max(dragStart, dragEnd) });
         }
       }
       setDragStart(null);
@@ -305,6 +337,14 @@ function ClickableHeatStrip({
     window.addEventListener("mouseup", handleMouseUp);
     return () => window.removeEventListener("mouseup", handleMouseUp);
   }, [dragStart, dragEnd, selectedBucket]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleZoomConfirm = useCallback(() => {
+    if (!zoomPopup || !onZoomRange) return;
+    const zFromMs = fromMs + zoomPopup.startBucket * bucketDurMs;
+    const zToMs = fromMs + (zoomPopup.endBucket + 1) * bucketDurMs;
+    onZoomRange(new Date(zFromMs).toISOString(), new Date(zToMs).toISOString());
+    setZoomPopup(null);
+  }, [zoomPopup, onZoomRange, fromMs, bucketDurMs]);
 
   // Dense view: use dots instead of numbers when bars are too narrow to show text
   const useDots = scores.length > 30;
@@ -318,7 +358,7 @@ function ClickableHeatStrip({
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}>
             Activity Heat {String.fromCharCode(183)} {bucketLabel} buckets
           </span>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals {String.fromCharCode(183)} drag to select range)</span>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals {String.fromCharCode(183)} click or drag to zoom)</span>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <HotnessAssistButton onClick={onAssist} />
@@ -421,6 +461,43 @@ function ClickableHeatStrip({
           );
         })}
       </div>
+
+      {/* Zoom popup — appears after drag-select of a range */}
+      {zoomPopup && (() => {
+        const zFromMs = fromMs + zoomPopup.startBucket * bucketDurMs;
+        const zToMs = fromMs + (zoomPopup.endBucket + 1) * bucketDurMs;
+        const dur = zToMs - zFromMs;
+        const bucketCount = zoomPopup.endBucket - zoomPopup.startBucket + 1;
+        return (
+          <div style={{ marginTop: 6, padding: "10px 14px", background: "rgba(10,15,30,0.97)", border: "1px solid rgba(69,137,255,0.45)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, boxShadow: "0 4px 24px rgba(0,0,0,0.6)" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)" }}>
+                {fmtZoomTime(zFromMs)} {String.fromCharCode(8212)} {fmtZoomTime(zToMs)}
+                <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>({fmtDuration(dur)})</span>
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
+                {bucketCount} bucket{bucketCount !== 1 ? "s" : ""} selected
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              {onZoomRange && (
+                <button
+                  onClick={handleZoomConfirm}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(69,137,255,0.2)", border: "1px solid rgba(69,137,255,0.6)", borderRadius: 6, color: "#7ab4ff", fontSize: 12, fontWeight: 700, padding: "5px 14px", cursor: "pointer" }}
+                >
+                  🔍 Zoom in
+                </button>
+              )}
+              <button
+                onClick={() => setZoomPopup(null)}
+                style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontSize: 12, padding: "5px 10px", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Legend */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
@@ -814,7 +891,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemCounts, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()" }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemCounts, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()", onZoomRange }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -844,16 +921,6 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
     setFlashBucket(idx);
     setTimeout(() => setFlashBucket(null), 700);
   }, []);
-
-  const handleSelectRange = useCallback((start: number, end: number) => {
-    const rangeScores = assessment.heatScores.slice(start, end + 1);
-    const maxOffset = rangeScores.reduce((best, v, j) => (v > rangeScores[best] ? j : best), 0);
-    const hotBucket = start + maxOffset;
-    setSelectedBucket(hotBucket);
-    setDiagOpen(true);
-    setFlashBucket(hotBucket);
-    setTimeout(() => setFlashBucket(null), 700);
-  }, [assessment.heatScores]);
 
   const getRequeryData = useCallback(async (days: number): Promise<number[]> => {
     if (getHotnessHistory) return getHotnessHistory(days);
@@ -925,7 +992,6 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           bucketLabel={assessment.bucketLabel}
           selectedBucket={selectedBucket}
           onSelectBucket={handleSelectBucket}
-          onSelectRange={handleSelectRange}
           onAssist={() => setAssistOpen(true)}
           onForecast={() => setForecastOpen(true)}
           onCalendar={() => setCalendarOpen(true)}
@@ -933,6 +999,9 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           davisProblemCounts={davisProblemCounts}
           davisProblems={davisProblems}
           flashBucket={flashBucket}
+          from={from}
+          to={to}
+          onZoomRange={onZoomRange}
         />
       )}
 
