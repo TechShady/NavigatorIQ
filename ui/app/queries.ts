@@ -138,11 +138,9 @@ export function deploymentTimelineQuery(from: string, to: string, interval = "au
 }
 
 export function davisProblemsQuery(from: string, to: string): string {
-  // No status filter — status field name/value varies by DT version.
-  // We accept any Davis problem event found in the window (active or recently closed).
-  return `fetch events, from:${from}, to:${to}
-| filter event.type == "DAVIS_PROBLEM"
-| summarize count=count(), titles=collectDistinct(event.title)`;
+  return `fetch dt.davis.problems, from:${from}, to:${to}
+| filter event.status == "ACTIVE"
+| summarize count=count(), titles=collectDistinct(event.name)`;
 }
 
 // Fetch raw Davis problem start timestamps + status from a wide look-back window.
@@ -150,10 +148,8 @@ export function davisProblemsQuery(from: string, to: string): string {
 // null-coalescing unreliable. Instead: active problems span startMs→now; closed
 // problems mark only their opening bucket.
 export function davisProblemsRawQuery(to: string): string {
-  // No status filter — capture all Davis problem events (open or recently closed)
-  // and determine isActive in JS from the status field value
-  return `fetch events, from:now()-30d, to:${to}
-| filter event.type == "DAVIS_PROBLEM"
+  return `fetch dt.davis.problems, from:now()-30d, to:${to}
+| filter event.status == "ACTIVE"
 | fields startMs = toLong(timestamp), status = event.status, name = event.name`;
 }
 

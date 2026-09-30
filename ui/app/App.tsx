@@ -22,8 +22,8 @@ function incrementCrashCount(): number {
   } catch { return 99; }
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; fatal: boolean }> {
-  state = { hasError: false, fatal: false };
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; fatal: boolean; lastErr: string }> {
+  state = { hasError: false, fatal: false, lastErr: "" };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error: unknown) {
     const msg = (error as { message?: string })?.message ?? String(error);
@@ -32,19 +32,22 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
       return;
     }
     console.error("[NavigatorIQ ErrorBoundary]", error);
+    try { sessionStorage.setItem("iq-last-error", msg); } catch { /* noop */ }
     const n = incrementCrashCount();
     if (n >= 3) {
-      this.setState({ fatal: true });
+      this.setState({ fatal: true, lastErr: msg });
     } else {
       setTimeout(() => window.location.reload(), 1500);
     }
   }
   render() {
     if (this.state.fatal) {
+      const errMsg = this.state.lastErr || (() => { try { return sessionStorage.getItem("iq-last-error") ?? ""; } catch { return ""; } })();
       return (
         <div style={{ padding: 40, textAlign: "center", color: "#fff", background: "#090c16", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
           <h2 style={{ color: "#FF073A" }}>NavigatorIQ failed to load</h2>
           <p style={{ color: "rgba(255,255,255,0.6)", maxWidth: 440 }}>An error occurred during startup. Try clearing your browser cache or contact the app owner.</p>
+          {errMsg && <code style={{ fontSize: 11, color: "rgba(255,100,100,0.8)", background: "rgba(255,0,0,0.08)", border: "1px solid rgba(255,0,0,0.2)", borderRadius: 6, padding: "6px 10px", maxWidth: 500, wordBreak: "break-all", textAlign: "left" }}>{errMsg}</code>}
           <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} style={{ marginTop: 8, padding: "10px 24px", background: "#4589FF", border: "none", borderRadius: 8, color: "#fff", fontSize: 14, cursor: "pointer" }}>Clear cache &amp; retry</button>
         </div>
       );
