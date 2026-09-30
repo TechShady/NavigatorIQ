@@ -328,8 +328,12 @@ export function NavigatorIQ() {
       if (result.some(Boolean)) return result;
     }
 
-    // Fallback: if davisProblems count > 0 but raw spans failed (e.g. ts unit mismatch),
-    // mark all buckets so the active problem is always visible
+    // Fallback 1: raw spans exist but overlap math produced no hits (ts unit mismatch etc.)
+    if (rawDavisProblems.some((p) => p.isActive)) {
+      return new Array(nBuckets).fill(true);
+    }
+
+    // Fallback 2: summarize count query confirmed active problems
     if (davisProblems && davisProblems.count > 0) {
       return new Array(nBuckets).fill(true);
     }

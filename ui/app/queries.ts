@@ -138,9 +138,10 @@ export function deploymentTimelineQuery(from: string, to: string, interval = "au
 }
 
 export function davisProblemsQuery(from: string, to: string): string {
+  // status field can be "ACTIVE" or "OPEN" depending on DT version; accept both
   return `fetch events, from:${from}, to:${to}
 | filter event.type == "DAVIS_PROBLEM"
-| filter toUpperCase(toString(event.status)) == "OPEN"
+| filter toUpperCase(toString(event.status)) == "ACTIVE" or toUpperCase(toString(event.status)) == "OPEN"
 | summarize count=count(), titles=collectDistinct(event.title)`;
 }
 
@@ -149,9 +150,11 @@ export function davisProblemsQuery(from: string, to: string): string {
 // null-coalescing unreliable. Instead: active problems span startMs→now; closed
 // problems mark only their opening bucket.
 export function davisProblemsRawQuery(to: string): string {
+  // No status filter — capture all Davis problem events (open or recently closed)
+  // and determine isActive in JS from the status field value
   return `fetch events, from:now()-30d, to:${to}
 | filter event.type == "DAVIS_PROBLEM"
-| fields startMs = toLong(timestamp), status = event.status`;
+| fields startMs = toLong(timestamp), status = event.status, name = event.name`;
 }
 
 export interface DavisProblemSpan { startMs: number; isActive: boolean }
@@ -164,7 +167,9 @@ export function parseDavisProblemsRaw(records: DqlRecord[] | undefined): DavisPr
       const raw = num(r, "startMs");
       // DQL toLong(timestamp) returns nanoseconds; normalize to milliseconds
       const startMs = raw > 1e17 ? raw / 1e6 : raw > 1e14 ? raw / 1e3 : raw;
-      return { startMs, isActive: s === "ACTIVE" || s === "OPEN" };
+      // Treat any non-closed status as active (ACTIVE, OPEN, IN_PROGRESS, etc.)
+      const isActive = !["CLOSED", "RESOLVED", "MERGED"].includes(s);
+      return { startMs, isActive };
     })
     .filter((p) => p.startMs > 0);
 }
