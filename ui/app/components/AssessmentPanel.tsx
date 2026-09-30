@@ -254,7 +254,7 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemBuckets, flashBucket,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemBuckets, davisProblems, flashBucket,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
@@ -264,6 +264,7 @@ function ClickableHeatStrip({
   persona?: PersonaId;
   deploymentBuckets?: boolean[] | null;
   davisProblemBuckets?: boolean[] | null;
+  davisProblems?: DavisProblemsResult | null;
   flashBucket?: number | null;
 }) {
   if (scores.length < 2) return null;
@@ -372,10 +373,23 @@ function ClickableHeatStrip({
             <span key={l.z} style={{ fontSize: 9, color: l.color }}>{String.fromCharCode(9679)} {l.label}</span>
           ))}
           {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>{String.fromCharCode(9679)} Deployment</span>}
-          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A" }}>{String.fromCharCode(9679)} Davis Problem</span>}
+          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A" }}>{String.fromCharCode(9679)} Problem opened</span>}
         </div>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now {String.fromCharCode(8594)}</span>
       </div>
+      {davisProblems && davisProblems.count > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, padding: "5px 10px", background: "rgba(255,7,58,0.07)", border: "1px solid rgba(255,7,58,0.25)", borderRadius: 6 }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#FF073A", boxShadow: "0 0 6px #FF073A80", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: "#FF8080", fontWeight: 600 }}>
+            {davisProblems.count} active problem{davisProblems.count !== 1 ? "s" : ""}
+          </span>
+          {davisProblems.titles[0] && (
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+              {String.fromCharCode(8212)} {davisProblems.titles[0]}{davisProblems.count > 1 ? ` +${davisProblems.count - 1} more` : ""}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -832,6 +846,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onCalendar={() => setCalendarOpen(true)}
           deploymentBuckets={deploymentBuckets}
           davisProblemBuckets={davisProblemBuckets}
+          davisProblems={davisProblems}
           flashBucket={flashBucket}
         />
       )}

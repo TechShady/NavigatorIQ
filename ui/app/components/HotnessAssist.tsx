@@ -1005,8 +1005,13 @@ ${davisHtml}
               </div>
               <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 0 }}>
-                  {["Metric A", "Metric B", "Co-hot", "Rate"].map((h) => (
-                    <div key={h} style={{ ...HDR }}>{h}</div>
+                  {[
+                    { label: "Metric A", tip: "" },
+                    { label: "Metric B", tip: "" },
+                    { label: "Co-hot", tip: "Number of buckets where both metrics were elevated (Z ≥ 0.75) at the same time" },
+                    { label: "Rate", tip: "% of Metric A's elevated buckets where Metric B was also elevated — higher = stronger link" },
+                  ].map(({ label, tip }) => (
+                    <div key={label} style={{ ...HDR }} title={tip || undefined}>{label}{tip ? " ⓘ" : ""}</div>
                   ))}
                   {top.map((p, i) => {
                     const col = p.rate >= 0.8 ? "#FF073A" : p.rate >= 0.5 ? "#FF3D9A" : "#FFF04D";
