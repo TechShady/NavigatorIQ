@@ -161,7 +161,10 @@ export function parseDavisProblemsRaw(records: DqlRecord[] | undefined): DavisPr
   return records
     .map((r) => {
       const s = String(r["status"] ?? "").toUpperCase();
-      return { startMs: num(r, "startMs"), isActive: s === "ACTIVE" || s === "OPEN" };
+      const raw = num(r, "startMs");
+      // DQL toLong(timestamp) returns nanoseconds; normalize to milliseconds
+      const startMs = raw > 1e17 ? raw / 1e6 : raw > 1e14 ? raw / 1e3 : raw;
+      return { startMs, isActive: s === "ACTIVE" || s === "OPEN" };
     })
     .filter((p) => p.startMs > 0);
 }

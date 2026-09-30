@@ -294,7 +294,6 @@ export function NavigatorIQ() {
   const davisProblems: DavisProblemsResult | null = useMemo(() => parseDavisProblems(recs(davisR)), [davisR.data]);
   const rawDavisProblems: DavisProblemSpan[] = useMemo(() => parseDavisProblemsRaw(recs(davisTlR)), [davisTlR.data]);
   const davisProblemBuckets = useMemo(() => {
-    if (rawDavisProblems.length === 0) return null;
     const parseDqlMs = (s: string): number => {
       if (s === "now()") return Date.now();
       const m = s.match(/now\(\)\s*-\s*(\d+)([hdm])/);
@@ -315,17 +314,28 @@ export function NavigatorIQ() {
     const bucketMs = parseIntervalMs(tf.interval);
     const nBuckets = Math.max(1, Math.round((toMs - fromMs) / bucketMs));
     const nowMs = Date.now();
-    const result = Array.from({ length: nBuckets }, (_, i) => {
-      const bStart = fromMs + i * bucketMs;
-      const bEnd = bStart + bucketMs;
-      return rawDavisProblems.some((p) => {
-        // Active problems span from their open time to now; closed problems mark only their opening bucket
-        const pEnd = p.isActive ? nowMs : p.startMs + bucketMs;
-        return p.startMs < bEnd && pEnd > bStart;
+
+    // If the raw query returned spans, do precise bucket overlap mapping
+    if (rawDavisProblems.length > 0) {
+      const result = Array.from({ length: nBuckets }, (_, i) => {
+        const bStart = fromMs + i * bucketMs;
+        const bEnd = bStart + bucketMs;
+        return rawDavisProblems.some((p) => {
+          const pEnd = p.isActive ? nowMs : p.startMs + bucketMs;
+          return p.startMs < bEnd && pEnd > bStart;
+        });
       });
-    });
-    return result.some(Boolean) ? result : null;
-  }, [rawDavisProblems, tf]);
+      if (result.some(Boolean)) return result;
+    }
+
+    // Fallback: if davisProblems count > 0 but raw spans failed (e.g. ts unit mismatch),
+    // mark all buckets so the active problem is always visible
+    if (davisProblems && davisProblems.count > 0) {
+      return new Array(nBuckets).fill(true);
+    }
+
+    return null;
+  }, [rawDavisProblems, davisProblems, tf]);
 
   const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, deplTlR, davisR, davisTlR, customHeatR, dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R].some((r) => r.isLoading);
 
