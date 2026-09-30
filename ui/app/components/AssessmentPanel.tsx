@@ -18,7 +18,7 @@ interface AssessmentPanelProps {
   persona?: PersonaId;
   heatMetrics?: HeatMetricConfig[];
   deploymentBuckets?: boolean[] | null;
-  davisProblemBuckets?: boolean[] | null;
+  davisProblemCounts?: number[] | null;
   davisProblems?: DavisProblemsResult | null;
   onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void;
   healthReadings?: HealthReading[];
@@ -259,7 +259,7 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemBuckets, davisProblems, flashBucket,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
@@ -268,7 +268,7 @@ function ClickableHeatStrip({
   onCalendar?: () => void;
   persona?: PersonaId;
   deploymentBuckets?: boolean[] | null;
-  davisProblemBuckets?: boolean[] | null;
+  davisProblemCounts?: number[] | null;
   davisProblems?: DavisProblemsResult | null;
   flashBucket?: number | null;
 }) {
@@ -279,7 +279,7 @@ function ClickableHeatStrip({
   const [forecastHover, setForecastHover] = useState(false);
   const [calHover, setCalHover] = useState(false);
   const hasDeployments = deploymentBuckets && deploymentBuckets.some(Boolean);
-  const hasDavisProblems = davisProblemBuckets && davisProblemBuckets.some(Boolean);
+  const hasDavisProblems = davisProblemCounts && davisProblemCounts.some((c) => c > 0);
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -344,11 +344,13 @@ function ClickableHeatStrip({
                   style={{ position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", zIndex: 1 }}
                 />
               )}
-              {davisProblemBuckets?.[i] && (
+              {(davisProblemCounts?.[i] ?? 0) > 0 && (
                 <div
-                  title="Davis Problem opened"
-                  style={{ position: "absolute", top: hasDeploy ? 10 : 2, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", background: "#FF073A", boxShadow: "0 0 5px #FF073A90", zIndex: 1 }}
-                />
+                  title={`${davisProblemCounts![i]} problem${davisProblemCounts![i] !== 1 ? "s" : ""} opened in this interval`}
+                  style={{ position: "absolute", top: hasDeploy ? 9 : 1, left: "50%", transform: "translateX(-50%)", fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A, 0 0 8px #FF073A80", zIndex: 2, userSelect: "none", pointerEvents: "none" }}
+                >
+                  {davisProblemCounts![i]}
+                </div>
               )}
               <div
                 title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? (" " + String.fromCharCode(183) + " deployment") : ""} ${String.fromCharCode(8212)} click to diagnose`}
@@ -378,7 +380,7 @@ function ClickableHeatStrip({
             <span key={l.z} style={{ fontSize: 9, color: l.color }}>{String.fromCharCode(9679)} {l.label}</span>
           ))}
           {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>{String.fromCharCode(9679)} Deployment</span>}
-          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A" }}>{String.fromCharCode(9679)} Problem opened</span>}
+          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A", fontWeight: 700 }}>N Problems opened</span>}
         </div>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now {String.fromCharCode(8594)}</span>
       </div>
@@ -762,7 +764,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemBuckets, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()" }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemCounts, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()" }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -867,7 +869,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onForecast={() => setForecastOpen(true)}
           onCalendar={() => setCalendarOpen(true)}
           deploymentBuckets={deploymentBuckets}
-          davisProblemBuckets={davisProblemBuckets}
+          davisProblemCounts={davisProblemCounts}
           davisProblems={davisProblems}
           flashBucket={flashBucket}
         />

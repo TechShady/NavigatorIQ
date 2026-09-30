@@ -141,7 +141,7 @@ const SECTIONS: HelpSection[] = [
         </div>
         <ul style={UL}>
           <li><span style={{ color: "#10B981" }}>● Green dot</span> above a bar — a deployment event occurred in that interval</li>
-          <li><span style={{ color: "#FF073A" }}>● Red dot</span> above a bar — an active Davis Problem overlaps with that interval</li>
+          <li><span style={{ color: "#FF073A", fontWeight: 700 }}>Red number</span> above a bar — how many Davis Problems <em>opened</em> during that interval (e.g. <span style={{ color: "#FF073A", fontWeight: 900, fontSize: 10 }}>3</span> = 3 new problems opened)</li>
           <li><strong style={{ color: "#fff" }}>Click a bar</strong> — opens Bucket Diagnosis showing all metric values for that specific window</li>
           <li><strong style={{ color: "#fff" }}>🔥 Hotness Assist</strong> — deep-dive analysis panel for the full timeline</li>
           <li><strong style={{ color: "#fff" }}>📅 Calendar</strong> — day × hour heatmap showing when your environment runs hot across an extended window</li>

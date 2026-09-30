@@ -143,31 +143,21 @@ export function davisProblemsQuery(from: string, to: string): string {
 | summarize count=count(), titles=collectDistinct(event.name)`;
 }
 
-// Fetch raw Davis problem start timestamps + status from a wide look-back window.
-// We avoid event.end because it returns 0 (not null) for open problems, making
-// null-coalescing unreliable. Instead: active problems span startMs→now; closed
-// problems mark only their opening bucket.
-export function davisProblemsRawQuery(to: string): string {
-  return `fetch dt.davis.problems, from:now()-30d, to:${to}
-| filter event.status == "ACTIVE"
-| fields startMs = toLong(timestamp), status = event.status, name = event.name`;
+// Count problems opened per bucket — buckets by problem open time (timestamp),
+// not by whether a problem is currently ACTIVE. No status filter intentional:
+// we want to show when problems were created, not where they persist to.
+export function davisProblemsRawQuery(from: string, to: string, interval: string): string {
+  return `fetch dt.davis.problems, from:${from}, to:${to}
+| makeTimeseries count=count(), interval:${interval}`;
 }
 
-export interface DavisProblemSpan { startMs: number; isActive: boolean }
-
-export function parseDavisProblemsRaw(records: DqlRecord[] | undefined): DavisProblemSpan[] {
-  if (!records || records.length === 0) return [];
-  return records
-    .map((r) => {
-      const s = String(r["status"] ?? "").toUpperCase();
-      const raw = num(r, "startMs");
-      // DQL toLong(timestamp) returns nanoseconds; normalize to milliseconds
-      const startMs = raw > 1e17 ? raw / 1e6 : raw > 1e14 ? raw / 1e3 : raw;
-      // Treat any non-closed status as active (ACTIVE, OPEN, IN_PROGRESS, etc.)
-      const isActive = !["CLOSED", "RESOLVED", "MERGED"].includes(s);
-      return { startMs, isActive };
-    })
-    .filter((p) => p.startMs > 0);
+export function parseDavisProblemsTimeseries(records: DqlRecord[] | undefined): number[] | null {
+  const r = records?.[0];
+  if (!r) return null;
+  const arr = r["count"];
+  if (!Array.isArray(arr)) return null;
+  const counts = (arr as unknown[]).map((v) => (typeof v === "number" ? Math.round(v) : 0));
+  return counts.some((c) => c > 0) ? counts : null;
 }
 
 // Per-bucket RUM timelapse — drives Digital Experience heat strip
