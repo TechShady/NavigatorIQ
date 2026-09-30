@@ -138,10 +138,10 @@ export function deploymentTimelineQuery(from: string, to: string, interval = "au
 }
 
 export function davisProblemsQuery(from: string, to: string): string {
-  // status field can be "ACTIVE" or "OPEN" depending on DT version; accept both
+  // No status filter — status field name/value varies by DT version.
+  // We accept any Davis problem event found in the window (active or recently closed).
   return `fetch events, from:${from}, to:${to}
 | filter event.type == "DAVIS_PROBLEM"
-| filter toUpperCase(toString(event.status)) == "ACTIVE" or toUpperCase(toString(event.status)) == "OPEN"
 | summarize count=count(), titles=collectDistinct(event.title)`;
 }
 

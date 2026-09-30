@@ -329,7 +329,7 @@ export function NavigatorIQ() {
     }
 
     // Fallback 1: raw spans exist but overlap math produced no hits (ts unit mismatch etc.)
-    if (rawDavisProblems.some((p) => p.isActive)) {
+    if (rawDavisProblems.length > 0) {
       return new Array(nBuckets).fill(true);
     }
 

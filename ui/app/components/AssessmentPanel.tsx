@@ -140,12 +140,13 @@ function BucketDiagPanel({
       background: "rgba(14,18,36,0.97)", border: `1px solid ${lc}35`,
       borderRadius: 14, boxShadow: "0 16px 60px rgba(0,0,0,0.75)",
       fontFamily: '"Inter",system-ui,sans-serif', color: "#e8eeff",
-      backdropFilter: "blur(14px)",
+      backdropFilter: "blur(14px)", display: "flex", flexDirection: "column",
+      maxHeight: "min(520px, 85vh)",
     }}>
-      {/* Drag header */}
+      {/* Drag header — fixed, never scrolls */}
       <div onMouseDown={onDragStart} style={{
         cursor: "grab", padding: "11px 16px 10px", userSelect: "none",
-        borderBottom: `1px solid ${lc}20`,
+        borderBottom: `1px solid ${lc}20`, flexShrink: 0,
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -154,6 +155,9 @@ function BucketDiagPanel({
         </div>
         <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 20, cursor: "pointer", padding: "0 3px", lineHeight: 1 }}>{String.fromCharCode(215)}</button>
       </div>
+
+      {/* Scrollable body */}
+      <div style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
 
       {/* Z-score summary */}
       <div style={{ padding: "12px 16px 10px", borderBottom: `1px solid rgba(255,255,255,0.05)`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -246,6 +250,7 @@ function BucketDiagPanel({
           </div>
         );
       })()}
+      </div>{/* end scrollable body */}
     </div>,
     document.body
   );
