@@ -95,7 +95,7 @@ export function NavigatorIQ() {
     const user = parseSettings(userState.data?.value as string | undefined);
     // Migration: if user key is empty, pull personas+global from old shared key
     const hasUserData = Object.keys(user.personas).length > 0 || !!user.global?.defaultPersona;
-    const userPart = hasUserData ? user : { personas: shared.personas, global: shared.global };
+    const userPart = hasUserData ? user : { personas: shared.personas ?? {}, global: shared.global ?? {} };
     return { ...userPart, customPersonas: shared.customPersonas };
   }, [localSettings, sharedState.data?.value, userState.data?.value]);
 
