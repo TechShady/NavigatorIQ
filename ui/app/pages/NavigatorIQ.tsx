@@ -23,6 +23,7 @@ import {
   deploymentQuery, workflowQuery, parseDeployments,
   deploymentTimelineQuery, parseDeploymentTimeline,
   davisProblemsQuery, parseDavisProblems,
+  davisProblemsTimelineQuery, parseDavisProblemsTimeline,
   digitalTimelapseQuery, parseDigitalTimelapse,
   platformTimelineQuery, parsePlatformTimeline,
   securityTimelapseQuery, parseSecurityTimelapse,
@@ -219,6 +220,7 @@ export function NavigatorIQ() {
   const secTlQ   = isTabLoaded ? withSeed(securityTimelapseQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
   const deplTlQ  = isTabLoaded ? withSeed(deploymentTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
   const davisQ   = isTabLoaded ? withSeed(davisProblemsQuery(tf.from, tf.to), seed) : NOOP_QUERY;
+  const davisTlQ = isTabLoaded ? withSeed(davisProblemsTimelineQuery(tf.from, tf.to, tf.interval), seed) : NOOP_QUERY;
 
   // ─── DQL hooks (all at top level — no conditional hooks) ───────────────
   const svcR      = useDql({ query: svcQ });
@@ -254,6 +256,7 @@ export function NavigatorIQ() {
   const secTlR    = useDql({ query: secTlQ });
   const deplTlR   = useDql({ query: deplTlQ });
   const davisR    = useDql({ query: davisQ });
+  const davisTlR  = useDql({ query: davisTlQ });
 
   // ─── Parse results ──────────────────────────────────────────────────────
 
@@ -289,8 +292,9 @@ export function NavigatorIQ() {
   // ─── Loading state ──────────────────────────────────────────────────────
   const deploymentBuckets = useMemo(() => parseDeploymentTimeline(recs(deplTlR)), [deplTlR.data]);
   const davisProblems: DavisProblemsResult | null = useMemo(() => parseDavisProblems(recs(davisR)), [davisR.data]);
+  const davisProblemBuckets = useMemo(() => parseDavisProblemsTimeline(recs(davisTlR)), [davisTlR.data]);
 
-  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, deplTlR, davisR, customHeatR, dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R].some((r) => r.isLoading);
+  const isLoading = isTabLoaded && [svcR, logR, hostR, k8sR, secR, atkR, dbR, netErrR, netConR, dxR, synthR, deplR, wfR, dxTlR, ptlR, secTlR, deplTlR, davisR, davisTlR, customHeatR, dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R].some((r) => r.isLoading);
 
   // ─── Assessment ─────────────────────────────────────────────────────────
   const personaThresholds = settings.personas[persona]?.thresholds;
@@ -315,6 +319,30 @@ export function NavigatorIQ() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dql3R.data, dql4R.data, dql5R.data, dql6R.data, dql7R.data, dql8R.data, dql9R.data, dqlMetrics, heatMetrics]
   );
+
+  // ─── Sparkline enrichment — attach per-metric timeline to each item ────
+  const assessmentWithSparklines = useMemo(() => {
+    const sparklineFor = (title: string): number[] => {
+      const t = title.toLowerCase();
+      if (t.includes("response") || t.includes("latency")) return curResults.serviceHealth?.rtTimeline ?? [];
+      if (t.includes("cpu")) return curResults.hostHealth?.cpuTimeline ?? [];
+      if (t.includes("lcp") || t.includes("experience")) return curResults.digitalTimelapse?.lcpTimeline ?? curResults.digitalExp?.lcpTimeline ?? [];
+      if (t.includes("database") || t.includes("query")) return curResults.database?.rtTimeline ?? [];
+      if (t.includes("log")) return curResults.logErrors?.logTimeline ?? [];
+      if (t.includes("error")) return curResults.serviceHealth?.errorTimeline?.length ? curResults.serviceHealth.errorTimeline : curResults.digitalTimelapse?.errorRateTimeline ?? [];
+      if (t.includes("duration")) return curResults.digitalTimelapse?.durationTimeline ?? [];
+      if (t.includes("ttfb")) return curResults.digitalTimelapse?.ttfbTimeline ?? [];
+      if (t.includes("attack") || t.includes("security")) return curResults.securityTimelapse?.attackTimeline ?? [];
+      return [];
+    };
+    const enrich = (items: import("../types").AssessmentItem[]) =>
+      items.map((item) => {
+        const sl = sparklineFor(item.title);
+        return sl.length >= 2 ? { ...item, sparkline: sl } : item;
+      });
+    return { ...assessment, redItems: enrich(assessment.redItems), yellowItems: enrich(assessment.yellowItems), greenItems: enrich(assessment.greenItems) };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assessment, curResults]);
 
   // ─── Cross-persona health signals ──────────────────────────────────────
   const personaHealthMap = useMemo((): Record<string, "red" | "yellow" | "green"> => {
@@ -521,7 +549,7 @@ export function NavigatorIQ() {
   );
   const activePersonaDef = allPersonas.find((p) => p.id === persona) ?? PERSONAS[0];
   const personaLinks = settings.personas[persona]?.appLinks;
-  const allItems = [...assessment.redItems, ...assessment.yellowItems, ...assessment.greenItems];
+  const allItems = [...assessmentWithSparklines.redItems, ...assessmentWithSparklines.yellowItems, ...assessmentWithSparklines.greenItems];
 
   const headerStyle: React.CSSProperties = {
     background: "linear-gradient(135deg,rgba(9,12,22,0.98) 0%,rgba(12,16,28,0.98) 100%)",
@@ -583,6 +611,7 @@ export function NavigatorIQ() {
           >
             ⟳
           </button>
+          <CopyReportButton assessment={assessmentWithSparklines} persona={activePersonaDef.label} tabLabel={TAB_LABELS[tab]} />
           <button
             onClick={() => setHelpOpen(true)}
             title="Help"
@@ -602,7 +631,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
-          <AssessmentPanel assessment={assessment} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={tf.from} to={tf.to} />
+          <AssessmentPanel assessment={assessmentWithSparklines} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblemBuckets={davisProblemBuckets} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = tf.interval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={tf.from} to={tf.to} />
         </div>
         <div className="iq-sidebar">
           <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />
@@ -632,6 +661,69 @@ export function NavigatorIQ() {
         />
       )}
     </div>
+  );
+}
+
+// ─── Copy Report button ──────────────────────────────────────────────────────
+
+function CopyReportButton({ assessment, persona, tabLabel }: { assessment: import("../types").Assessment; persona: string; tabLabel: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const statusEmoji = assessment.overallHealth === "red" ? "🔴" : assessment.overallHealth === "yellow" ? "🟡" : "🟢";
+    const statusLabel = assessment.overallHealth === "red" ? "Critical" : assessment.overallHealth === "yellow" ? "Warning" : "Healthy";
+
+    const lines: string[] = [
+      `*NavigatorIQ — ${persona} — ${tabLabel}*`,
+      `${statusEmoji} *${statusLabel}* · ${assessment.redItems.length} Critical · ${assessment.yellowItems.length} Warning · ${assessment.greenItems.length} Healthy`,
+      "",
+    ];
+
+    if (assessment.narrative) {
+      lines.push(`_${assessment.narrative}_`, "");
+    }
+
+    if (assessment.redItems.length > 0) {
+      lines.push(`*🔴 Needs Immediate Attention (${assessment.redItems.length})*`);
+      for (const item of assessment.redItems) {
+        const val = item.metricValue !== undefined ? ` — ${item.metricValue.toFixed(1)}${item.metricUnit ?? ""}` : "";
+        lines.push(`• ${item.title}${val}`);
+      }
+      lines.push("");
+    }
+
+    if (assessment.yellowItems.length > 0) {
+      lines.push(`*🟡 Potential Issues (${assessment.yellowItems.length})*`);
+      for (const item of assessment.yellowItems) {
+        const val = item.metricValue !== undefined ? ` — ${item.metricValue.toFixed(1)}${item.metricUnit ?? ""}` : "";
+        lines.push(`• ${item.title}${val}`);
+      }
+      lines.push("");
+    }
+
+    lines.push(`_Generated ${ts} via NavigatorIQ_`);
+
+    navigator.clipboard.writeText(lines.join("\n")).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy assessment report to clipboard (Slack-ready)"
+      style={{
+        background: copied ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.05)",
+        border: `1px solid ${copied ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.15)"}`,
+        borderRadius: 6,
+        color: copied ? "#34D399" : "rgba(255,255,255,0.6)",
+        fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer",
+        transition: "all 0.2s", whiteSpace: "nowrap" as const,
+      }}
+    >
+      {copied ? "✓ Copied!" : "📋 Share"}
+    </button>
   );
 }
 

@@ -968,6 +968,65 @@ ${davisHtml}
           );
         })()}
 
+        {/* Cross-metric correlation */}
+        {(() => {
+          if (bucketDetails.length < 3) return null;
+          // Build co-elevation map: for each metric pair, count buckets where both are elevated
+          const labelSet = new Set<string>();
+          for (const bd of bucketDetails) {
+            for (const m of bd.metrics) { if (!m.isTraffic) labelSet.add(m.label); }
+          }
+          const labels = [...labelSet];
+          if (labels.length < 2) return null;
+
+          type Pair = { a: string; b: string; coCount: number; aCount: number; rate: number };
+          const pairs: Pair[] = [];
+          for (let i = 0; i < labels.length; i++) {
+            for (let j = i + 1; j < labels.length; j++) {
+              const a = labels[i], b = labels[j];
+              let coCount = 0, aCount = 0;
+              for (const bd of bucketDetails) {
+                const za = bd.metrics.find(m => m.label === a)?.zScore ?? 0;
+                const zb = bd.metrics.find(m => m.label === b)?.zScore ?? 0;
+                if (za >= 0.75) { aCount++; if (zb >= 0.75) coCount++; }
+              }
+              if (aCount > 0 && coCount > 0) {
+                pairs.push({ a, b, coCount, aCount, rate: coCount / aCount });
+              }
+            }
+          }
+          const top = pairs.sort((x, y) => y.coCount - x.coCount || y.rate - x.rate).slice(0, 5);
+          if (top.length === 0) return null;
+
+          return (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
+                Cross-Metric Correlation — co-elevation pairs
+              </div>
+              <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 0 }}>
+                  {["Metric A", "Metric B", "Co-hot", "Rate"].map((h) => (
+                    <div key={h} style={{ ...HDR }}>{h}</div>
+                  ))}
+                  {top.map((p, i) => {
+                    const col = p.rate >= 0.8 ? "#FF073A" : p.rate >= 0.5 ? "#FF3D9A" : "#FFF04D";
+                    const bt = i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none";
+                    return (
+                      <React.Fragment key={i}>
+                        <div style={{ ...CELL, borderTop: bt, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{p.a}</div>
+                        <div style={{ ...CELL, borderTop: bt, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{p.b}</div>
+                        <div style={{ ...CELL, borderTop: bt, fontWeight: 700, color: col }}>{p.coCount}</div>
+                        <div style={{ ...CELL, borderTop: bt, fontWeight: 700, color: col }}>{Math.round(p.rate * 100)}%</div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.28)", marginTop: 5 }}>Rate = % of buckets where Metric A elevated that Metric B is also elevated</div>
+            </div>
+          );
+        })()}
+
         {/* Comparison Group 1: What's Different — Worst #1 vs Best #1 */}
         {analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 && (
           <div>

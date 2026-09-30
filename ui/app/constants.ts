@@ -1,18 +1,18 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.4.63";
+export const APP_VERSION = "0.4.65";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
 export const NOOP_QUERY = "fetch logs | limit 0";
 
 export const IQ_WHATS_NEW: string[] = [
+  "Davis Problem markers on the activity heat chart — red dots show when problems opened",
+  "Inline sparklines on assessment cards — see the shape of each metric at a glance",
+  "📋 Share button — copy a Slack-ready assessment report with one click",
+  "Cross-metric correlation in Hotness Assist — discover which metrics spike together",
   "Initial release of NavigatorIQ — persona-driven operational intelligence",
   "8 personas with role-specific assessments and recommendations",
-  "Red / Yellow / Green health scoring with trend analysis vs previous period",
-  "Forecast engine with 6 ML models (Prophet, ARIMA, SARIMA, and more)",
-  "Context-aware app recommendations link directly to User Journey, Services Overview, and Frontend Overview",
-  "Settings panel: customize app links and alert thresholds per persona",
 ];
 
 export const PERSONAS: PersonaDef[] = [

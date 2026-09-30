@@ -144,6 +144,22 @@ export function davisProblemsQuery(from: string, to: string): string {
 | summarize count=count(), titles=collectDistinct(event.title)`;
 }
 
+export function davisProblemsTimelineQuery(from: string, to: string, interval = "auto"): string {
+  return `fetch events, from:${from}, to:${to}
+| filter event.type == "DAVIS_PROBLEM"
+| fieldsAdd _c = 1.0
+| makeTimeseries { value = sum(_c) }, interval:${interval}`;
+}
+
+export function parseDavisProblemsTimeline(records: DqlRecord[] | undefined): boolean[] | null {
+  const r = records?.[0];
+  if (!r) return null;
+  const values = arr(r, "value");
+  if (values.length < 2) return null;
+  if (!values.some((v) => v > 0)) return null;
+  return values.map((v) => v > 0);
+}
+
 // Per-bucket RUM timelapse — drives Digital Experience heat strip
 // Query is verbatim from user-confirmed working Frontend Overview / User Journey app queries.
 // Only addition: from:/to: on the fetch line. Field names, spacing, and overwrite pattern preserved.

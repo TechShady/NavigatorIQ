@@ -129,6 +129,8 @@ export interface AssessmentItem {
   needsThreshold?: boolean;
   /** True when this item was previously in a worse state but is now measurably improving */
   recovering?: boolean;
+  /** Per-bucket timeline values for the inline miniature sparkline chart */
+  sparkline?: number[];
 }
 
 export interface Assessment {

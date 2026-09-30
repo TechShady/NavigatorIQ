@@ -18,6 +18,7 @@ interface AssessmentPanelProps {
   persona?: PersonaId;
   heatMetrics?: HeatMetricConfig[];
   deploymentBuckets?: boolean[] | null;
+  davisProblemBuckets?: boolean[] | null;
   davisProblems?: DavisProblemsResult | null;
   onUpdateThreshold?: (label: string, warn: number | undefined, crit: number | undefined) => void;
   healthReadings?: HealthReading[];
@@ -253,7 +254,7 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, flashBucket,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemBuckets, flashBucket,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
@@ -262,6 +263,7 @@ function ClickableHeatStrip({
   onCalendar?: () => void;
   persona?: PersonaId;
   deploymentBuckets?: boolean[] | null;
+  davisProblemBuckets?: boolean[] | null;
   flashBucket?: number | null;
 }) {
   if (scores.length < 2) return null;
@@ -271,6 +273,7 @@ function ClickableHeatStrip({
   const [forecastHover, setForecastHover] = useState(false);
   const [calHover, setCalHover] = useState(false);
   const hasDeployments = deploymentBuckets && deploymentBuckets.some(Boolean);
+  const hasDavisProblems = davisProblemBuckets && davisProblemBuckets.some(Boolean);
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -335,6 +338,12 @@ function ClickableHeatStrip({
                   style={{ position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", zIndex: 1 }}
                 />
               )}
+              {davisProblemBuckets?.[i] && (
+                <div
+                  title="Davis Problem opened"
+                  style={{ position: "absolute", top: hasDeploy ? 10 : 2, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", background: "#FF073A", boxShadow: "0 0 5px #FF073A90", zIndex: 1 }}
+                />
+              )}
               <div
                 title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? (" " + String.fromCharCode(183) + " deployment") : ""} ${String.fromCharCode(8212)} click to diagnose`}
                 onClick={() => onSelectBucket(sel ? null : i)}
@@ -363,6 +372,7 @@ function ClickableHeatStrip({
             <span key={l.z} style={{ fontSize: 9, color: l.color }}>{String.fromCharCode(9679)} {l.label}</span>
           ))}
           {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>{String.fromCharCode(9679)} Deployment</span>}
+          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A" }}>{String.fromCharCode(9679)} Davis Problem</span>}
         </div>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now {String.fromCharCode(8594)}</span>
       </div>
@@ -465,6 +475,26 @@ function ThresholdPopover({ item, onSave, onClose }: { item: AssessmentItem; onS
   );
 }
 
+// ─── Mini inline sparkline for assessment cards ──────────────────────────
+
+function MiniSparkline({ data, color }: { data: number[]; color: string }) {
+  if (data.length < 2) return null;
+  const W = 56, H = 20;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = Math.max(max - min, 0.001);
+  const xOf = (i: number) => (i / (data.length - 1)) * W;
+  const yOf = (v: number) => H - ((v - min) / range) * (H - 2) - 1;
+  const pts = data.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" ");
+  const fillPts = `${xOf(0).toFixed(1)},${H} ${pts} ${xOf(data.length - 1).toFixed(1)},${H}`;
+  return (
+    <svg width={W} height={H} style={{ flexShrink: 0, overflow: "visible" }}>
+      <polygon points={fillPts} fill={color} opacity={0.12} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.75} strokeLinejoin="round" />
+      <circle cx={xOf(data.length - 1)} cy={yOf(data[data.length - 1])} r={2} fill={color} />
+    </svg>
+  );
+}
+
 // ─── Assessment item row ──────────────────────────────────────────────────
 
 function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
@@ -488,6 +518,9 @@ function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
       <div style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }} onClick={() => setExpanded((v) => !v)}>
         <SeverityDot severity={item.severity} />
         <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#fff" }}>{item.title}</div>
+        {item.sparkline && item.sparkline.length >= 2 && (
+          <MiniSparkline data={item.sparkline} color={color} />
+        )}
         {item.metricValue !== undefined && (
           <div style={{ fontSize: 12, color, fontWeight: 700, flexShrink: 0 }}>{item.metricValue.toFixed(1)}{item.metricUnit ?? ""}</div>
         )}
@@ -693,7 +726,7 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()" }: AssessmentPanelProps) {
+export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemBuckets, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()" }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -798,6 +831,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           onForecast={() => setForecastOpen(true)}
           onCalendar={() => setCalendarOpen(true)}
           deploymentBuckets={deploymentBuckets}
+          davisProblemBuckets={davisProblemBuckets}
           flashBucket={flashBucket}
         />
       )}
