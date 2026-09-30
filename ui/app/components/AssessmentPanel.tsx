@@ -259,10 +259,11 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onSelectRange, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
+  onSelectRange: (start: number, end: number) => void;
   onAssist: () => void;
   onForecast: () => void;
   onCalendar?: () => void;
@@ -281,6 +282,34 @@ function ClickableHeatStrip({
   const hasDeployments = deploymentBuckets && deploymentBuckets.some(Boolean);
   const hasDavisProblems = davisProblemCounts && davisProblemCounts.some((c) => c > 0);
 
+  // Drag-to-select range state
+  const [dragStart, setDragStart] = useState<number | null>(null);
+  const [dragEnd, setDragEnd] = useState<number | null>(null);
+  const isDragging = dragStart !== null && dragEnd !== null;
+  const rangeMin = isDragging ? Math.min(dragStart, dragEnd) : null;
+  const rangeMax = isDragging ? Math.max(dragStart, dragEnd) : null;
+  const isRange = isDragging && dragStart !== dragEnd;
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (dragStart !== null && dragEnd !== null) {
+        if (dragStart === dragEnd) {
+          onSelectBucket(selectedBucket === dragStart ? null : dragStart);
+        } else {
+          onSelectRange(Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd));
+        }
+      }
+      setDragStart(null);
+      setDragEnd(null);
+    };
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [dragStart, dragEnd, selectedBucket]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dense view: use dots instead of numbers when bars are too narrow to show text
+  const useDots = scores.length > 30;
+  const problemDotSize = (count: number) => count >= 10 ? 7 : count >= 5 ? 6 : count >= 2 ? 5 : 4;
+
   return (
     <div style={{ marginBottom: 20 }}>
       {/* Header row */}
@@ -289,7 +318,7 @@ function ClickableHeatStrip({
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}>
             Activity Heat {String.fromCharCode(183)} {bucketLabel} buckets
           </span>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals {String.fromCharCode(183)} click to diagnose)</span>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals {String.fromCharCode(183)} drag to select range)</span>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <HotnessAssistButton onClick={onAssist} />
@@ -326,47 +355,68 @@ function ClickableHeatStrip({
         </div>
       </div>
 
-      {/* Bars */}
+      {/* Bars — marker zone (16px) sits above bar area so spikes never overlap markers */}
       <style>{`@keyframes heatbar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }`}</style>
-      <div style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 180, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: "pointer" }}>
+      <div
+        style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 196, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: isRange ? "col-resize" : "pointer", userSelect: "none" }}
+        onMouseLeave={() => { if (dragStart !== null) setDragEnd(dragEnd); }}
+      >
         {scores.map((z, i) => {
           const sel = selectedBucket === i;
           const flashing = flashBucket === i;
           const hasDeploy = deploymentBuckets?.[i] === true;
+          const problemCount = davisProblemCounts?.[i] ?? 0;
+          const inRange = rangeMin !== null && rangeMax !== null && i >= rangeMin && i <= rangeMax;
+
           return (
             <div
               key={i}
-              style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", position: "relative" }}
+              style={{ flex: 1, display: "flex", flexDirection: "column", borderRadius: 2, background: inRange ? "rgba(69,137,255,0.18)" : "transparent", outline: inRange ? "1px solid rgba(69,137,255,0.35)" : "none" }}
+              onMouseDown={(e) => { e.preventDefault(); setDragStart(i); setDragEnd(i); }}
+              onMouseEnter={() => { if (dragStart !== null) setDragEnd(i); }}
             >
-              {hasDeploy && (
+              {/* Fixed 16px marker zone — always above bars */}
+              <div style={{ height: 16, flexShrink: 0, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                {hasDeploy && (
+                  <div
+                    title="Deployment"
+                    style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", flexShrink: 0 }}
+                  />
+                )}
+                {problemCount > 0 && (
+                  useDots ? (
+                    <div
+                      title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
+                      style={{ width: problemDotSize(problemCount), height: problemDotSize(problemCount), borderRadius: "50%", background: "#FF073A", boxShadow: `0 0 ${problemDotSize(problemCount) - 1}px #FF073A90`, flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div
+                      title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
+                      style={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A", userSelect: "none", pointerEvents: "none" }}
+                    >
+                      {problemCount}
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Bar area — grows from bottom, never reaches the marker zone */}
+              <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
                 <div
-                  title="Deployment"
-                  style={{ position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", zIndex: 1 }}
+                  title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click or drag to select`}
+                  style={{
+                    width: "100%", height: `${Math.max(8, (z / maxZ) * 100)}%`,
+                    background: barColor(z), borderRadius: 2,
+                    opacity: selectedBucket === null ? 0.85 : sel ? 1 : 0.35,
+                    transition: flashing ? "none" : "all 0.2s",
+                    boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
+                    outline: sel ? `2px solid ${barColor(z)}` : "none",
+                    outlineOffset: 1,
+                    transformOrigin: "bottom",
+                    animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
+                  }}
                 />
-              )}
-              {(davisProblemCounts?.[i] ?? 0) > 0 && (
-                <div
-                  title={`${davisProblemCounts![i]} problem${davisProblemCounts![i] !== 1 ? "s" : ""} opened in this interval`}
-                  style={{ position: "absolute", top: hasDeploy ? 9 : 1, left: "50%", transform: "translateX(-50%)", fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A, 0 0 8px #FF073A80", zIndex: 2, userSelect: "none", pointerEvents: "none" }}
-                >
-                  {davisProblemCounts![i]}
-                </div>
-              )}
-              <div
-                title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? (" " + String.fromCharCode(183) + " deployment") : ""} ${String.fromCharCode(8212)} click to diagnose`}
-                onClick={() => onSelectBucket(sel ? null : i)}
-                style={{
-                  width: "100%", height: `${Math.max(10, (z / maxZ) * 100)}%`,
-                  background: barColor(z), borderRadius: 2,
-                  opacity: selectedBucket === null ? 0.85 : sel ? 1 : 0.35,
-                  transition: flashing ? "none" : "all 0.2s",
-                  boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
-                  outline: sel ? `2px solid ${barColor(z)}` : "none",
-                  outlineOffset: 1,
-                  transformOrigin: "bottom",
-                  animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
-                }}
-              />
+              </div>
             </div>
           );
         })}
@@ -380,7 +430,7 @@ function ClickableHeatStrip({
             <span key={l.z} style={{ fontSize: 9, color: l.color }}>{String.fromCharCode(9679)} {l.label}</span>
           ))}
           {hasDeployments && <span style={{ fontSize: 9, color: "#10B981" }}>{String.fromCharCode(9679)} Deployment</span>}
-          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A", fontWeight: 700 }}>N Problems opened</span>}
+          {hasDavisProblems && <span style={{ fontSize: 9, color: "#FF073A", fontWeight: 700 }}>{useDots ? "● Problems opened" : "N Problems opened"}</span>}
         </div>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>now {String.fromCharCode(8594)}</span>
       </div>
@@ -795,6 +845,16 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
     setTimeout(() => setFlashBucket(null), 700);
   }, []);
 
+  const handleSelectRange = useCallback((start: number, end: number) => {
+    const rangeScores = assessment.heatScores.slice(start, end + 1);
+    const maxOffset = rangeScores.reduce((best, v, j) => (v > rangeScores[best] ? j : best), 0);
+    const hotBucket = start + maxOffset;
+    setSelectedBucket(hotBucket);
+    setDiagOpen(true);
+    setFlashBucket(hotBucket);
+    setTimeout(() => setFlashBucket(null), 700);
+  }, [assessment.heatScores]);
+
   const getRequeryData = useCallback(async (days: number): Promise<number[]> => {
     if (getHotnessHistory) return getHotnessHistory(days);
     return assessment.heatScores;
@@ -865,6 +925,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           bucketLabel={assessment.bucketLabel}
           selectedBucket={selectedBucket}
           onSelectBucket={handleSelectBucket}
+          onSelectRange={handleSelectRange}
           onAssist={() => setAssistOpen(true)}
           onForecast={() => setForecastOpen(true)}
           onCalendar={() => setCalendarOpen(true)}

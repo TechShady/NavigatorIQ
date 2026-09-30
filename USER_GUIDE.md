@@ -130,21 +130,24 @@ This approach makes spikes visible regardless of scale. A 0.5% increase in error
 
 ### Event markers
 
-Two types of markers appear above bars:
+Markers live in a fixed zone above the bars so tall spikes never cover them:
 
 - 🟢 **Green dot** — a deployment event (GitHub, workflow, or custom deployment) occurred in that interval
-- 🔴 **Red number** — how many Davis Problems *opened* during that interval. A `3` means 3 new problems were created in that time bucket. Buckets with no new problems show nothing.
+- 🔴 **Red number** — how many Davis Problems *opened* during that interval. A `3` means 3 new problems were created in that time bucket. In dense views (Today / 7d with many bars), the number is replaced by a size-scaled red dot so markers don't run together — bigger dot = more problems. Buckets with no new problems show nothing.
 
-These markers let you instantly correlate "something spiked" with "we deployed" or "new problems opened here." The count is more useful than a dot — a spike with `5` problems opening is more concerning than one with `1`.
+These markers let you instantly correlate "something spiked" with "we deployed" or "new problems opened here."
 
 ### Interacting with the heat strip
 
 | Action | Result |
 |--------|--------|
 | Click a bar | Opens **Bucket Diagnosis** for that specific window |
+| **Click and drag** across several bars | Highlights the range in blue; releasing opens **Bucket Diagnosis** for the hottest bucket in the selected range |
 | Click **🔥 Hotness Assist** | Opens full timeline analysis panel |
 | Click **📅** | Opens **Hotness Calendar** (day × hour heatmap) |
 | Click **📈 Forecast** on an assessment item | Opens **Forecast** panel for that metric |
+
+> **Drag-select tip:** Use drag-select to zoom into a suspicious window. For example, if you see three consecutive red bars in a 7-day view, drag across them to immediately open diagnosis for the worst moment in that period.
 
 ---
 
@@ -534,7 +537,7 @@ fetch user.events, from:${from}, to:${to}
 
 - A single red bar does not always mean an incident. Check whether the same bar appears red in the Hotness Calendar — if Monday at 9am is always red, it is an expected peak.
 - **Green dot + red bar** immediately following: strongly suggests a deployment caused the spike. Click the red bar to open Bucket Diagnosis, then click Explore on the worst metric to see which services are affected.
-- **Red number + red bar**: Davis opened one or more problems during that interval. The number tells you how many. A high count (5+) alongside a spike is a strong signal that something systemic broke. The problem is in your Problem feed; NavigatorIQ is showing you *when* it started and how it correlates with metrics.
+- **Red marker + red bar**: Davis opened one or more problems during that interval. In sparse views the count shows as a number; in dense views it shows as a size-scaled red dot. A high count alongside a spike is a strong signal that something systemic broke. NavigatorIQ shows you *when* it started and how it correlates with metrics — open the Problems app for full detail.
 
 ### Assessment thresholds
 
@@ -618,10 +621,11 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 - Check your **Assessment Thresholds** — they may be set too high for your environment (e.g., a Critical threshold of 50% error rate will not turn red for a 5% error rate).
 - The Z-score model compares each bucket against the window's own mean. If the *entire* window was degraded, all buckets look "normal" relative to each other. Switch to Last 7 Days to get a broader baseline.
 
-### Davis Problem red dots are not appearing
+### Davis Problem markers are not appearing
 
 - Davis Problems are queried from `fetch dt.davis.problems` with `event.status == "ACTIVE"`. Confirm there are active problems in your environment's Problems app.
-- The markers align to heat strip buckets. A problem that exists outside the current timeframe window will not show a marker, even if it is currently active.
+- The markers show problems that *opened* within each bucket. A problem that started before the current timeframe window will not show a marker even if it is still active — switch to a wider timeframe to see when it opened.
+- In dense views (Today / 7d), markers appear as size-scaled red dots rather than numbers. A dot is still shown even when small.
 
 ### The "NavigatorIQ failed to load" screen appears
 

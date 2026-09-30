@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { queryExecutionClient } from "@dynatrace-sdk/client-query";
@@ -539,41 +539,62 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
     ?? diagnoseScenarios.find(s => s.status === "warning")?.rec
     ?? "No critical issues detected. Review REVIEW-status scenarios for optimization opportunities.";
 
+  const [dPos, setDPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 300), y: Math.max(20, window.innerHeight / 2 - 260) }));
+  const [dSizeW, setDSizeW] = useState(0);
+  const [dSizeH, setDSizeH] = useState(0);
+  const dDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const dRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
+  const dContRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (dDragRef.current) { const { startX, startY, startL, startT } = dDragRef.current; setDPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
+      if (dRzRef.current) { const { mode, startX, startY, startW, startH } = dRzRef.current; if (mode === "w" || mode === "wh") setDSizeW(Math.max(380, startW + (e.clientX - startX))); if (mode === "h" || mode === "wh") setDSizeH(Math.max(300, startH + (e.clientY - startY))); }
+    };
+    const onUp = () => { dDragRef.current = null; dRzRef.current = null; };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 600, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>🩺 Diagnose</div>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${severityColor[panelSeverity]}20`, color: severityColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{severityLabel[panelSeverity]}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{label}</div>
+    <div ref={dContRef} style={{ position: "fixed", left: dPos.x, top: dPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: dSizeW > 0 ? dSizeW : 600, ...(dSizeH > 0 ? { height: dSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+      <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; dDragRef.current = { startX: e.clientX, startY: e.clientY, startL: dPos.x, startT: dPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>🩺 Diagnose</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${severityColor[panelSeverity]}20`, color: severityColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{severityLabel[panelSeverity]}</span>
           </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{label}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
           <button onClick={() => exportDiagnosePdf(label, diagnoseScenarios, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
           <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
         </div>
-        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
-          {execSummary}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflowY: "auto", paddingRight: 4 }}>
-          {diagnoseScenarios.map(s => (
-            <div key={s.id} style={{ padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, borderLeft: `3px solid ${diagSc[s.status]}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 14 }}>{s.icon}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{s.title}</span>
-                <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: diagSc[s.status], textTransform: "uppercase" as const, letterSpacing: "0.5px" }}>{diagSl[s.status]}</span>
-              </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", lineHeight: 1.5, marginBottom: 4 }}>{s.finding}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", lineHeight: 1.5 }}>{"→"} {s.rec}</div>
+      </div>
+      <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+        {execSummary}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", paddingRight: 4, ...(dSizeH > 0 ? { flex: 1 } : { maxHeight: "50vh" }) }}>
+        {diagnoseScenarios.map(s => (
+          <div key={s.id} style={{ padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, borderLeft: `3px solid ${diagSc[s.status]}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 14 }}>{s.icon}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{s.title}</span>
+              <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: diagSc[s.status], textTransform: "uppercase" as const, letterSpacing: "0.5px" }}>{diagSl[s.status]}</span>
             </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
-        </div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", lineHeight: 1.5, marginBottom: 4 }}>{s.finding}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", lineHeight: 1.5 }}>{"→"} {s.rec}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+      </div>
+      {/* Right-edge resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); dRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (dContRef.current?.offsetWidth ?? dSizeW) || 600, startH: (dContRef.current?.offsetHeight ?? dSizeH) || 400, mode: "w" }; }} style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }} />
+      {/* Corner resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); dRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (dContRef.current?.offsetWidth ?? dSizeW) || 600, startH: (dContRef.current?.offsetHeight ?? dSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
+        <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
     </div>,
     document.body
@@ -686,25 +707,41 @@ function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589F
     setTimeout(() => w.print(), 400);
   };
 
+  const [cbPos, setCbPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 240), y: Math.max(20, window.innerHeight / 2 - 200) }));
+  const [cbSizeW, setCbSizeW] = useState(0);
+  const [cbSizeH, setCbSizeH] = useState(0);
+  const cbDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const cbRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
+  const cbContRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (cbDragRef.current) { const { startX, startY, startL, startT } = cbDragRef.current; setCbPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
+      if (cbRzRef.current) { const { mode, startX, startY, startW, startH } = cbRzRef.current; if (mode === "w" || mode === "wh") setCbSizeW(Math.max(340, startW + (e.clientX - startX))); if (mode === "h" || mode === "wh") setCbSizeH(Math.max(280, startH + (e.clientY - startY))); }
+    };
+    const onUp = () => { cbDragRef.current = null; cbRzRef.current = null; };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 480, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{titles[panel]}</div>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${severityColor[panelSeverity]}20`, color: severityColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{severityLabel[panelSeverity]}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{label}</div>
+    <div ref={cbContRef} style={{ position: "fixed", left: cbPos.x, top: cbPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: cbSizeW > 0 ? cbSizeW : 480, ...(cbSizeH > 0 ? { height: cbSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+      <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; cbDragRef.current = { startX: e.clientX, startY: e.clientY, startL: cbPos.x, startT: cbPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{titles[panel]}</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${severityColor[panelSeverity]}20`, color: severityColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{severityLabel[panelSeverity]}</span>
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button onClick={exportPdf} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
-            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
-          </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{label}</div>
         </div>
-        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
-          {execSummary}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button onClick={exportPdf} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
+          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
         </div>
+      </div>
+      <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+        {execSummary}
+      </div>
+      <div style={{ overflowY: "auto", ...(cbSizeH > 0 ? { flex: 1 } : { maxHeight: "55vh" }) }}>
 
         {panel === "baseline" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -804,16 +841,22 @@ function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589F
           );
         })()}
 
-        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
-        </div>
+      </div>
+      <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+      </div>
 
         {onOpenPanel && (
           <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={() => onOpenPanel(crossPanel as "cost" | "baseline")} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 6, color: "rgba(255,255,255,0.6)", padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>{crossLabel}</button>
           </div>
         )}
+      {/* Right-edge resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); cbRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (cbContRef.current?.offsetWidth ?? cbSizeW) || 480, startH: (cbContRef.current?.offsetHeight ?? cbSizeH) || 400, mode: "w" }; }} style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }} />
+      {/* Corner resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); cbRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (cbContRef.current?.offsetWidth ?? cbSizeW) || 480, startH: (cbContRef.current?.offsetHeight ?? cbSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
+        <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
     </div>,
     document.body
@@ -868,48 +911,67 @@ function EntityImpactOverlay({ label, rawValue, sparkline, color = "#4589FF", ef
   const execSummary = Math.abs(deviation) < 0.5 ? `${label} is within normal range — stable at ${fmt(curr)}.` : `${label} is ${Math.abs(deviation).toFixed(1)}σ ${deviation > 0 ? "above" : "below"} the period mean${effectiveHigherIsBetter === (deviation > 0) ? ", trending positively" : ", trending negatively"}.`;
   const nextStep = Math.abs(deviation) > 2 ? `Investigate root cause — open Diagnose or check Dimension breakdown for anomalous segments.` : Math.abs(deviation) > 1 ? `Monitor closely. Consider setting a Dynatrace alert for ${label}.` : `No immediate action needed. Continue monitoring with existing alerts.`;
 
+  const [iPos, setIPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 240), y: Math.max(20, window.innerHeight / 2 - 200) }));
+  const [iSizeW, setISizeW] = useState(0);
+  const [iSizeH, setISizeH] = useState(0);
+  const iDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const iRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
+  const iContRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (iDragRef.current) { const { startX, startY, startL, startT } = iDragRef.current; setIPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
+      if (iRzRef.current) { const { mode, startX, startY, startW, startH } = iRzRef.current; if (mode === "w" || mode === "wh") setISizeW(Math.max(340, startW + (e.clientX - startX))); if (mode === "h" || mode === "wh") setISizeH(Math.max(280, startH + (e.clientY - startY))); }
+    };
+    const onUp = () => { iDragRef.current = null; iRzRef.current = null; };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 480, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>&#x1F465; Impact Analysis</div>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${sevColor[panelSeverity]}20`, color: sevColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{sevLabel[panelSeverity]}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+    <div ref={iContRef} style={{ position: "fixed", left: iPos.x, top: iPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: iSizeW > 0 ? iSizeW : 480, ...(iSizeH > 0 ? { height: iSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+      <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; iDragRef.current = { startX: e.clientX, startY: e.clientY, startL: iPos.x, startT: iPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
+        <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>&#x1F465; Impact Analysis</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${sevColor[panelSeverity]}20`, color: sevColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{sevLabel[panelSeverity]}</span>
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-            <button onClick={() => exportImpactPdf(label, curr, pMax, pMin, mean, trendLabel, stabilityLabel, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
-            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+          <button onClick={() => exportImpactPdf(label, curr, pMax, pMin, mean, trendLabel, stabilityLabel, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
+          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
+        </div>
+      </div>
+      <div style={{ padding: "8px 12px", marginBottom: 14, background: `${sevColor[panelSeverity]}12`, borderLeft: `3px solid ${sevColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+        {execSummary}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", ...(iSizeH > 0 ? { flex: 1 } : { maxHeight: "55vh" }) }}>
+        {[
+          { label: "Current value", value: fmt(curr), col: color },
+          { label: "Peak (period)", value: fmt(pMax), col: effectiveHigherIsBetter ? "#0D9C29" : "#E00000" },
+          { label: "Trough (period)", value: fmt(pMin), col: effectiveHigherIsBetter ? "#E00000" : "#0D9C29" },
+          { label: "Mean (period)", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
+          { label: "Recent trend", value: trendLabel, col: trendColor },
+          { label: "Data stability", value: stabilityLabel, col: "rgba(255,255,255,0.6)" },
+        ].map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
           </div>
+        ))}
+        <div style={{ marginTop: 6, padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
+          {effectiveHigherIsBetter ? `Higher ${label} positively impacts user outcomes and revenue.` : `Lower ${label} indicates a better user experience.`}{" "}Current value is {Math.abs(deviation) < 0.5 ? "within" : deviation > 0 ? "above" : "below"} the period mean.
         </div>
-        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${sevColor[panelSeverity]}12`, borderLeft: `3px solid ${sevColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
-          {execSummary}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {[
-            { label: "Current value", value: fmt(curr), col: color },
-            { label: "Peak (period)", value: fmt(pMax), col: effectiveHigherIsBetter ? "#0D9C29" : "#E00000" },
-            { label: "Trough (period)", value: fmt(pMin), col: effectiveHigherIsBetter ? "#E00000" : "#0D9C29" },
-            { label: "Mean (period)", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
-            { label: "Recent trend", value: trendLabel, col: trendColor },
-            { label: "Data stability", value: stabilityLabel, col: "rgba(255,255,255,0.6)" },
-          ].map((r, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 6, padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
-            {effectiveHigherIsBetter ? `Higher ${label} positively impacts user outcomes and revenue.` : `Lower ${label} indicates a better user experience.`}{" "}Current value is {Math.abs(deviation) < 0.5 ? "within" : deviation > 0 ? "above" : "below"} the period mean.
-          </div>
-        </div>
-        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
-        </div>
+      </div>
+      <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+      </div>
+      {/* Right-edge resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); iRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (iContRef.current?.offsetWidth ?? iSizeW) || 480, startH: (iContRef.current?.offsetHeight ?? iSizeH) || 400, mode: "w" }; }} style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }} />
+      {/* Corner resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); iRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (iContRef.current?.offsetWidth ?? iSizeW) || 480, startH: (iContRef.current?.offsetHeight ?? iSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
+        <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
     </div>,
     document.body
@@ -958,53 +1020,72 @@ function EntityAnomalyOverlay({ label, rawValue, sparkline, color = "#4589FF", e
   const execSummary = `${label} is ${anomalyStatus.label} — ${Math.abs(deviation).toFixed(2)}σ from the period mean.`;
   const nextStep = anomalyStatus.label === "Anomalous" ? `Investigate immediately — check Dimension breakdown for geo/browser segments and open Diagnose for pattern correlation.` : anomalyStatus.label !== "Normal" ? `Monitor for continued movement. Set an alert at ${fmt(Math.max(0, mean + 2 * std))} to catch escalation early.` : `No action needed. ${label} is behaving normally.`;
 
+  const [anPos, setAnPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 240), y: Math.max(20, window.innerHeight / 2 - 200) }));
+  const [anSizeW, setAnSizeW] = useState(0);
+  const [anSizeH, setAnSizeH] = useState(0);
+  const anDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const anRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
+  const anContRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (anDragRef.current) { const { startX, startY, startL, startT } = anDragRef.current; setAnPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
+      if (anRzRef.current) { const { mode, startX, startY, startW, startH } = anRzRef.current; if (mode === "w" || mode === "wh") setAnSizeW(Math.max(340, startW + (e.clientX - startX))); if (mode === "h" || mode === "wh") setAnSizeH(Math.max(280, startH + (e.clientY - startY))); }
+    };
+    const onUp = () => { anDragRef.current = null; anRzRef.current = null; };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 100010, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", maxWidth: 480, width: "90vw", boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>&#x1F50D; Anomaly Detection</div>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${sevColor[panelSeverity]}20`, color: sevColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{sevLabel[panelSeverity]}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+    <div ref={anContRef} style={{ position: "fixed", left: anPos.x, top: anPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: anSizeW > 0 ? anSizeW : 480, ...(anSizeH > 0 ? { height: anSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+      <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; anDragRef.current = { startX: e.clientX, startY: e.clientY, startL: anPos.x, startT: anPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
+        <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>&#x1F50D; Anomaly Detection</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${sevColor[panelSeverity]}20`, color: sevColor[panelSeverity], letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{sevLabel[panelSeverity]}</span>
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-            <button onClick={() => exportAnomalyPdf(label, curr, mean, std, deviation, anomalyStatus, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
-            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
-          </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
         </div>
-        <div style={{ padding: "8px 12px", marginBottom: 14, background: `${anomalyStatus.color}12`, borderLeft: `3px solid ${anomalyStatus.color}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
-          {execSummary}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+          <button onClick={() => exportAnomalyPdf(label, curr, mean, std, deviation, anomalyStatus, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
+          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
-            <div style={{ textAlign: "center", padding: "12px 20px", borderRadius: 10, background: `${anomalyStatus.color}18`, border: `1px solid ${anomalyStatus.color}40` }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: anomalyStatus.color }}>{anomalyStatus.label}</div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{Math.abs(deviation).toFixed(2)}&sigma; from mean</div>
-            </div>
-          </div>
-          {[
-            { label: "Current value", value: fmt(curr), col: color },
-            { label: "Historical mean", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
-            { label: "Std deviation (±1σ)", value: `±${fmt(std)}`, col: "rgba(255,255,255,0.6)" },
-            { label: "Normal range", value: `${fmt(Math.max(0, mean - std))} – ${fmt(mean + std)}`, col: "#0D9C29" },
-            { label: "Deviation", value: `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}σ`, col: anomalyStatus.color },
-          ].map((r, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 4, padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
-            {Math.abs(deviation) < 1 ? `${label} is behaving normally for this timeframe. No action needed.` : Math.abs(deviation) < 2 ? `${label} shows slight deviation. Monitor for continued movement.` : `${label} is significantly outside the normal range. Investigate potential causes.`}
+      </div>
+      <div style={{ padding: "8px 12px", marginBottom: 14, background: `${anomalyStatus.color}12`, borderLeft: `3px solid ${anomalyStatus.color}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
+        {execSummary}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", ...(anSizeH > 0 ? { flex: 1 } : { maxHeight: "55vh" }) }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+          <div style={{ textAlign: "center", padding: "12px 20px", borderRadius: 10, background: `${anomalyStatus.color}18`, border: `1px solid ${anomalyStatus.color}40` }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: anomalyStatus.color }}>{anomalyStatus.label}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{Math.abs(deviation).toFixed(2)}&sigma; from mean</div>
           </div>
         </div>
-        <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+        {[
+          { label: "Current value", value: fmt(curr), col: color },
+          { label: "Historical mean", value: fmt(mean), col: "rgba(255,255,255,0.7)" },
+          { label: "Std deviation (±1σ)", value: `±${fmt(std)}`, col: "rgba(255,255,255,0.6)" },
+          { label: "Normal range", value: `${fmt(Math.max(0, mean - std))} – ${fmt(mean + std)}`, col: "#0D9C29" },
+          { label: "Deviation", value: `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}σ`, col: anomalyStatus.color },
+        ].map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{r.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: r.col }}>{r.value}</span>
+          </div>
+        ))}
+        <div style={{ marginTop: 4, padding: "10px 12px", background: "rgba(69,137,255,0.06)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
+          {Math.abs(deviation) < 1 ? `${label} is behaving normally for this timeframe. No action needed.` : Math.abs(deviation) < 2 ? `${label} shows slight deviation. Monitor for continued movement.` : `${label} is significantly outside the normal range. Investigate potential causes.`}
         </div>
+      </div>
+      <div style={{ marginTop: 12, padding: "10px 14px", background: `${color}10`, borderLeft: `3px solid ${color}`, borderRadius: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 4 }}>Recommended Next Step</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>{nextStep}</div>
+      </div>
+      {/* Right-edge resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); anRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (anContRef.current?.offsetWidth ?? anSizeW) || 480, startH: (anContRef.current?.offsetHeight ?? anSizeH) || 400, mode: "w" }; }} style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }} />
+      {/* Corner resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); anRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (anContRef.current?.offsetWidth ?? anSizeW) || 480, startH: (anContRef.current?.offsetHeight ?? anSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
+        <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
     </div>,
     document.body

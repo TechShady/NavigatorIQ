@@ -1,13 +1,13 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.4.76";
+export const APP_VERSION = "0.4.77";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
 export const NOOP_QUERY = "fetch logs | limit 0";
 
 export const IQ_WHATS_NEW: string[] = [
-  "Davis Problem markers on the activity heat chart — red dots show when problems opened",
+  "Drag to select a range on the heat strip — hottest bucket in range opens for diagnosis",
   "Inline sparklines on assessment cards — see the shape of each metric at a glance",
   "📋 Share button — copy a Slack-ready assessment report with one click",
   "Cross-metric correlation in Hotness Assist — discover which metrics spike together",

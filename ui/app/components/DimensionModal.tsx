@@ -156,10 +156,27 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
   const [loading, setLoading]         = useState(true);
   const [selectedPct, setSelectedPct] = useState<PctOption>("P50");
 
+  const [dmPos, setDmPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 410), y: Math.max(20, window.innerHeight / 2 - 220) }));
+  const [dmSizeW, setDmSizeW] = useState(0);
+  const [dmSizeH, setDmSizeH] = useState(0);
+  const dmDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const dmRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
+  const dmContRef = useRef<HTMLDivElement>(null);
+
   const fetchGeoRef     = useRef(fetchGeo);
   const fetchBrowserRef = useRef(fetchBrowser);
   fetchGeoRef.current     = fetchGeo;
   fetchBrowserRef.current = fetchBrowser;
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (dmDragRef.current) { const { startX, startY, startL, startT } = dmDragRef.current; setDmPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
+      if (dmRzRef.current) { const { mode, startX, startY, startW, startH } = dmRzRef.current; if (mode === "w" || mode === "wh") setDmSizeW(Math.max(500, startW + (e.clientX - startX))); if (mode === "h" || mode === "wh") setDmSizeH(Math.max(320, startH + (e.clientY - startY))); }
+    };
+    const onUp = () => { dmDragRef.current = null; dmRzRef.current = null; };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -179,66 +196,46 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
   }, [selectedPct]);
 
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)" }} onClick={onClose} />
-      <div style={{
-        position: "relative",
-        background: "#151829",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: 14,
-        padding: "26px 32px",
-        width: 820,
-        maxWidth: "95vw",
-        boxShadow: "0 28px 70px rgba(0,0,0,0.6)",
-        fontFamily: "'Segoe UI',system-ui,sans-serif",
-        color: "#e8eaf0",
-      }}>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>
-              <span style={{ marginRight: 8 }}>🌍</span>Dimension Breakdown
-            </div>
-            <div style={{ fontSize: 11, opacity: 0.4, marginTop: 3 }}>
-              <span style={{ color: color ?? "#4589FF", fontWeight: 700 }}>{label}</span>
-              &ensp;&middot;&ensp;Geographic &amp; Browser distribution &middot; last 7 days
-            </div>
+    <div ref={dmContRef} style={{
+      position: "fixed", left: dmPos.x, top: dmPos.y, zIndex: 9999,
+      background: "#151829", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14,
+      padding: "26px 32px", width: dmSizeW > 0 ? dmSizeW : 820,
+      ...(dmSizeH > 0 ? { height: dmSizeH, display: "flex", flexDirection: "column" } : {}),
+      boxShadow: "0 28px 70px rgba(0,0,0,0.6)", fontFamily: "'Segoe UI',system-ui,sans-serif",
+      color: "#e8eaf0", userSelect: "none",
+    }}>
+      {/* Header */}
+      <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; dmDragRef.current = { startX: e.clientX, startY: e.clientY, startL: dmPos.x, startT: dmPos.y }; }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, cursor: "move" }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>
+            <span style={{ marginRight: 8 }}>🌍</span>Dimension Breakdown
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* Percentile selector */}
-            <div style={{ display: "flex", gap: 3, background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: 3 }}>
-              {PCT_OPTIONS.map(p => (
-                <button
-                  key={p}
-                  onClick={() => setSelectedPct(p)}
-                  style={{
-                    padding: "3px 8px",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    borderRadius: 6,
-                    border: "none",
-                    cursor: "pointer",
-                    background: selectedPct === p ? (color ?? "#4589FF") : "transparent",
-                    color: selectedPct === p ? "#fff" : "rgba(232,234,240,0.45)",
-                    letterSpacing: "0.02em",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => exportDimensionPdf(label, geoData, browserData)}
-              style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-            >📄 PDF</button>
-            <button
-              onClick={onClose}
-              style={{ background: "none", border: "none", color: "inherit", fontSize: 18, cursor: "pointer", opacity: 0.35, padding: "4px 8px", lineHeight: 1 }}
-            >&#x2715;</button>
+          <div style={{ fontSize: 11, opacity: 0.4, marginTop: 3 }}>
+            <span style={{ color: color ?? "#4589FF", fontWeight: 700 }}>{label}</span>
+            &ensp;&middot;&ensp;Geographic &amp; Browser distribution &middot; last 7 days
           </div>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Percentile selector */}
+          <div style={{ display: "flex", gap: 3, background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: 3 }}>
+            {PCT_OPTIONS.map(p => (
+              <button
+                key={p}
+                onClick={() => setSelectedPct(p)}
+                style={{
+                  padding: "3px 8px", fontSize: 10, fontWeight: 700, borderRadius: 6, border: "none",
+                  cursor: "pointer", background: selectedPct === p ? (color ?? "#4589FF") : "transparent",
+                  color: selectedPct === p ? "#fff" : "rgba(232,234,240,0.45)", letterSpacing: "0.02em", transition: "all 0.15s",
+                }}
+              >{p}</button>
+            ))}
+          </div>
+          <button onClick={() => exportDimensionPdf(label, geoData, browserData)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "inherit", fontSize: 18, cursor: "pointer", opacity: 0.35, padding: "4px 8px", lineHeight: 1 }}>&#x2715;</button>
+        </div>
+      </div>
 
+      <div style={{ ...(dmSizeH > 0 ? { flex: 1, overflowY: "auto" } : {}) }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: "48px 0", opacity: 0.45, fontSize: 13 }}>Loading dimension data&hellip;</div>
         ) : (
@@ -248,10 +245,15 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
             <PieChart data={browserData} title="Browser breakdown" colors={BROWSER_COLORS} pct={selectedPct} />
           </div>
         )}
-
         <div style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 10, opacity: 0.3, textAlign: "right" }}>
           Dimension Breakdown &middot; NavigatorIQ
         </div>
+      </div>
+      {/* Right-edge resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); dmRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (dmContRef.current?.offsetWidth ?? dmSizeW) || 820, startH: (dmContRef.current?.offsetHeight ?? dmSizeH) || 450, mode: "w" }; }} style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }} />
+      {/* Corner resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); dmRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (dmContRef.current?.offsetWidth ?? dmSizeW) || 820, startH: (dmContRef.current?.offsetHeight ?? dmSizeH) || 450, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
+        <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
     </div>,
     document.body

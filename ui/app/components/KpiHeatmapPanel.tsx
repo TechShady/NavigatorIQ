@@ -241,7 +241,8 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
   const [showAnalysis, setShowAnalysis]   = React.useState(false);
   const [highlightMode, setHighlightMode] = React.useState<HighlightMode>(null);
   const [panelH, setPanelH]               = React.useState(620);
-  const resizeRef = React.useRef<{ startY: number; startH: number } | null>(null);
+  const [panelW, setPanelW]               = React.useState(352);
+  const resizeRef = React.useRef<{ startY: number; startH: number; startX: number; startW: number; mode: "v" | "h" | "both" } | null>(null);
 
   React.useEffect(() => {
     let active = true;
@@ -263,8 +264,9 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
   React.useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!resizeRef.current) return;
-      const dy = e.clientY - resizeRef.current.startY;
-      setPanelH(Math.max(400, resizeRef.current.startH + dy));
+      const { mode, startY, startH, startX, startW } = resizeRef.current;
+      if (mode === "v" || mode === "both") setPanelH(Math.max(400, startH + (e.clientY - startY)));
+      if (mode === "h" || mode === "both") setPanelW(Math.max(352, startW + (e.clientX - startX)));
     };
     const onUp = () => { resizeRef.current = null; };
     window.addEventListener("mousemove", onMove);
@@ -310,7 +312,6 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
   };
 
   const CELL_W = 34, CELL_H = 18, GAP = 2, LEFT_PAD = 48;
-  const panelW = LEFT_PAD + 7 * (CELL_W + GAP) + 52;
 
   return createPortal(
     <div style={{
@@ -481,14 +482,19 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
         )}
       </div>
 
-      {/* Resize handle */}
+      {/* Right-edge horizontal resize */}
       <div
-        onMouseDown={e => { e.stopPropagation(); resizeRef.current = { startY: e.clientY, startH: panelH }; }}
-        style={{ position: "absolute", bottom: 0, right: 0, width: 18, height: 18, cursor: "ns-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: "3px" }}
+        onMouseDown={e => { e.stopPropagation(); resizeRef.current = { startY: e.clientY, startH: panelH, startX: e.clientX, startW: panelW, mode: "h" }; }}
+        style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }}
+      />
+      {/* Corner resize handle (both axes) */}
+      <div
+        onMouseDown={e => { e.stopPropagation(); resizeRef.current = { startY: e.clientY, startH: panelH, startX: e.clientX, startW: panelW, mode: "both" }; }}
+        style={{ position: "absolute", bottom: 0, right: 0, width: 18, height: 18, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: "3px" }}
       >
-        <svg width="10" height="6" viewBox="0 0 10 6" style={{ opacity: 0.3 }}>
-          <line x1="0" y1="2" x2="10" y2="2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: 0.35 }}>
+          <line x1="2" y1="10" x2="10" y2="2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          <line x1="5" y1="10" x2="10" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       </div>
     </div>,

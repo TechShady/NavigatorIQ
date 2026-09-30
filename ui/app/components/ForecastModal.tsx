@@ -406,6 +406,21 @@ function FmSelect<T extends string | number>({ value, onChange, options }: {
 }
 
 export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, getRequeryData }: ForecastModalProps) {
+  const [fmPos, setFmPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 500), y: Math.max(20, window.innerHeight / 2 - 280) }));
+  const [fmSizeW, setFmSizeW] = useState(0);
+  const [fmSizeH, setFmSizeH] = useState(0);
+  const fmDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const fmRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
+  const fmContRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (fmDragRef.current) { const { startX, startY, startL, startT } = fmDragRef.current; setFmPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
+      if (fmRzRef.current) { const { mode, startX, startY, startW, startH } = fmRzRef.current; if (mode === "w" || mode === "wh") setFmSizeW(Math.max(600, startW + (e.clientX - startX))); if (mode === "h" || mode === "wh") setFmSizeH(Math.max(400, startH + (e.clientY - startY))); }
+    };
+    const onUp = () => { fmDragRef.current = null; fmRzRef.current = null; };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
   const [method, setMethod] = useState<ForecastMethod>("prophet");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [pendingAnalyzeDays, setPendingAnalyzeDays] = useState(DEFAULT_ANALYZE_DAYS);
@@ -554,15 +569,13 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: "rgba(20,24,46,0.97)", borderRadius: 12, padding: "24px 32px", maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.5)", border: "1px solid rgba(128,128,128,0.2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div>
-            <h2 style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 700 }}>{label} — {appliedForecastDays}-Day Forecast</h2>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{formatDate(activeFromMs)} → {formatDate(activeToMs + appliedForecastDays * 24 * 3600 * 1000)}</span>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div ref={fmContRef} style={{ position: "fixed", left: fmPos.x, top: fmPos.y, zIndex: 99999, background: "rgba(20,24,46,0.97)", borderRadius: 12, padding: "24px 32px", width: fmSizeW > 0 ? fmSizeW : Math.min(Math.max(900 + 64, 964), window.innerWidth - 40), ...(fmSizeH > 0 ? { height: fmSizeH, overflow: "hidden", display: "flex", flexDirection: "column" } : { overflow: "auto", maxHeight: "90vh" }), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", border: "1px solid rgba(128,128,128,0.2)", userSelect: "none" }}>
+      <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("select")) return; fmDragRef.current = { startX: e.clientX, startY: e.clientY, startL: fmPos.x, startT: fmPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, cursor: "move" }}>
+        <div>
+          <h2 style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 700 }}>{label} — {appliedForecastDays}-Day Forecast</h2>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{formatDate(activeFromMs)} → {formatDate(activeToMs + appliedForecastDays * 24 * 3600 * 1000)}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <FmSelect<ForecastMethod>
               value={method} onChange={setMethod}
               options={[
@@ -637,11 +650,16 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{confidenceScore >= 80 ? "High" : confidenceScore >= 60 ? "Moderate" : "Low"} — based on historical volatility</span>
           </div>
         )}
-        <div style={{ display: "flex", gap: 24, marginTop: 16, justifyContent: "center", fontSize: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}><svg width={24} height={3}><line x1={0} y1={1.5} x2={24} y2={1.5} stroke={color} strokeWidth={2} /></svg><span style={{ color: "rgba(255,255,255,0.7)" }}>Historical ({appliedAnalyzeDays}d)</span></div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}><svg width={24} height={3}><line x1={0} y1={1.5} x2={24} y2={1.5} stroke={color} strokeWidth={2} strokeDasharray="4,3" /></svg><span style={{ color: "rgba(255,255,255,0.7)" }}>Forecast ({appliedForecastDays}d)</span></div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}><svg width={16} height={12}><rect x={0} y={0} width={16} height={12} fill={color} fillOpacity={0.15} rx={2} /></svg><span style={{ color: "rgba(255,255,255,0.7)" }}>Confidence Band</span></div>
-        </div>
+      <div style={{ display: "flex", gap: 24, marginTop: 16, justifyContent: "center", fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}><svg width={24} height={3}><line x1={0} y1={1.5} x2={24} y2={1.5} stroke={color} strokeWidth={2} /></svg><span style={{ color: "rgba(255,255,255,0.7)" }}>Historical ({appliedAnalyzeDays}d)</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}><svg width={24} height={3}><line x1={0} y1={1.5} x2={24} y2={1.5} stroke={color} strokeWidth={2} strokeDasharray="4,3" /></svg><span style={{ color: "rgba(255,255,255,0.7)" }}>Forecast ({appliedForecastDays}d)</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}><svg width={16} height={12}><rect x={0} y={0} width={16} height={12} fill={color} fillOpacity={0.15} rx={2} /></svg><span style={{ color: "rgba(255,255,255,0.7)" }}>Confidence Band</span></div>
+      </div>
+      {/* Right-edge resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); fmRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (fmContRef.current?.offsetWidth ?? fmSizeW) || 964, startH: (fmContRef.current?.offsetHeight ?? fmSizeH) || 600, mode: "w" }; }} style={{ position: "absolute", top: 40, bottom: 20, right: 0, width: 6, cursor: "ew-resize" }} />
+      {/* Corner resize handle */}
+      <div onMouseDown={(e) => { e.stopPropagation(); fmRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (fmContRef.current?.offsetWidth ?? fmSizeW) || 964, startH: (fmContRef.current?.offsetHeight ?? fmSizeH) || 600, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
+        <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
     </div>
   );

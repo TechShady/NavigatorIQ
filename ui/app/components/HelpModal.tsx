@@ -140,9 +140,10 @@ const SECTIONS: HelpSection[] = [
           ))}
         </div>
         <ul style={UL}>
-          <li><span style={{ color: "#10B981" }}>● Green dot</span> above a bar — a deployment event occurred in that interval</li>
-          <li><span style={{ color: "#FF073A", fontWeight: 700 }}>Red number</span> above a bar — how many Davis Problems <em>opened</em> during that interval (e.g. <span style={{ color: "#FF073A", fontWeight: 900, fontSize: 10 }}>3</span> = 3 new problems opened)</li>
-          <li><strong style={{ color: "#fff" }}>Click a bar</strong> — opens Bucket Diagnosis showing all metric values for that specific window</li>
+          <li><span style={{ color: "#10B981" }}>● Green dot</span> in the marker zone above a bar — a deployment event occurred in that interval</li>
+          <li><span style={{ color: "#FF073A", fontWeight: 700 }}>Red number</span> in the marker zone — how many Davis Problems <em>opened</em> in that interval. In dense views (Today / 7d), shows as a size-scaled red dot instead of a number to avoid overlap</li>
+          <li><strong style={{ color: "#fff" }}>Click a bar</strong> — opens Bucket Diagnosis for that specific window</li>
+          <li><strong style={{ color: "#fff" }}>Click and drag across multiple bars</strong> — highlights a range with a blue tint; releasing opens Bucket Diagnosis for the hottest bucket within the selected range</li>
           <li><strong style={{ color: "#fff" }}>🔥 Hotness Assist</strong> — deep-dive analysis panel for the full timeline</li>
           <li><strong style={{ color: "#fff" }}>📅 Calendar</strong> — day × hour heatmap showing when your environment runs hot across an extended window</li>
           <li><strong style={{ color: "#fff" }}>📈 Forecast</strong> — projects metric trends using multiple forecasting models</li>
@@ -426,9 +427,9 @@ const SECTIONS: HelpSection[] = [
       <div style={SECTION_STYLE}>
         <ul style={UL}>
           <li>Use <strong style={{ color: "#fff" }}>Last 2 Hours</strong> (5-min buckets) to pinpoint exactly when an incident started</li>
-          <li><strong style={{ color: "#fff" }}>Red dots</strong> on the heat strip mark Davis Problem activity — correlate them with heat spikes to confirm causality</li>
+          <li><strong style={{ color: "#fff" }}>Red numbers / dots</strong> above bars mark Davis Problems that <em>opened</em> in that interval — correlate with heat spikes to confirm causality</li>
           <li><strong style={{ color: "#fff" }}>Green dots</strong> mark deployment events — a red bar right after a green dot is worth investigating immediately</li>
-          <li>Click a heat strip bar to see all metric values for <em>that specific window</em> — great for narrowing from "something spiked at 2pm" to "here's what changed"</li>
+          <li>Click a bar to see all metric values for <em>that specific window</em>, or <strong style={{ color: "#fff" }}>drag across several bars</strong> to select a range — the hottest bucket in the range opens automatically</li>
           <li>The <strong style={{ color: "#fff" }}>Cross-Metric Correlation</strong> table in Hotness Assist tells you which metrics move together — a Rate near 100% means one metric almost always spikes with the other</li>
           <li>Open the <strong style={{ color: "#fff" }}>Hotness Calendar</strong> to separate recurring patterns (Monday peaks, overnight batch) from genuine anomalies</li>
           <li>Drag Hotness Assist, Forecast, and Explore panels anywhere on screen to keep them visible while you investigate in other panels</li>
