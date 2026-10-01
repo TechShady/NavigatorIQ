@@ -260,13 +260,17 @@ function BucketDiagPanel({
 // ─── Clickable Heat Strip ─────────────────────────────────────────────────
 
 function parseDqlTime(s: string): number {
-  const now = Date.now();
-  if (!s || s === "now()") return now;
-  const m = s.match(/^now\(\)-(\d+)([mhd])$/);
-  if (!m) return now;
-  const n = parseInt(m[1]);
-  const mult = m[2] === "m" ? 60000 : m[2] === "h" ? 3600000 : 86400000;
-  return now - n * mult;
+  // Strip DQL quoting if present (e.g. `"2026-09-30T10:11:00Z"` → ISO string)
+  const cleaned = s.replace(/^"|"$/g, "");
+  if (!cleaned || cleaned === "now()") return Date.now();
+  const m = cleaned.match(/^now\(\)-(\d+)([mhd])$/);
+  if (m) {
+    const n = parseInt(m[1]);
+    const mult = m[2] === "m" ? 60000 : m[2] === "h" ? 3600000 : 86400000;
+    return Date.now() - n * mult;
+  }
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? Date.now() : d.getTime();
 }
 
 function fmtZoomTime(ms: number): string {

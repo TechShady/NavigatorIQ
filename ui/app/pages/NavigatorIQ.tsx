@@ -123,7 +123,8 @@ export function NavigatorIQ() {
       const d = new Date(iso);
       return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
     };
-    setZoom({ from: fromIso, to: toIso, interval, label: `${fmt(fromIso)} → ${fmt(toIso)}` });
+    // DQL requires quoted ISO strings: from:"2026-09-30T10:11:00Z"
+    setZoom({ from: `"${fromIso}"`, to: `"${toIso}"`, interval, label: `${fmt(fromIso)} → ${fmt(toIso)}` });
     setRefreshSeed((s) => s + 1);
   }, []);
 
