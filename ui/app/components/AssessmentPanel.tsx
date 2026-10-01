@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, HeatMetricConfig } from "../types";
@@ -354,6 +354,33 @@ function ClickableHeatStrip({
   const useDots = scores.length > 30;
   const problemDotSize = (count: number) => count >= 10 ? 7 : count >= 5 ? 6 : count >= 2 ? 5 : 4;
 
+  // Active range: live drag OR zoom popup waiting for confirmation
+  const activeMin = zoomPopup ? zoomPopup.startBucket : rangeMin;
+  const activeMax = zoomPopup ? zoomPopup.endBucket : rangeMax;
+  const hasActiveRange = activeMin !== null && activeMax !== null;
+
+  // Measure exact column positions from the DOM — no CSS calc guessing
+  const barsRef = useRef<HTMLDivElement>(null);
+  const [overlayPos, setOverlayPos] = useState<{ left: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (activeMin === null || activeMax === null) { setOverlayPos(null); return; }
+    const container = barsRef.current;
+    if (!container) { setOverlayPos(null); return; }
+    const cols = container.children as HTMLCollectionOf<HTMLElement>;
+    const startEl = cols[activeMin];
+    const endEl = cols[activeMax];
+    if (!startEl || !endEl) { setOverlayPos(null); return; }
+    const cRect = container.getBoundingClientRect();
+    const left = startEl.getBoundingClientRect().left - cRect.left;
+    const right = endEl.getBoundingClientRect().right - cRect.left;
+    setOverlayPos((prev) => {
+      const next = { left, width: right - left };
+      if (prev && prev.left === next.left && prev.width === next.width) return prev;
+      return next;
+    });
+  }, [activeMin, activeMax]);
+
   return (
     <div style={{ marginBottom: 20 }}>
       {/* Header row */}
@@ -401,122 +428,97 @@ function ClickableHeatStrip({
 
       {/* Bars — marker zone (16px) sits above bar area so spikes never overlap markers */}
       <style>{`@keyframes heatbar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }`}</style>
-      {(() => {
-        // Active range: live drag OR zoom popup waiting for confirmation
-        const activeMin = zoomPopup ? zoomPopup.startBucket : rangeMin;
-        const activeMax = zoomPopup ? zoomPopup.endBucket : rangeMax;
-        const hasActiveRange = activeMin !== null && activeMax !== null;
+      <div style={{ position: "relative" }}>
+        {/* Selection overlay box — positioned using measured pixel coords from the DOM */}
+        {hasActiveRange && overlayPos && (
+          <div
+            style={{
+              position: "absolute",
+              top: 2, bottom: 2,
+              left: overlayPos.left,
+              width: overlayPos.width,
+              background: "rgba(69,137,255,0.12)",
+              border: "2px solid rgba(69,137,255,0.85)",
+              borderRadius: 4,
+              boxShadow: "0 0 12px rgba(69,137,255,0.3)",
+              pointerEvents: "none",
+              zIndex: 5,
+            }}
+          />
+        )}
 
-        // Precise overlay position using CSS calc() to match flex layout exactly.
-        // Container: padding 4px each side, gap 1.5px between columns.
-        // Column width = (100% - 8px - (n-1)*1.5px) / n
-        // Left of column i = 4px + i * (colWidth + 1.5px)
-        const n = scores.length;
-        const totalGap = (n - 1) * 1.5;
-        const colW = `(100% - 8px - ${totalGap}px) / ${n}`;
-        const overlayLeft = hasActiveRange
-          ? `calc(4px + ${activeMin!} * (${colW} + 1.5px))`
-          : "0";
-        const overlayCount = hasActiveRange ? activeMax! - activeMin! + 1 : 0;
-        const overlayWidth = hasActiveRange
-          ? `calc(${overlayCount} * (${colW}) + ${(overlayCount - 1) * 1.5}px)`
-          : "0";
+        {/* Flex bar container — barsRef attached so useLayoutEffect can measure column positions */}
+        <div
+          ref={barsRef}
+          style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 196, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: isRange ? "col-resize" : "pointer", userSelect: "none" }}
+          onMouseLeave={() => { if (dragStart !== null) setDragEnd(dragEnd); }}
+        >
+          {scores.map((z, i) => {
+            const sel = selectedBucket === i;
+            const flashing = flashBucket === i;
+            const hasDeploy = deploymentBuckets?.[i] === true;
+            const problemCount = davisProblemCounts?.[i] ?? 0;
+            const inActiveRange = hasActiveRange && i >= activeMin! && i <= activeMax!;
 
-        return (
-          // Outer wrapper: position:relative so the overlay is positioned against it,
-          // NOT inside the flex container (avoids any flex-layout interference).
-          <div style={{ position: "relative" }}>
-            {/* Selection overlay — lives outside the flex container so it never affects column widths */}
-            {hasActiveRange && (
+            // Dim bars outside an active range selection
+            const barOpacity = hasActiveRange
+              ? (inActiveRange ? 1 : 0.2)
+              : (selectedBucket === null ? 0.85 : sel ? 1 : 0.35);
+
+            return (
               <div
-                style={{
-                  position: "absolute",
-                  top: 2, bottom: 2,
-                  left: overlayLeft,
-                  width: overlayWidth,
-                  background: "rgba(69,137,255,0.12)",
-                  border: "2px solid rgba(69,137,255,0.85)",
-                  borderRadius: 4,
-                  boxShadow: "0 0 12px rgba(69,137,255,0.3)",
-                  pointerEvents: "none",
-                  zIndex: 5,
-                }}
-              />
-            )}
-
-            {/* Flex bar container — no position:relative, no overlay child */}
-            <div
-              style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 196, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: isRange ? "col-resize" : "pointer", userSelect: "none" }}
-              onMouseLeave={() => { if (dragStart !== null) setDragEnd(dragEnd); }}
-            >
-              {scores.map((z, i) => {
-                const sel = selectedBucket === i;
-                const flashing = flashBucket === i;
-                const hasDeploy = deploymentBuckets?.[i] === true;
-                const problemCount = davisProblemCounts?.[i] ?? 0;
-                const inActiveRange = hasActiveRange && i >= activeMin! && i <= activeMax!;
-
-                // Dim bars outside an active range selection
-                const barOpacity = hasActiveRange
-                  ? (inActiveRange ? 1 : 0.2)
-                  : (selectedBucket === null ? 0.85 : sel ? 1 : 0.35);
-
-                return (
-                  <div
-                    key={i}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", borderRadius: 2 }}
-                    onMouseDown={(e) => { e.preventDefault(); setZoomPopup(null); setDragStart(i); setDragEnd(i); }}
-                    onMouseEnter={() => { if (dragStart !== null) setDragEnd(i); }}
-                  >
-                    {/* Fixed 16px marker zone — always above bars */}
-                    <div style={{ height: 16, flexShrink: 0, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
-                      {hasDeploy && (
-                        <div
-                          title="Deployment"
-                          style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", flexShrink: 0 }}
-                        />
-                      )}
-                      {problemCount > 0 && (
-                        useDots ? (
-                          <div
-                            title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
-                            style={{ width: problemDotSize(problemCount), height: problemDotSize(problemCount), borderRadius: "50%", background: "#FF073A", boxShadow: `0 0 ${problemDotSize(problemCount) - 1}px #FF073A90`, flexShrink: 0 }}
-                          />
-                        ) : (
-                          <div
-                            title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
-                            style={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A", userSelect: "none", pointerEvents: "none" }}
-                          >
-                            {problemCount}
-                          </div>
-                        )
-                      )}
-                    </div>
-
-                    {/* Bar area */}
-                    <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
+                key={i}
+                style={{ flex: 1, display: "flex", flexDirection: "column", borderRadius: 2 }}
+                onMouseDown={(e) => { e.preventDefault(); setZoomPopup(null); setDragStart(i); setDragEnd(i); }}
+                onMouseEnter={() => { if (dragStart !== null) setDragEnd(i); }}
+              >
+                {/* Fixed 16px marker zone — always above bars */}
+                <div style={{ height: 16, flexShrink: 0, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                  {hasDeploy && (
+                    <div
+                      title="Deployment"
+                      style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", flexShrink: 0 }}
+                    />
+                  )}
+                  {problemCount > 0 && (
+                    useDots ? (
                       <div
-                        title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click or drag to zoom`}
-                        style={{
-                          width: "100%", height: `${Math.max(8, (z / maxZ) * 100)}%`,
-                          background: barColor(z), borderRadius: 2,
-                          opacity: barOpacity,
-                          transition: flashing ? "none" : "opacity 0.15s, box-shadow 0.2s",
-                          boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
-                          outline: sel ? `2px solid ${barColor(z)}` : "none",
-                          outlineOffset: 1,
-                          transformOrigin: "bottom",
-                          animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
-                        }}
+                        title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
+                        style={{ width: problemDotSize(problemCount), height: problemDotSize(problemCount), borderRadius: "50%", background: "#FF073A", boxShadow: `0 0 ${problemDotSize(problemCount) - 1}px #FF073A90`, flexShrink: 0 }}
                       />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
+                    ) : (
+                      <div
+                        title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
+                        style={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A", userSelect: "none", pointerEvents: "none" }}
+                      >
+                        {problemCount}
+                      </div>
+                    )
+                  )}
+                </div>
+
+                {/* Bar area */}
+                <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
+                  <div
+                    title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click or drag to zoom`}
+                    style={{
+                      width: "100%", height: `${Math.max(8, (z / maxZ) * 100)}%`,
+                      background: barColor(z), borderRadius: 2,
+                      opacity: barOpacity,
+                      transition: flashing ? "none" : "opacity 0.15s, box-shadow 0.2s",
+                      boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
+                      outline: sel ? `2px solid ${barColor(z)}` : "none",
+                      outlineOffset: 1,
+                      transformOrigin: "bottom",
+                      animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Zoom popup — appears after drag-select of a range */}
       {zoomPopup && (() => {
