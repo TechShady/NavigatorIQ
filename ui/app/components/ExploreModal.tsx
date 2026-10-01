@@ -251,23 +251,34 @@ function formatCount(n: number): string {
   return String(Math.round(n));
 }
 
-// Convert DQL from/to strings to Dynatrace tf URL parameter (tf=<start>%3B<end>)
+// Build Dynatrace timeframe query params from DQL from/to strings.
+// Produces: tf=<dtformat>%3B<dtformat>&from=<dql-encoded>&to=<dql-encoded>
+// - tf uses Dynatrace's own format (now-2h, epoch ms)
+// - from/to use URL-encoded DQL expressions (now%28%29-2h, ISO strings)
 function buildTfParam(from: string, to: string): string {
+  function stripQ(s: string): string { return s.replace(/^"|"$/g, ""); }
   function toDtTf(s: string): string {
-    const cleaned = s.replace(/^"|"$/g, "");
-    if (cleaned === "now()") return "now";
-    const rel = cleaned.match(/^now\(\)-(\d+)(ms|s|m|h|d|w)$/i);
+    const c = stripQ(s);
+    if (c === "now()") return "now";
+    const rel = c.match(/^now\(\)-(\d+)(ms|s|m|h|d|w)$/i);
     if (rel) return `now-${rel[1]}${rel[2]}`;
-    const ms = new Date(cleaned).getTime();
+    const ms = new Date(c).getTime();
     if (!isNaN(ms)) return String(ms);
-    return cleaned;
+    return c;
   }
-  return `tf=${encodeURIComponent(toDtTf(from) + ";" + toDtTf(to))}`;
+  const tf = `tf=${encodeURIComponent(toDtTf(from) + ";" + toDtTf(to))}`;
+  const fp = `from=${encodeURIComponent(stripQ(from))}`;
+  const tp = `to=${encodeURIComponent(stripQ(to))}`;
+  return `${tf}&${fp}&${tp}`;
 }
 
+// Strips any existing tf/from/to params then appends the new set.
 function appendTfToUrl(url: string, tfParam: string): string {
-  if (url.includes("tf=")) return url.replace(/tf=[^&#]*/, tfParam);
-  return url + (url.includes("?") ? "&" : "?") + tfParam;
+  const [withoutHash, hash] = url.split("#");
+  const [path, qs] = withoutHash.split("?");
+  const kept = qs ? qs.split("&").filter(p => !/^(tf|from|to)=/.test(p)) : [];
+  const result = path + "?" + [...kept, tfParam].join("&");
+  return hash ? `${result}#${hash}` : result;
 }
 
 function openEntity(envUrl: string, entityId: string, cfg: EntityConfig, displayName?: string, appEntityId?: string, pageName?: string, tfParam?: string) {
