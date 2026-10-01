@@ -251,7 +251,26 @@ function formatCount(n: number): string {
   return String(Math.round(n));
 }
 
-function openEntity(envUrl: string, entityId: string, cfg: EntityConfig, displayName?: string, appEntityId?: string, pageName?: string) {
+// Convert DQL from/to strings to Dynatrace tf URL parameter (tf=<start>%3B<end>)
+function buildTfParam(from: string, to: string): string {
+  function toDtTf(s: string): string {
+    const cleaned = s.replace(/^"|"$/g, "");
+    if (cleaned === "now()") return "now";
+    const rel = cleaned.match(/^now\(\)-(\d+)(ms|s|m|h|d|w)$/i);
+    if (rel) return `now-${rel[1]}${rel[2]}`;
+    const ms = new Date(cleaned).getTime();
+    if (!isNaN(ms)) return String(ms);
+    return cleaned;
+  }
+  return `tf=${encodeURIComponent(toDtTf(from) + ";" + toDtTf(to))}`;
+}
+
+function appendTfToUrl(url: string, tfParam: string): string {
+  if (url.includes("tf=")) return url.replace(/tf=[^&#]*/, tfParam);
+  return url + (url.includes("?") ? "&" : "?") + tfParam;
+}
+
+function openEntity(envUrl: string, entityId: string, cfg: EntityConfig, displayName?: string, appEntityId?: string, pageName?: string, tfParam?: string) {
   const isErrors = cfg.appUrl(envUrl).includes("error.inspector");
   let url: string;
   if (isErrors) {
@@ -270,6 +289,7 @@ function openEntity(envUrl: string, entityId: string, cfg: EntityConfig, display
   } else {
     url = cfg.appUrl(envUrl);
   }
+  if (tfParam) url = appendTfToUrl(url, tfParam);
   try { window.open(url, "_blank"); }
   catch { window.open(url.replace(envUrl, ""), "_blank"); }
 }
@@ -1341,7 +1361,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
                 {/* Action chips */}
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); openEntity(envUrl, row.entityId, cfg, row.displayName, row.appEntityId, row.sub); }}
+                    onClick={(e) => { e.stopPropagation(); openEntity(envUrl, row.entityId, cfg, row.displayName, row.appEntityId, row.sub, buildTfParam(from, to)); }}
                     style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 5, color: "#7ab4ff", fontSize: 10, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
                     title="Open in Dynatrace"
                   >Open in Dynatrace</button>
@@ -1401,7 +1421,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
-                onClick={() => openEntity(envUrl, "", cfg)}
+                onClick={() => openEntity(envUrl, "", cfg, undefined, undefined, undefined, buildTfParam(from, to))}
                 style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#7ab4ff", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}
               >
                 Open {cfg.appLabel} →
