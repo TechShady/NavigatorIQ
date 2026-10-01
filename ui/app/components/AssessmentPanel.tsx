@@ -401,70 +401,102 @@ function ClickableHeatStrip({
 
       {/* Bars — marker zone (16px) sits above bar area so spikes never overlap markers */}
       <style>{`@keyframes heatbar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }`}</style>
-      <div
-        style={{ display: "flex", alignItems: "stretch", gap: 1.5, height: 196, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: isRange ? "col-resize" : "pointer", userSelect: "none" }}
-        onMouseLeave={() => { if (dragStart !== null) setDragEnd(dragEnd); }}
-      >
-        {scores.map((z, i) => {
-          const sel = selectedBucket === i;
-          const flashing = flashBucket === i;
-          const hasDeploy = deploymentBuckets?.[i] === true;
-          const problemCount = davisProblemCounts?.[i] ?? 0;
-          const inRange = rangeMin !== null && rangeMax !== null && i >= rangeMin && i <= rangeMax;
+      {(() => {
+        // Active range: live drag OR zoom popup waiting for confirmation
+        const activeMin = zoomPopup ? zoomPopup.startBucket : rangeMin;
+        const activeMax = zoomPopup ? zoomPopup.endBucket : rangeMax;
+        const hasActiveRange = activeMin !== null && activeMax !== null;
 
-          return (
-            <div
-              key={i}
-              style={{ flex: 1, display: "flex", flexDirection: "column", borderRadius: 2, background: inRange ? "rgba(69,137,255,0.18)" : "transparent", outline: inRange ? "1px solid rgba(69,137,255,0.35)" : "none" }}
-              onMouseDown={(e) => { e.preventDefault(); setDragStart(i); setDragEnd(i); }}
-              onMouseEnter={() => { if (dragStart !== null) setDragEnd(i); }}
-            >
-              {/* Fixed 16px marker zone — always above bars */}
-              <div style={{ height: 16, flexShrink: 0, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
-                {hasDeploy && (
-                  <div
-                    title="Deployment"
-                    style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", flexShrink: 0 }}
-                  />
-                )}
-                {problemCount > 0 && (
-                  useDots ? (
-                    <div
-                      title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
-                      style={{ width: problemDotSize(problemCount), height: problemDotSize(problemCount), borderRadius: "50%", background: "#FF073A", boxShadow: `0 0 ${problemDotSize(problemCount) - 1}px #FF073A90`, flexShrink: 0 }}
-                    />
-                  ) : (
-                    <div
-                      title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
-                      style={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A", userSelect: "none", pointerEvents: "none" }}
-                    >
-                      {problemCount}
-                    </div>
-                  )
-                )}
-              </div>
+        return (
+          <div
+            style={{ position: "relative", display: "flex", alignItems: "stretch", gap: 1.5, height: 196, background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "4px 4px", cursor: isRange ? "col-resize" : "pointer", userSelect: "none" }}
+            onMouseLeave={() => { if (dragStart !== null) setDragEnd(dragEnd); }}
+          >
+            {/* Selection overlay box — single continuous box over selected columns */}
+            {hasActiveRange && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 2, bottom: 2,
+                  left: `${(activeMin! / scores.length) * 100}%`,
+                  width: `${((activeMax! - activeMin! + 1) / scores.length) * 100}%`,
+                  background: "rgba(69,137,255,0.12)",
+                  border: "2px solid rgba(69,137,255,0.85)",
+                  borderRadius: 4,
+                  boxShadow: "0 0 12px rgba(69,137,255,0.3)",
+                  pointerEvents: "none",
+                  zIndex: 5,
+                }}
+              />
+            )}
 
-              {/* Bar area — grows from bottom, never reaches the marker zone */}
-              <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
+            {scores.map((z, i) => {
+              const sel = selectedBucket === i;
+              const flashing = flashBucket === i;
+              const hasDeploy = deploymentBuckets?.[i] === true;
+              const problemCount = davisProblemCounts?.[i] ?? 0;
+              const inActiveRange = hasActiveRange && i >= activeMin! && i <= activeMax!;
+
+              // Bar opacity: dim bars outside an active range selection
+              const barOpacity = hasActiveRange
+                ? (inActiveRange ? 1 : 0.2)
+                : (selectedBucket === null ? 0.85 : sel ? 1 : 0.35);
+
+              return (
                 <div
-                  title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click or drag to select`}
-                  style={{
-                    width: "100%", height: `${Math.max(8, (z / maxZ) * 100)}%`,
-                    background: barColor(z), borderRadius: 2,
-                    opacity: selectedBucket === null ? 0.85 : sel ? 1 : 0.35,
-                    transition: flashing ? "none" : "all 0.2s",
-                    boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
-                    outline: sel ? `2px solid ${barColor(z)}` : "none",
-                    outlineOffset: 1,
-                    transformOrigin: "bottom",
-                    animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                  key={i}
+                  style={{ flex: 1, display: "flex", flexDirection: "column", borderRadius: 2 }}
+                  onMouseDown={(e) => { e.preventDefault(); setZoomPopup(null); setDragStart(i); setDragEnd(i); }}
+                  onMouseEnter={() => { if (dragStart !== null) setDragEnd(i); }}
+                >
+                  {/* Fixed 16px marker zone — always above bars */}
+                  <div style={{ height: 16, flexShrink: 0, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                    {hasDeploy && (
+                      <div
+                        title="Deployment"
+                        style={{ width: 5, height: 5, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 5px #10B98190", flexShrink: 0 }}
+                      />
+                    )}
+                    {problemCount > 0 && (
+                      useDots ? (
+                        <div
+                          title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
+                          style={{ width: problemDotSize(problemCount), height: problemDotSize(problemCount), borderRadius: "50%", background: "#FF073A", boxShadow: `0 0 ${problemDotSize(problemCount) - 1}px #FF073A90`, flexShrink: 0 }}
+                        />
+                      ) : (
+                        <div
+                          title={`${problemCount} problem${problemCount !== 1 ? "s" : ""} opened`}
+                          style={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: "#FF073A", textShadow: "0 0 4px #FF073A", userSelect: "none", pointerEvents: "none" }}
+                        >
+                          {problemCount}
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {/* Bar area — grows from bottom, never reaches the marker zone */}
+                  <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
+                    <div
+                      title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click or drag to zoom`}
+                      style={{
+                        width: "100%", height: `${Math.max(8, (z / maxZ) * 100)}%`,
+                        background: barColor(z), borderRadius: 2,
+                        opacity: barOpacity,
+                        transition: flashing ? "none" : "opacity 0.15s, box-shadow 0.2s",
+                        boxShadow: sel ? `0 0 10px ${barColor(z)}80` : "none",
+                        outline: sel ? `2px solid ${barColor(z)}` : "none",
+                        outlineOffset: 1,
+                        transformOrigin: "bottom",
+                        animation: flashing ? "heatbar-grow 0.55s cubic-bezier(0.34,1.56,0.64,1)" : undefined,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Zoom popup — appears after drag-select of a range */}
       {zoomPopup && (() => {
