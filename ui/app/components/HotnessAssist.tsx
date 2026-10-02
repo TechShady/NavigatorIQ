@@ -42,12 +42,17 @@ export interface HotnessAnalysis {
   avgRecoveryBuckets: number;
   driftSlope: number;
   driftLabel: "worsening" | "stable" | "improving";
+  rootCauseNarrative: string;
+  sloBreachMinutes: number;
+  cascades: Array<{ trigger: string; affected: string[]; bucketSpan: number }>;
+  trafficEfficiencySignal: string;
 }
 
 export function analyzeHotness(
   heatScores: number[],
   bucketDetails: HeatBucketDetail[],
   bucketLabel: string,
+  intervalMinutes?: number,
 ): HotnessAnalysis {
   if (heatScores.length === 0) {
     return {
@@ -62,6 +67,7 @@ export function analyzeHotness(
       recommendations: [],
       insights: [{ severity: "info", icon: "ℹ️", text: "Collect more data to enable Hotness Assist analysis." }],
       episodeCount: 0, longestEpisodeBuckets: 0, avgRecoveryBuckets: 0, driftSlope: 0, driftLabel: "stable" as const,
+      rootCauseNarrative: "", sloBreachMinutes: 0, cascades: [], trafficEfficiencySignal: "",
     };
   }
 
@@ -216,7 +222,106 @@ export function analyzeHotness(
   const driftSlope = dn > 1 ? (dn * dSumXY - dSumX * dSumY) / (dn * dSumX2 - dSumX * dSumX) : 0;
   const driftLabel: "worsening" | "stable" | "improving" = driftSlope > 0.02 ? "worsening" : driftSlope < -0.02 ? "improving" : "stable";
 
-  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, alertPattern, recommendations, insights, episodeCount, longestEpisodeBuckets, avgRecoveryBuckets, driftSlope, driftLabel };
+  // Root-cause narrative — second analysis paragraph derived from existing data
+  const trafficZ = trafficMetric?.zScore ?? 0;
+  const trafficMetricLabel = trafficMetric?.label ?? "traffic";
+  const errorMetrics = worstMetrics.filter(m => !m.isTraffic && (m.label.toLowerCase().includes("error") || m.label.toLowerCase().includes("err")) && m.zScore > 0.5);
+  const latencyMetrics = worstMetrics.filter(m => !m.isTraffic && !m.label.toLowerCase().includes("error") && !m.label.toLowerCase().includes("err") && m.zScore > 0.5);
+  const nonTrafficAll = worstMetrics.filter(m => !m.isTraffic);
+  const elevatedNonTraffic = nonTrafficAll.filter(m => m.zScore > 0.75);
+
+  let trafficClause = "";
+  if (worstZ >= 0.75) {
+    if (trafficZ >= 1.0 && perfMetrics.length > 0) {
+      trafficClause = `${trafficMetricLabel} was significantly elevated (+${trafficZ.toFixed(1)}σ) alongside performance degradation — load-induced pressure is the primary suspect.`;
+    } else if (trafficZ >= 0.5 && perfMetrics.length > 0) {
+      trafficClause = `${trafficMetricLabel} was modestly elevated (+${trafficZ.toFixed(1)}σ) during the worst window — a contributing factor, but likely not the sole driver.`;
+    } else if (perfMetrics.length > 0) {
+      trafficClause = `${trafficMetricLabel} was within normal range during the worst window — the degradation is not volume-driven, pointing to a code, config, or infrastructure change.`;
+    }
+  }
+
+  let charClause = "";
+  if (errorMetrics.length > 0 && latencyMetrics.length > 0) {
+    charClause = `Both error rates (${errorMetrics.slice(0, 2).map(m => m.label).join(", ")}) and latency indicators (${latencyMetrics.slice(0, 2).map(m => m.label).join(", ")}) are elevated simultaneously — full degradation event, not an isolated symptom.`;
+  } else if (errorMetrics.length > 0) {
+    charClause = `The degradation is error-driven (${errorMetrics.map(m => m.label).join(", ")} elevated, latency stable) — consistent with a failure injection or bad release rather than resource saturation.`;
+  } else if (latencyMetrics.length > 0) {
+    charClause = `The degradation is latency-driven (${latencyMetrics.slice(0, 2).map(m => m.label).join(", ")} elevated, errors stable) — consistent with resource saturation, timeout drift, or upstream slowness.`;
+  }
+
+  let breadthClause = "";
+  if (nonTrafficAll.length > 1 && elevatedNonTraffic.length > 0) {
+    const pct = Math.round(elevatedNonTraffic.length / nonTrafficAll.length * 100);
+    if (pct >= 67) {
+      breadthClause = `${elevatedNonTraffic.length} of ${nonTrafficAll.length} tracked signals are simultaneously elevated (${pct}%) — broad, systemic impact across most dimensions.`;
+    } else if (elevatedNonTraffic.length >= 2) {
+      breadthClause = `${elevatedNonTraffic.length} of ${nonTrafficAll.length} signals are elevated — localized degradation affecting multiple but not all dimensions.`;
+    } else {
+      breadthClause = `Only 1 of ${nonTrafficAll.length} signals is elevated — a narrow, isolated issue rather than a systemic event.`;
+    }
+  }
+
+  let firstFireClause = "";
+  if (worstZ >= 0.75 && usableDetails.length > 1) {
+    let epStart = worstIdx;
+    for (let i = worstIdx - 1; i >= 0; i--) {
+      if ((usable[i] ?? 0) >= HOT_THRESH) epStart = i;
+      else break;
+    }
+    if (epStart < worstIdx) {
+      const startMetrics = (usableDetails[epStart]?.metrics ?? []).filter(m => !m.isTraffic && m.zScore > 0.5).sort((a, b) => b.zScore - a.zScore);
+      if (startMetrics.length > 0) {
+        firstFireClause = `${startMetrics[0].label} was the earliest signal to breach threshold (bucket ${epStart + 1}), preceding the worst bucket by ${worstIdx - epStart} interval${worstIdx - epStart !== 1 ? "s" : ""} — the most likely leading indicator.`;
+      }
+    } else if (perfMetrics.length > 0) {
+      firstFireClause = `The worst bucket is also the episode onset — degradation appeared abruptly rather than building gradually.`;
+    }
+  }
+
+  const rootCauseNarrative = [trafficClause, charClause, breadthClause, firstFireClause].filter(Boolean).join(" ");
+
+  // ── Bonus: SLO breach estimate ──────────────────────────────────────────
+  const sloBreachMinutes = criticalBuckets * (intervalMinutes ?? 5);
+
+  // ── Bonus: Cascade detection ────────────────────────────────────────────
+  // Within each episode, check if the top-elevated metric shifts across buckets (A→B→C pattern)
+  const cascades: HotnessAnalysis["cascades"] = [];
+  for (const ep of episodeList) {
+    if (ep.bucketCount < 2) continue;
+    const topSeq: string[] = [];
+    for (let k = 0; k < ep.bucketCount; k++) {
+      const ms = (usableDetails[ep.startIdx + k]?.metrics ?? [])
+        .filter(m => !m.isTraffic && m.zScore > 0.75)
+        .sort((a, b) => b.zScore - a.zScore);
+      topSeq.push(ms[0]?.label ?? "");
+    }
+    const uniqueOrdered: string[] = [];
+    for (const lbl of topSeq) {
+      if (lbl && uniqueOrdered[uniqueOrdered.length - 1] !== lbl) uniqueOrdered.push(lbl);
+    }
+    if (uniqueOrdered.length >= 2) {
+      cascades.push({ trigger: uniqueOrdered[0], affected: uniqueOrdered.slice(1), bucketSpan: ep.bucketCount });
+    }
+  }
+
+  // ── Bonus: Traffic efficiency ratio ────────────────────────────────────
+  let trafficEfficiencySignal = "";
+  const worstTrafficM = worstMetrics.find(m => m.isTraffic);
+  const bestTrafficM = bestMetrics.find(m => m.isTraffic);
+  if (worstTrafficM && bestTrafficM && worstTrafficM.value > 0 && bestTrafficM.value > 0) {
+    const worstErrM = worstMetrics.find(m => !m.isTraffic && (m.label.toLowerCase().includes("error") || m.label.toLowerCase().includes("err")));
+    const bestErrM = bestMetrics.find(m => !m.isTraffic && (m.label.toLowerCase().includes("error") || m.label.toLowerCase().includes("err")));
+    if (worstErrM && bestErrM && bestErrM.value > 0) {
+      const worstRate = worstErrM.value / worstTrafficM.value;
+      const bestRate = bestErrM.value / bestTrafficM.value;
+      if (worstRate > bestRate * 1.5) {
+        trafficEfficiencySignal = `${worstErrM.label}-per-request is ${(worstRate / bestRate).toFixed(1)}× higher at peak vs. baseline — the error rate scales worse than volume, indicating degrading efficiency under load.`;
+      }
+    }
+  }
+
+  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, alertPattern, recommendations, insights, episodeCount, longestEpisodeBuckets, avgRecoveryBuckets, driftSlope, driftLabel, rootCauseNarrative, sloBreachMinutes, cascades, trafficEfficiencySignal };
 }
 
 // ─── Button ────────────────────────────────────────────────────────────────
@@ -244,11 +349,20 @@ export function HotnessAssistButton({ onClick }: { onClick: () => void }) {
 
 // ─── Animated summary text ─────────────────────────────────────────────────
 
-function AnimatedSummary({ text }: { text: string }) {
+function AnimatedSummary({ text, onDone }: { text: string; onDone?: () => void }) {
   const [displayed, setDisplayed] = useState("");
   const lastText = useRef("");
-  useEffect(() => { if (lastText.current !== text) { lastText.current = text; setDisplayed(""); } }, [text]);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  const calledDone = useRef(false);
   useEffect(() => {
+    if (lastText.current !== text) { lastText.current = text; setDisplayed(""); calledDone.current = false; }
+  }, [text]);
+  useEffect(() => {
+    if (text.length > 0 && displayed.length >= text.length) {
+      if (!calledDone.current) { calledDone.current = true; onDoneRef.current?.(); }
+      return;
+    }
     if (displayed.length >= text.length) return;
     const id = setTimeout(() => setDisplayed(text.slice(0, displayed.length + 3)), 14);
     return () => clearTimeout(id);
@@ -260,6 +374,39 @@ function AnimatedSummary({ text }: { text: string }) {
       {!done && <span style={{ color: "#FF8C42", animation: "ha-blink 0.8s step-end infinite" }}>|</span>}
       <style>{`@keyframes ha-blink { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
     </div>
+  );
+}
+
+function AnimatedNarrative({ text, ready }: { text: string; ready: boolean }) {
+  const [displayed, setDisplayed] = useState("");
+  const prevText = useRef(text);
+  useEffect(() => { if (prevText.current !== text) { prevText.current = text; setDisplayed(""); } }, [text]);
+  useEffect(() => {
+    if (!ready || displayed.length >= text.length) return;
+    const id = setTimeout(() => setDisplayed(text.slice(0, displayed.length + 3)), 14);
+    return () => clearTimeout(id);
+  }, [displayed, text, ready]);
+  if (!ready && !displayed) return null;
+  const done = displayed.length >= text.length;
+  return (
+    <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.75, marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,140,66,0.15)" }}>
+      {displayed}
+      {ready && !done && <span style={{ color: "#FF8C42", animation: "ha-blink 0.8s step-end infinite" }}>|</span>}
+    </div>
+  );
+}
+
+function AnimatedAnalysisSection({ summary, narrative }: { summary: string; narrative: string }) {
+  const [summaryDone, setSummaryDone] = useState(false);
+  const prevSummary = useRef(summary);
+  useEffect(() => {
+    if (prevSummary.current !== summary) { prevSummary.current = summary; setSummaryDone(false); }
+  }, [summary]);
+  return (
+    <>
+      <AnimatedSummary text={summary} onDone={() => setSummaryDone(true)} />
+      {narrative && <AnimatedNarrative text={narrative} ready={summaryDone} />}
+    </>
   );
 }
 
@@ -405,6 +552,30 @@ function CommonTable({ metrics1, metrics2, label1, label2, title, mode }: {
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Section layout helpers ────────────────────────────────────────────────
+
+function SectionHeader({ icon, label, color }: { icon: string; label: string; color?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 17 }}>{icon}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: color ?? "rgba(255,255,255,0.88)", letterSpacing: 0.2 }}>{label}</span>
+    </div>
+  );
+}
+
+function Section({ children, accent }: { children: React.ReactNode; accent?: string }) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.025)",
+      border: `1px solid ${accent ? accent + "30" : "rgba(255,255,255,0.09)"}`,
+      borderRadius: 12,
+      padding: "14px 16px",
+    }}>
+      {children}
     </div>
   );
 }
@@ -579,7 +750,7 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
 }
 
 export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, problems, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
-  const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel);
+  const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel, intervalMinutes);
   const hasTwoWorst = analysis.worst2Idx !== analysis.worstIdx;
   const hasTwoBest  = analysis.best2Idx  !== analysis.bestIdx;
 
@@ -670,71 +841,108 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
     const burstSub = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Appears self-resolved" : "No elevated buckets";
 
     const insHtml = analysis.insights.map(ins =>
-      `<div style="margin-bottom:7px;padding:8px 12px;border-radius:6px;border-left:3px solid ${INSIGHT_COLORS[ins.severity]};background:rgba(255,255,255,0.03)"><span style="font-size:11px;font-weight:700;opacity:0.55;margin-right:6px">${ins.severity.toUpperCase()}</span>${ins.icon} ${ins.text}</div>`
+      `<div style="margin-bottom:7px;padding:8px 12px;border-radius:8px;border-left:3px solid ${INSIGHT_COLORS[ins.severity]};background:rgba(255,255,255,0.03)">${ins.icon} <span style="font-size:11px;font-weight:700;opacity:0.55;margin-right:6px">${ins.severity.toUpperCase()}</span>${ins.text}</div>`
     ).join("");
 
-    const recsHtml = analysis.recommendations.length > 0
-      ? `<div class="section-label">Recommendations</div>` +
-        analysis.recommendations.map(rec => {
-          const rc = rec.impact === "high" ? "#FF3D9A" : rec.impact === "medium" ? "#FFF04D" : "#4589FF";
-          return `<div style="margin-bottom:7px;padding:8px 12px;border-radius:6px;border-left:3px solid ${rc};background:rgba(255,255,255,0.03)"><span style="font-size:11px;font-weight:700;color:${rc};margin-right:8px;text-transform:uppercase">${rec.impact}</span>${rec.text}</div>`;
-        }).join("")
-      : "";
+    const recsBodyHtml = analysis.recommendations.map(rec => {
+      const rc = rec.impact === "high" ? "#FF3D9A" : rec.impact === "medium" ? "#FFF04D" : "#4589FF";
+      return `<div style="margin-bottom:7px;padding:8px 12px;border-radius:8px;border-left:3px solid ${rc};background:rgba(255,255,255,0.03)"><span style="font-size:11px;font-weight:700;color:${rc};margin-right:8px;text-transform:uppercase">${rec.impact}</span>${rec.text}</div>`;
+    }).join("");
 
-    const davisHtml = problems && problems.count > 0
-      ? `<div class="page-break"></div><div class="section-label">⚠️ Active Davis Problems · ${problems.count} Open</div>` +
-        problems.titles.slice(0, 5).map(t => `<div style="margin-bottom:5px;padding:8px 11px;background:rgba(255,7,58,0.07);border:1px solid rgba(255,7,58,0.25);border-radius:7px;font-size:12px">🔴 ${t}</div>`).join("") +
-        (problems.count > 5 ? `<div style="font-size:11px;opacity:0.4;padding:4px 11px">+ ${problems.count - 5} more open problem${problems.count - 5 !== 1 ? "s" : ""}</div>` : "")
-      : "";
+    const epColor = analysis.episodeCount === 0 ? "#10B981" : analysis.episodeCount === 1 ? "#FFF04D" : analysis.episodeCount <= 3 ? "#FF3D9A" : "#E00000";
+    const recLabel = analysis.episodeCount === 0 ? "N/A" : analysis.avgRecoveryBuckets <= 1 ? "Rapid" : analysis.avgRecoveryBuckets <= 3 ? "Fast" : analysis.avgRecoveryBuckets <= 6 ? "Moderate" : "Slow";
+    const recColor = analysis.episodeCount === 0 ? "#888" : analysis.avgRecoveryBuckets <= 1 ? "#10B981" : analysis.avgRecoveryBuckets <= 3 ? "#10B981" : analysis.avgRecoveryBuckets <= 6 ? "#FFF04D" : "#E00000";
+    const driftColor = analysis.driftLabel === "worsening" ? "#E00000" : analysis.driftLabel === "improving" ? "#10B981" : "#888";
+    const corrPairsForPdf = (() => {
+      if (bucketDetails.length < 3) return [];
+      const lset = new Set<string>();
+      for (const bd of bucketDetails) { for (const m of bd.metrics) { if (!m.isTraffic) lset.add(m.label); } }
+      const lbls = [...lset];
+      if (lbls.length < 2) return [];
+      type PP = { a: string; b: string; coCount: number; aCount: number; rate: number };
+      const pp: PP[] = [];
+      for (let ci = 0; ci < lbls.length; ci++) {
+        for (let cj = ci + 1; cj < lbls.length; cj++) {
+          const ca = lbls[ci], cb = lbls[cj]; let coCount = 0, aCount = 0;
+          for (const bd of bucketDetails) {
+            const za = bd.metrics.find(m => m.label === ca)?.zScore ?? 0;
+            const zb = bd.metrics.find(m => m.label === cb)?.zScore ?? 0;
+            if (za >= 0.75) { aCount++; if (zb >= 0.75) coCount++; }
+          }
+          if (aCount > 0 && coCount > 0) pp.push({ a: ca, b: cb, coCount, aCount, rate: coCount / aCount });
+        }
+      }
+      return pp.sort((x, y) => y.coCount - x.coCount || y.rate - x.rate).slice(0, 5);
+    })();
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Hotness Assist Report — NavigatorIQ</title>
 <style>
   @media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } @page { margin: 0.6in; size: A4; } .no-print { display: none !important; } .page-break { page-break-before: always; } }
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e0e0e0;background:#0f1428;margin:0 auto;padding:32px;max-width:900px;line-height:1.5;}
   h1{margin:0 0 4px;font-size:22px;color:#FF8C42;}
-  .section-label{font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin:20px 0 8px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:5px;}
+  .sh{font-size:14px;font-weight:800;color:rgba(255,255,255,0.88);margin:0 0 12px;}
+  .sc{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:14px 16px;margin-bottom:16px;}
   .toolbar{text-align:right;margin-bottom:16px;}.toolbar button{background:#FF8C42;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:13px;cursor:pointer;}
-  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}
-  .kpi-tile{background:rgba(128,128,128,0.08);border:1px solid rgba(128,128,128,0.15);border-radius:8px;padding:10px 14px;text-align:center;}
-  .card-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+  .kg{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+  .kt{background:rgba(128,128,128,0.08);border:1px solid rgba(128,128,128,0.15);border-radius:8px;padding:10px 14px;text-align:center;}
+  .cg{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .card{border-radius:8px;padding:12px 14px;}
   .page-break{page-break-before:always;margin-top:20px;}
-  table{border-collapse:collapse;width:100%;margin-bottom:20px;}td,th{padding:6px 10px;border-bottom:1px solid rgba(128,128,128,0.08);font-size:13px;}th{text-align:left;font-size:10px;opacity:0.5;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;}
+  table{border-collapse:collapse;width:100%;margin-bottom:16px;}td,th{padding:6px 10px;border-bottom:1px solid rgba(128,128,128,0.08);font-size:13px;}th{text-align:left;font-size:10px;opacity:0.5;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;}
 </style></head><body>
-<div class="toolbar no-print"><button onclick="window.print()">Print / Save PDF</button></div>
+
 <h1>🔥 Hotness Assist Report — NavigatorIQ</h1>
 <div style="font-size:11px;color:#888;margin-bottom:20px">${analysis.usableCount} buckets analyzed · ${analysis.hotBuckets} elevated · ${analysis.criticalBuckets} critical | Generated: ${ts}</div>
 
-<div class="section-label">Summary</div>
-<p style="font-size:13px;line-height:1.7;margin-top:0">${analysis.summary}</p>
-
-<div class="kpi-grid">
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}/${analysis.usableCount}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:${analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981"}">${analysis.criticalBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Critical Spikes</div></div>
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
-  <div class="kpi-tile"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
+<div class="sc" style="border-color:rgba(255,140,66,0.3)">
+  <div class="sh" style="color:#FF8C42">🔥 Hotness Assist Analysis</div>
+  <p style="font-size:13px;line-height:1.75;margin:0;color:rgba(255,255,255,0.82)">${analysis.summary}</p>
+  ${analysis.rootCauseNarrative ? `<div style="font-size:13px;line-height:1.75;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,140,66,0.15);color:rgba(255,255,255,0.7)">${analysis.rootCauseNarrative}</div>` : ""}
 </div>
 
-<div class="section-label">Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)</div>
-${pdfSvg}
+<div class="kg">
+  <div class="kt"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}/${analysis.usableCount}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
+  <div class="kt"><div style="font-size:22px;font-weight:800;color:${analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981"}">${analysis.criticalBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Critical Spikes</div></div>
+  <div class="kt"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
+  <div class="kt"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
+</div>
 
-<div class="card-grid" style="margin-top:16px">
-  <div class="card" style="background:${patternColor}12;border:1px solid ${patternColor}40">
-    <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:6px">Pattern Analysis</div>
-    <div style="font-size:15px;font-weight:700;color:${patternColor}">${patternLabel}</div>
-    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:3px">${patternSub}</div>
-  </div>
-  <div class="card" style="background:${burstColor}12;border:1px solid ${burstColor}40">
-    <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:6px">Spike Duration</div>
-    <div style="font-size:15px;font-weight:700;color:${burstColor}">${burstLabel}</div>
-    <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:3px">${burstSub}</div>
+<div class="sc">
+  <div class="sh">📊 Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)</div>
+  ${pdfSvg}
+</div>
+
+<div class="sc">
+  <div class="sh">⚡ Spike Behavior</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+    <div style="background:${epColor}0d;border:1px solid ${epColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Spike Episodes</div><div style="font-size:18px;font-weight:800;color:${epColor}">${analysis.episodeCount}</div><div style="font-size:10px;opacity:0.6">${analysis.episodeCount === 0 ? "No hot buckets" : `Longest: ${analysis.longestEpisodeBuckets} bucket${analysis.longestEpisodeBuckets !== 1 ? "s" : ""}`}</div></div>
+    <div style="background:${recColor}0d;border:1px solid ${recColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Recovery Speed</div><div style="font-size:18px;font-weight:800;color:${recColor}">${recLabel}</div><div style="font-size:10px;opacity:0.6">${analysis.episodeCount === 0 ? "—" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div></div>
+    <div style="background:${driftColor}0d;border:1px solid ${driftColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Drift Trend</div><div style="font-size:18px;font-weight:800;color:${driftColor}">${analysis.driftLabel.charAt(0).toUpperCase() + analysis.driftLabel.slice(1)}</div><div style="font-size:10px;opacity:0.6">${analysis.driftSlope >= 0 ? "+" : ""}${analysis.driftSlope.toFixed(3)}Z/bucket</div></div>
   </div>
 </div>
+
+<div class="sc">
+  <div class="sh">🔍 Pattern Analysis</div>
+  <div class="cg">
+    <div class="card" style="background:${patternColor}12;border:1px solid ${patternColor}40">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:6px">Pattern</div>
+      <div style="font-size:15px;font-weight:700;color:${patternColor}">${patternLabel}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:3px">${patternSub}</div>
+    </div>
+    <div class="card" style="background:${burstColor}12;border:1px solid ${burstColor}40">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.3);margin-bottom:6px">Spike Duration</div>
+      <div style="font-size:15px;font-weight:700;color:${burstColor}">${burstLabel}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:3px">${burstSub}</div>
+    </div>
+  </div>
+</div>
+
+${corrPairsForPdf.length > 0 ? `<div class="sc"><div class="sh">🔗 Cross-Metric Correlation</div><table><thead><tr><th>Metric A</th><th>Metric B</th><th>Co-hot</th><th>Rate</th></tr></thead><tbody>${corrPairsForPdf.map(p => { const cc = p.rate >= 0.8 ? "#FF073A" : p.rate >= 0.5 ? "#FF3D9A" : "#FFF04D"; return `<tr><td style="font-weight:600">${p.a}</td><td style="font-weight:600">${p.b}</td><td style="font-weight:700;color:${cc}">${p.coCount}</td><td style="font-weight:700;color:${cc}">${Math.round(p.rate * 100)}%</td></tr>`; }).join("")}</tbody></table><div style="font-size:10px;color:rgba(255,255,255,0.3)">Rate = % of buckets where Metric A is elevated that Metric B is also elevated</div></div>` : ""}
 
 ${analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 ? `
-<div class="page-break"></div>
-<div class="section-label">What's Different — Worst #1 vs Best #1</div>
-<div class="card-grid">
+<div class="sc" style="border-color:rgba(255,7,58,0.2)">
+<div class="sh">⚖️ What's Different — Worst #1 vs Best #1</div>
+<div class="cg" style="margin-bottom:12px">
   <div class="card" style="background:rgba(255,7,58,0.06);border:1px solid rgba(255,7,58,0.2)">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#FF073A;margin-bottom:8px">▲ Worst #1 — Bucket ${analysis.worstIdx + 1} (Z=${analysis.worstZ.toFixed(2)})</div>
     <table><tbody>${metricTableRows(analysis.worstMetrics)}</tbody></table>
@@ -744,20 +952,13 @@ ${analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 ? `
     <table><tbody>${metricTableRows(analysis.bestMetrics)}</tbody></table>
   </div>
 </div>
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-  <thead><tr>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;opacity:0.5;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Metric</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#10B981">Best #1</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#FF073A">Worst #1</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Δ Z-score</th>
-  </tr></thead>
-  <tbody>${deltaTableRows}</tbody>
-</table>` : ""}
+<table><thead><tr><th>Metric</th><th style="color:#10B981">Best #1</th><th style="color:#FF073A">Worst #1</th><th>Δ Z-score</th></tr></thead><tbody>${deltaTableRows}</tbody></table>
+</div>` : ""}
 
 ${hasTwoWorst ? `
-<div class="page-break"></div>
-<div class="section-label">Common Bad Signals — Worst #1 vs Worst #2</div>
-<div class="card-grid">
+<div class="sc" style="border-color:rgba(255,61,154,0.2)">
+<div class="sh" style="color:#FF3D9A">🔴 Common Bad Signals — Worst #1 vs Worst #2</div>
+<div class="cg" style="margin-bottom:12px">
   <div class="card" style="background:rgba(255,7,58,0.06);border:1px solid rgba(255,7,58,0.2)">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#FF073A;margin-bottom:8px">▲ Worst #1 — Bucket ${analysis.worstIdx + 1} (Z=${analysis.worstZ.toFixed(2)})</div>
     <table><tbody>${metricTableRows(analysis.worstMetrics)}</tbody></table>
@@ -767,20 +968,13 @@ ${hasTwoWorst ? `
     <table><tbody>${metricTableRows(analysis.worst2Metrics)}</tbody></table>
   </div>
 </div>
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-  <thead><tr>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;opacity:0.5;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Metric</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#FF073A">Worst #1</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#FF3D9A">Worst #2</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Pattern</th>
-  </tr></thead>
-  <tbody>${commonTableRows(analysis.worstMetrics, analysis.worst2Metrics, "worst")}</tbody>
-</table>` : ""}
+<table><thead><tr><th>Metric</th><th style="color:#FF073A">Worst #1</th><th style="color:#FF3D9A">Worst #2</th><th>Pattern</th></tr></thead><tbody>${commonTableRows(analysis.worstMetrics, analysis.worst2Metrics, "worst")}</tbody></table>
+</div>` : ""}
 
 ${hasTwoBest ? `
-<div class="page-break"></div>
-<div class="section-label">Common Good Signals — Best #1 vs Best #2</div>
-<div class="card-grid">
+<div class="sc" style="border-color:rgba(16,185,129,0.2)">
+<div class="sh" style="color:#10B981">✅ Common Good Signals — Best #1 vs Best #2</div>
+<div class="cg" style="margin-bottom:12px">
   <div class="card" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2)">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#10B981;margin-bottom:8px">▽ Best #1 — Bucket ${analysis.bestIdx + 1} (Z=${analysis.bestZ.toFixed(2)})</div>
     <table><tbody>${metricTableRows(analysis.bestMetrics)}</tbody></table>
@@ -790,25 +984,17 @@ ${hasTwoBest ? `
     <table><tbody>${metricTableRows(analysis.best2Metrics)}</tbody></table>
   </div>
 </div>
-<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-  <thead><tr>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;opacity:0.5;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Metric</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#10B981">Best #1</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left;color:#34D399">Best #2</th>
-    <th style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid rgba(128,128,128,0.2);text-align:left">Pattern</th>
-  </tr></thead>
-  <tbody>${commonTableRows(analysis.bestMetrics, analysis.best2Metrics, "best")}</tbody>
-</table>` : ""}
+<table><thead><tr><th>Metric</th><th style="color:#10B981">Best #1</th><th style="color:#34D399">Best #2</th><th>Pattern</th></tr></thead><tbody>${commonTableRows(analysis.bestMetrics, analysis.best2Metrics, "best")}</tbody></table>
+</div>` : ""}
 
-<div class="page-break"></div>
-<div class="section-label">Insights</div>
-${insHtml}
-${recsHtml}
-${davisHtml}
+${analysis.insights.length > 0 ? `<div class="sc" style="border-color:rgba(69,137,255,0.25)"><div class="sh" style="color:#4589FF">💡 Insights</div>${insHtml}</div>` : ""}
+${analysis.recommendations.length > 0 ? `<div class="sc" style="border-color:rgba(255,61,154,0.25)"><div class="sh" style="color:#FF3D9A">🎯 Recommendations</div>${recsBodyHtml}</div>` : ""}
+${analysis.sloBreachMinutes > 0 || analysis.cascades.length > 0 || analysis.trafficEfficiencySignal ? `<div class="sc" style="border-color:rgba(255,131,43,0.3)"><div class="sh" style="color:#FF832B">🧠 Advanced Signals</div>${analysis.sloBreachMinutes > 0 ? `<div style="margin-bottom:7px;padding:8px 12px;border-radius:8px;background:rgba(255,7,58,0.06);border:1px solid rgba(255,7,58,0.2)"><span style="font-size:11px;font-weight:700;color:#FF073A;margin-right:8px;text-transform:uppercase">SLO Breach</span>~${analysis.sloBreachMinutes} min of critical-level degradation detected this session.</div>` : ""}${analysis.cascades.map(c => `<div style="margin-bottom:7px;padding:8px 12px;border-radius:8px;background:rgba(255,131,43,0.06);border:1px solid rgba(255,131,43,0.25)"><span style="font-size:11px;font-weight:700;color:#FF832B;margin-right:8px;text-transform:uppercase">Cascade</span><strong style="color:#FF832B">${c.trigger}</strong> fired first, followed by <strong style="color:#FFF04D">${c.affected.join(" → ")}</strong> across ${c.bucketSpan} bucket${c.bucketSpan !== 1 ? "s" : ""}.</div>`).join("")}${analysis.trafficEfficiencySignal ? `<div style="padding:8px 12px;border-radius:8px;background:rgba(255,61,154,0.06);border:1px solid rgba(255,61,154,0.2)"><span style="font-size:11px;font-weight:700;color:#FF3D9A;margin-right:8px;text-transform:uppercase">Efficiency</span>${analysis.trafficEfficiencySignal}</div>` : ""}</div>` : ""}
+${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255,7,58,0.3)"><div class="sh" style="color:#FF073A">⚠️ Active Davis Problems · ${problems.count} Open</div>${problems.titles.slice(0, 5).map(t => `<div style="margin-bottom:5px;padding:8px 11px;background:rgba(255,7,58,0.07);border:1px solid rgba(255,7,58,0.25);border-radius:7px;font-size:12px">🔴 ${t}</div>`).join("")}${problems.count > 5 ? `<div style="font-size:11px;opacity:0.4;padding:4px 11px">+ ${problems.count - 5} more open problem${problems.count - 5 !== 1 ? "s" : ""}</div>` : ""}</div>` : ""}
 </body></html>`;
     const win = window.open("", "_blank");
-    if (win) { win.document.write(html); win.document.close(); }
-  }, [analysis, hasTwoWorst, hasTwoBest, heatScores, bucketLabel, problems]);
+    if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 400); }
+  }, [analysis, hasTwoWorst, hasTwoBest, heatScores, bucketDetails, bucketLabel, problems]);
 
   // Per-user "installed apps" list — overrides probe results for reliable hiding of GitHub links
   const installedAppsState = useUserAppState({ key: INSTALLED_APPS_KEY });
@@ -904,17 +1090,17 @@ ${davisHtml}
           ))}
         </div>
 
-        {/* Summary */}
-        <div style={{ background: "linear-gradient(135deg, rgba(255,120,30,0.07) 0%, rgba(255,60,0,0.04) 100%)", border: "1px solid rgba(255,120,30,0.2)", borderLeft: "3px solid #FF8C42", borderRadius: "0 10px 10px 0", padding: "12px 16px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#FF8C42", marginBottom: 8 }}>🔥 Hotness Assist Analysis</div>
-          <AnimatedSummary text={analysis.summary} />
-        </div>
+        {/* Analysis */}
+        <Section accent="#FF8C42">
+          <SectionHeader icon="🔥" label="Hotness Assist Analysis" color="#FF8C42" />
+          <AnimatedAnalysisSection summary={analysis.summary} narrative={analysis.rootCauseNarrative} />
+        </Section>
 
         {/* Mini chart */}
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Hotness Timeline · {analysis.usableCount} {bucketLabel} buckets analyzed (last excluded)</div>
+        <Section>
+          <SectionHeader icon="📊" label={`Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)`} />
           <MiniHotnessChart scores={heatScores.slice(0, -1)} worstIdx={analysis.worstIdx} worst2Idx={analysis.worst2Idx} bestIdx={analysis.bestIdx} best2Idx={analysis.best2Idx} />
-        </div>
+        </Section>
 
         {/* Pattern Analysis + Spike Duration */}
         {(() => {
@@ -925,18 +1111,21 @@ ${davisHtml}
           const burstLabel = analysis.burstType === "chronic" ? `Chronic (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "sustained" ? `Sustained (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "transient" ? `Transient (${analysis.maxConsecutiveHot} consecutive)` : "Stable";
           const burstSubLabel = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Appears self-resolved" : "No elevated buckets";
           return (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div style={{ background: `${patternColor}12`, border: `1px solid ${patternColor}40`, borderRadius: 10, padding: "12px 16px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Pattern Analysis</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: patternColor }}>{patternLabel}</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{patternSubLabel}</div>
+            <Section>
+              <SectionHeader icon="🔍" label="Pattern Analysis" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ background: `${patternColor}12`, border: `1px solid ${patternColor}40`, borderRadius: 10, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Pattern</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: patternColor }}>{patternLabel}</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{patternSubLabel}</div>
+                </div>
+                <div style={{ background: `${burstColor}12`, border: `1px solid ${burstColor}40`, borderRadius: 10, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Spike Duration</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: burstColor }}>{burstLabel}</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{burstSubLabel}</div>
+                </div>
               </div>
-              <div style={{ background: `${burstColor}12`, border: `1px solid ${burstColor}40`, borderRadius: 10, padding: "12px 16px" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>Spike Duration</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: burstColor }}>{burstLabel}</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>{burstSubLabel}</div>
-              </div>
-            </div>
+            </Section>
           );
         })()}
 
@@ -948,30 +1137,32 @@ ${davisHtml}
           const driftColor = analysis.driftLabel === "worsening" ? "#E00000" : analysis.driftLabel === "improving" ? "#10B981" : "#888";
           const cs: React.CSSProperties = { flex: 1, borderRadius: 8, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 2 };
           return (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <div style={{ ...cs, background: `${epColor}0d`, border: `1px solid ${epColor}30` }}>
-                <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Spike Episodes</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: epColor }}>{analysis.episodeCount}</div>
-                <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "No hot buckets" : `Longest: ${analysis.longestEpisodeBuckets} bucket${analysis.longestEpisodeBuckets !== 1 ? "s" : ""}`}</div>
+            <Section>
+              <SectionHeader icon="⚡" label="Spike Behavior" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <div style={{ ...cs, background: `${epColor}0d`, border: `1px solid ${epColor}30` }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Spike Episodes</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: epColor }}>{analysis.episodeCount}</div>
+                  <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "No hot buckets" : `Longest: ${analysis.longestEpisodeBuckets} bucket${analysis.longestEpisodeBuckets !== 1 ? "s" : ""}`}</div>
+                </div>
+                <div style={{ ...cs, background: `${recColor}0d`, border: `1px solid ${recColor}30` }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Recovery Speed</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: recColor }}>{recLabel}</div>
+                  <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "—" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div>
+                </div>
+                <div style={{ ...cs, background: `${driftColor}0d`, border: `1px solid ${driftColor}30` }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Drift Trend</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: driftColor }}>{analysis.driftLabel.charAt(0).toUpperCase() + analysis.driftLabel.slice(1)}</div>
+                  <div style={{ fontSize: 10, opacity: 0.6 }}>{`${analysis.driftSlope >= 0 ? "+" : ""}${analysis.driftSlope.toFixed(3)}Z/bucket`}</div>
+                </div>
               </div>
-              <div style={{ ...cs, background: `${recColor}0d`, border: `1px solid ${recColor}30` }}>
-                <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Recovery Speed</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: recColor }}>{recLabel}</div>
-                <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "—" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div>
-              </div>
-              <div style={{ ...cs, background: `${driftColor}0d`, border: `1px solid ${driftColor}30` }}>
-                <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Drift Trend</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: driftColor }}>{analysis.driftLabel.charAt(0).toUpperCase() + analysis.driftLabel.slice(1)}</div>
-                <div style={{ fontSize: 10, opacity: 0.6 }}>{`${analysis.driftSlope >= 0 ? "+" : ""}${analysis.driftSlope.toFixed(3)}Z/bucket`}</div>
-              </div>
-            </div>
+            </Section>
           );
         })()}
 
         {/* Cross-metric correlation */}
         {(() => {
           if (bucketDetails.length < 3) return null;
-          // Build co-elevation map: for each metric pair, count buckets where both are elevated
           const labelSet = new Set<string>();
           for (const bd of bucketDetails) {
             for (const m of bd.metrics) { if (!m.isTraffic) labelSet.add(m.label); }
@@ -999,10 +1190,8 @@ ${davisHtml}
           if (top.length === 0) return null;
 
           return (
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
-                Cross-Metric Correlation — co-elevation pairs
-              </div>
+            <Section>
+              <SectionHeader icon="🔗" label="Cross-Metric Correlation" />
               <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.07)" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 0 }}>
                   {[
@@ -1028,14 +1217,14 @@ ${davisHtml}
                 </div>
               </div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.28)", marginTop: 5 }}>Rate = % of buckets where Metric A elevated that Metric B is also elevated</div>
-            </div>
+            </Section>
           );
         })()}
 
         {/* Comparison Group 1: What's Different — Worst #1 vs Best #1 */}
         {analysis.worstMetrics.length > 0 && analysis.bestMetrics.length > 0 && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>What's Different — Worst #1 vs Best #1</div>
+          <Section accent="#FF073A">
+            <SectionHeader icon="⚖️" label="What's Different — Worst #1 vs Best #1" />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
@@ -1050,13 +1239,13 @@ ${davisHtml}
               worstMetrics={analysis.worstMetrics} bestMetrics={analysis.bestMetrics}
               worstLabel={`Worst #1 (B${analysis.worstIdx + 1})`} bestLabel={`Best #1 (B${analysis.bestIdx + 1})`}
             />
-          </div>
+          </Section>
         )}
 
         {/* Comparison Group 2: Common Bad Signals — Worst #1 vs Worst #2 */}
         {hasTwoWorst && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Common Bad Signals — Worst #1 vs Worst #2</div>
+          <Section accent="#FF3D9A">
+            <SectionHeader icon="🔴" label="Common Bad Signals — Worst #1 vs Worst #2" color="#FF3D9A" />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div style={{ background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#FF073A", marginBottom: 10 }}>▲ Worst #1 — Bucket {analysis.worstIdx + 1} (Z={analysis.worstZ.toFixed(2)})</div>
@@ -1072,13 +1261,13 @@ ${davisHtml}
               label1={`Worst #1 (B${analysis.worstIdx + 1})`} label2={`Worst #2 (B${analysis.worst2Idx + 1})`}
               title="" mode="worst"
             />
-          </div>
+          </Section>
         )}
 
         {/* Comparison Group 3: Common Good Signals — Best #1 vs Best #2 */}
         {hasTwoBest && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Common Good Signals — Best #1 vs Best #2</div>
+          <Section accent="#10B981">
+            <SectionHeader icon="✅" label="Common Good Signals — Best #1 vs Best #2" color="#10B981" />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#10B981", marginBottom: 10 }}>▽ Best #1 — Bucket {analysis.bestIdx + 1} (Z={analysis.bestZ.toFixed(2)})</div>
@@ -1094,26 +1283,26 @@ ${davisHtml}
               label1={`Best #1 (B${analysis.bestIdx + 1})`} label2={`Best #2 (B${analysis.best2Idx + 1})`}
               title="" mode="best"
             />
-          </div>
+          </Section>
         )}
 
         {/* Insights */}
         {analysis.insights.length > 0 && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Insights</div>
+          <Section accent="#4589FF">
+            <SectionHeader icon="💡" label="Insights" color="#4589FF" />
             {analysis.insights.map((ins, i) => (
               <div key={i} style={{ display: "flex", gap: 10, padding: "9px 12px", marginBottom: 6, background: `${INSIGHT_COLORS[ins.severity]}08`, border: `1px solid ${INSIGHT_COLORS[ins.severity]}25`, borderRadius: 8 }}>
                 <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>{ins.icon}</span>
                 <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)", lineHeight: 1.55 }}>{ins.text}</span>
               </div>
             ))}
-          </div>
+          </Section>
         )}
 
         {/* Recommendations */}
         {analysis.recommendations.length > 0 && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Recommendations</div>
+          <Section accent="#FF3D9A">
+            <SectionHeader icon="🎯" label="Recommendations" color="#FF3D9A" />
             {analysis.recommendations.map((rec, i) => {
               const impactColor = rec.impact === "high" ? "#FF3D9A" : rec.impact === "medium" ? "#FFF04D" : "#4589FF";
               return (
@@ -1123,35 +1312,42 @@ ${davisHtml}
                 </div>
               );
             })}
-          </div>
+          </Section>
         )}
 
-        {/* Davis Problems */}
-        {problems && problems.count > 0 && (
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
-              ⚠️ Active Davis Problems · {problems.count} Open
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {problems.titles.slice(0, 5).map((title, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 11px", background: "rgba(255,7,58,0.07)", border: "1px solid rgba(255,7,58,0.25)", borderRadius: 7 }}>
-                  <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>🔴</span>
-                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>{title}</span>
+        {/* Advanced Signals: SLO breach, cascade, traffic efficiency */}
+        {(analysis.sloBreachMinutes > 0 || analysis.cascades.length > 0 || analysis.trafficEfficiencySignal) && (
+          <Section accent="#FF832B">
+            <SectionHeader icon="🧠" label="Advanced Signals" color="#FF832B" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {analysis.sloBreachMinutes > 0 && (
+                <div style={{ padding: "9px 12px", background: "rgba(255,7,58,0.06)", border: "1px solid rgba(255,7,58,0.2)", borderRadius: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#FF073A", marginRight: 8, textTransform: "uppercase" }}>SLO Breach</span>
+                  <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)" }}>~{analysis.sloBreachMinutes} min of critical-level degradation detected this session.</span>
+                </div>
+              )}
+              {analysis.cascades.map((c, i) => (
+                <div key={i} style={{ padding: "9px 12px", background: "rgba(255,131,43,0.06)", border: "1px solid rgba(255,131,43,0.25)", borderRadius: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#FF832B", marginRight: 8, textTransform: "uppercase" }}>Cascade</span>
+                  <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)" }}>
+                    <strong style={{ color: "#FF832B" }}>{c.trigger}</strong> fired first, followed by <strong style={{ color: "#FFF04D" }}>{c.affected.join(" → ")}</strong> across {c.bucketSpan} bucket{c.bucketSpan !== 1 ? "s" : ""} — signals propagated in sequence rather than simultaneously.
+                  </span>
                 </div>
               ))}
-              {problems.count > 5 && (
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", padding: "4px 11px" }}>
-                  + {problems.count - 5} more open problem{problems.count - 5 !== 1 ? "s" : ""}
+              {analysis.trafficEfficiencySignal && (
+                <div style={{ padding: "9px 12px", background: "rgba(255,61,154,0.06)", border: "1px solid rgba(255,61,154,0.2)", borderRadius: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#FF3D9A", marginRight: 8, textTransform: "uppercase" }}>Efficiency</span>
+                  <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)" }}>{analysis.trafficEfficiencySignal}</span>
                 </div>
               )}
             </div>
-          </div>
+          </Section>
         )}
 
         {/* Next Steps */}
         {steps.length >= 0 && heatMetrics && heatMetrics.length > 0 && (
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Next Steps</div>
+          <Section>
+            <SectionHeader icon="🗺️" label="Next Steps" />
             {steps.length === 0 ? (
               <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", padding: "8px 0" }}>
                 All heat metrics are within configured thresholds — no specific actions required.
@@ -1204,7 +1400,27 @@ ${davisHtml}
                 })}
               </div>
             )}
-          </div>
+          </Section>
+        )}
+
+        {/* Davis Problems — moved to bottom as contextual reference */}
+        {problems && problems.count > 0 && (
+          <Section accent="#FF073A">
+            <SectionHeader icon="⚠️" label={`Active Davis Problems · ${problems.count} Open`} color="#FF073A" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {problems.titles.slice(0, 5).map((title, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 11px", background: "rgba(255,7,58,0.07)", border: "1px solid rgba(255,7,58,0.25)", borderRadius: 7 }}>
+                  <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>🔴</span>
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>{title}</span>
+                </div>
+              ))}
+              {problems.count > 5 && (
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", padding: "4px 11px" }}>
+                  + {problems.count - 5} more open problem{problems.count - 5 !== 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          </Section>
         )}
       </div>
       {/* Resize handle */}

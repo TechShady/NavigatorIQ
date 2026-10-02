@@ -246,6 +246,7 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 200, criticalThreshold: 500, exploreAppPath: "dynatrace.experience.vitals" },
     { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "cls", warningThreshold: 0.1, criticalThreshold: 0.25, exploreAppPath: "dynatrace.experience.vitals" },
     { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector" },
+    { label: "Requests", metricKey: "dt.frontend.user_action.count", aggregation: "sum", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.experience.vitals" },
   ],
   network: [
     { label: "Bytes Sent", metricKey: "dt.process.network.bytes_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.bytes_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },

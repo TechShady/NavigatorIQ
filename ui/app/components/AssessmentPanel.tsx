@@ -187,6 +187,11 @@ function BucketDiagPanel({
           const barColor = metricColor(m.label, m.value, m.zScore, m.isTraffic);
           const barW = Math.min(100, Math.abs(m.zScore) / 3 * 100);
           const canExplore = !m.isTraffic && !!m.metricKey;
+          const hasAppLink = !!m.exploreAppPath;
+          const openAppLink = () => {
+            try { window.open(`${getEnvironmentUrl()}/ui/apps/${m.exploreAppPath}`, "_blank"); }
+            catch { window.open(`/ui/apps/${m.exploreAppPath}`, "_blank"); }
+          };
           return (
             <div key={i} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
@@ -197,6 +202,13 @@ function BucketDiagPanel({
                       onClick={() => setExploreMetric({ key: m.metricKey!, label: m.label })}
                       title={"Follow the red " + String.fromCharCode(8212) + " see impacted entities"}
                       style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 4, color: "#7ab4ff", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
+                    >{String.fromCharCode(8599)}</button>
+                  )}
+                  {hasAppLink && (
+                    <button
+                      onClick={openAppLink}
+                      title={"Open " + m.label + " in app"}
+                      style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)", borderRadius: 4, color: "#c084fc", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
                     >{String.fromCharCode(8599)}</button>
                   )}
                 </div>

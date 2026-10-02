@@ -479,7 +479,7 @@ export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatM
           const den = denRaw[j] ?? 0;
           return den > 0 ? (num / den) * 100 : 0;
         });
-        return { label: m.label, timeline, isTraffic: m.isTraffic, inverted: isInverted(m), fmt: makeMetricFmt("pct"), metricKey: m.metricKey };
+        return { label: m.label, timeline, isTraffic: m.isTraffic, inverted: isInverted(m), fmt: makeMetricFmt("pct"), metricKey: m.metricKey, exploreAppPath: m.exploreAppPath };
       }
       return {
         label: m.label,
@@ -488,6 +488,7 @@ export function parseCustomHeat(records: DqlRecord[] | undefined, metrics: HeatM
         inverted: isInverted(m),
         fmt: makeMetricFmt(m.displayUnit),
         metricKey: m.metricKey,
+        exploreAppPath: m.exploreAppPath,
       };
     })
     .filter((pm) => pm.timeline.length > 1);
