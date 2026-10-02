@@ -219,15 +219,17 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ul style={UL}>
           <li><strong style={{ color: "#fff" }}>KPI Tiles</strong> — hot bucket count, critical spike count, worst and best Z-scores</li>
-          <li><strong style={{ color: "#fff" }}>Analysis Summary</strong> — narrative describing what happened and when</li>
-          <li><strong style={{ color: "#fff" }}>Hotness Timeline</strong> — mini sparkline with worst/best bucket markers</li>
-          <li><strong style={{ color: "#fff" }}>Activity Pattern</strong> — classified as Stable, Transient, Sustained, or Chronic degradation</li>
-          <li><strong style={{ color: "#fff" }}>Worst vs Best buckets</strong> — side-by-side metric breakdown for the hottest and coolest intervals</li>
-          <li><strong style={{ color: "#fff" }}>Gap Table</strong> — how much each metric improved from worst to best bucket</li>
-          <li><strong style={{ color: "#fff" }}>Cross-Metric Correlation</strong> — shows which metric pairs co-spiked. <em>Co-hot</em> = number of buckets both were elevated at the same time; <em>Rate</em> = % of Metric A's elevated buckets where Metric B was also elevated. A high Rate means a strong directional link.</li>
-          <li><strong style={{ color: "#fff" }}>Insights & Recommendations</strong> — observations derived from metric patterns</li>
-          <li><strong style={{ color: "#fff" }}>Davis Problems</strong> — active Problems during the timeframe (if any)</li>
+          <li><strong style={{ color: "#fff" }}>Analysis Summary</strong> — animated narrative: summary of what happened, then root-cause with leading indicators</li>
+          <li><strong style={{ color: "#fff" }}>Hotness Timeline</strong> — sparkline with W1/W2 (worst) and B1/B2 (best) bucket markers labeled directly on the chart</li>
+          <li><strong style={{ color: "#fff" }}>Pattern Analysis</strong> — Stable, Transient, Sustained, or Chronic; plus Spike Behavior stats (episode count, longest run, avg recovery)</li>
+          <li><strong style={{ color: "#fff" }}>Cross-Metric Correlation</strong> — which metric pairs co-spiked. <em>Co-hot</em> = buckets both elevated; <em>Rate</em> = % of Metric A's hot buckets where B was also hot. High Rate = strong directional link.</li>
+          <li><strong style={{ color: "#fff" }}>What's Different — W1 vs B1</strong> — side-by-side breakdown of worst vs best bucket, plus Gap Table showing how much each metric improved</li>
+          <li><strong style={{ color: "#fff" }}>Common Bad Signals — W1 vs W2</strong> — metrics elevated in <em>both</em> worst windows; persistent signals are your strongest leads</li>
+          <li><strong style={{ color: "#fff" }}>Common Good Signals — B1 vs B2</strong> — metrics healthy in <em>both</em> best windows; your true baseline and SLO reference</li>
+          <li><strong style={{ color: "#fff" }}>Insights & Recommendations</strong> — observations and prioritized actions derived from metric patterns</li>
+          <li><strong style={{ color: "#fff" }}>Advanced Signals</strong> — SLO breach estimate, cascade sequences, traffic efficiency anomalies (shown when detected)</li>
           <li><strong style={{ color: "#fff" }}>Next Steps</strong> — Investigate buttons for every metric exceeding its threshold</li>
+          <li><strong style={{ color: "#fff" }}>Active Davis Problems</strong> — open Problems during the timeframe, listed at bottom as contextual reference</li>
         </ul>
       </div>
     ),
@@ -457,9 +459,20 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff" }}>🧭 NavigatorIQ Launcher — Help Guide</h2>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>Everything you need to get the most out of NavigatorIQ Launcher</p>
           </div>
-          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.15)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "8px 16px", cursor: "pointer" }}>
-            Close
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <a
+              href="https://github.com/TechShady/NavigatorIQ/raw/master/USER_GUIDE.docx"
+              target="_blank"
+              rel="noreferrer"
+              title="Download User Guide as Word document"
+              style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 8, color: "#7ab4ff", fontSize: 13, padding: "8px 14px", cursor: "pointer", textDecoration: "none", fontWeight: 600 }}
+            >
+              📄 User Guide
+            </a>
+            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.15)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "8px 16px", cursor: "pointer" }}>
+              Close
+            </button>
+          </div>
         </div>
 
         {/* Body */}

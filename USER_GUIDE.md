@@ -257,17 +257,24 @@ For Digital Experience metrics, an additional **Dimension** button opens a geo +
 
 ### Analysis sections
 
-**Hotness Timeline** — mini sparkline of the Z-score across the full window, with worst and best bucket markers (▼ / ▲).
+**Hotness Assist Analysis** — animated narrative that describes what happened and when, rendered word-by-word. The first paragraph is a data summary; the second is a root-cause narrative identifying leading indicators and cascade sequences.
 
-**Activity Pattern** — classifies the degradation shape:
+**Hotness Timeline** — mini sparkline of the Z-score across the full window. Four bucket markers are labeled directly on the chart:
+
+| Marker | Meaning |
+|--------|---------|
+| W1 (red) | Worst bucket — peak degradation |
+| W2 (pink) | 2nd worst bucket — secondary peak |
+| B1 (green) | Best bucket — optimal conditions |
+| B2 (light green) | 2nd best bucket — secondary baseline |
+
+**Pattern Analysis** — classifies the degradation shape:
 - *Stable* — consistently low heat, no significant spikes
 - *Transient* — short spike that resolved quickly
 - *Sustained* — elevated heat held for an extended period
 - *Chronic* — recurring spikes throughout the window
 
-**Worst vs Best Buckets** — side-by-side metric breakdown comparing the single hottest and coolest time buckets. This isolates exactly which metrics were elevated at peak degradation.
-
-**Gap Table** — for each metric, how much it improved from the worst bucket to the best bucket. Large gaps indicate high-impact metrics worth focusing on.
+**Spike Behavior** — episode count, longest consecutive spike run, and average recovery interval between episodes.
 
 **Cross-Metric Correlation** — shows which metric pairs moved together during the window:
 
@@ -279,11 +286,24 @@ For Digital Experience metrics, an additional **Dimension** button opens a geo +
 
 A **Rate near 100%** means Metric B almost always spikes when Metric A does — strong directional link. Use this to find cascading effects (e.g., Error Rate spikes → Response Time also spikes in 95% of cases).
 
-**Insights & Recommendations** — observations derived automatically from metric patterns in the window.
+**What's Different — Worst #1 vs Best #1** — side-by-side metric breakdown comparing W1 (peak degradation) against B1 (optimal conditions), followed by a **Gap Table** showing how much each metric improved between those two buckets. Large gaps indicate high-impact metrics worth investigating.
 
-**Davis Problems** — any active Davis Problems during the timeframe, with their names listed.
+**Common Bad Signals — Worst #1 vs Worst #2** *(shown when two distinct worst buckets exist)* — compares W1 and W2 side-by-side and highlights metrics elevated in *both* worst windows. Signals persistent across multiple bad periods are your most reliable problem indicators.
 
-**Next Steps** — a list of Investigate buttons for every metric that exceeded its threshold, linking directly into the relevant Dynatrace app.
+**Common Good Signals — Best #1 vs Best #2** *(shown when two distinct best buckets exist)* — compares B1 and B2 and highlights metrics healthy in *both* best windows. These represent your true baseline operating conditions and are the most defensible SLO reference points.
+
+**Insights** — observations derived automatically from metric patterns in the window.
+
+**Recommendations** — prioritized actions based on what the data found.
+
+**Advanced Signals** *(shown when detected)* — deeper signals including:
+- *SLO Breach* — estimated minutes of critical-level degradation in the session
+- *Cascade* — which metric fired first and which followed, in sequence across buckets
+- *Efficiency* — traffic vs performance relationship anomalies
+
+**Next Steps** — Investigate buttons for every metric that exceeded its threshold, linking directly into the relevant Dynatrace app.
+
+**Active Davis Problems** *(shown when present)* — Davis Problems open during the timeframe, listed at the bottom as contextual reference.
 
 ---
 
@@ -548,10 +568,11 @@ fetch user.events, from:${from}, to:${to}
 ### Hotness Assist workflow
 
 1. Open Hotness Assist when you want context beyond "something spiked."
-2. Check the **Activity Pattern** first — Transient vs Sustained tells you whether the incident is ongoing.
-3. Look at **Worst vs Best Buckets** to identify which metrics were worst at peak.
-4. Use the **Cross-Metric Correlation** table to find cascading effects. If Error Rate drives Response Time (Rate = 95%), fixing errors will likely fix latency too.
-5. Use **Next Steps** to launch directly into the right Dynatrace app.
+2. Check **Pattern Analysis** first — Transient vs Sustained tells you whether the incident is ongoing.
+3. Look at **What's Different — W1 vs B1** to see which metrics were worst at peak.
+4. If W2 exists, check **Common Bad Signals** — metrics elevated in both worst windows are your strongest leads.
+5. Use the **Cross-Metric Correlation** table to find cascading effects. If Error Rate drives Response Time (Rate = 95%), fixing errors will likely fix latency too.
+6. Use **Next Steps** to launch directly into the right Dynatrace app.
 
 ### Custom personas for teams
 
@@ -576,34 +597,35 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 ### Step 2 — Identify the pattern
 
 4. Click **🔥 Hotness Assist**
-5. Check **Activity Pattern** — is this Transient (resolved) or Sustained (still ongoing)?
-6. Check **Davis Problems** — is there already an open problem? If yes, coordinate with whoever owns it.
+5. Check **Pattern Analysis** — is this Transient (resolved) or Sustained (still ongoing)?
+6. Check **Active Davis Problems** at the bottom — is there already an open problem? If yes, coordinate with whoever owns it.
 
 ### Step 3 — Find the root metric
 
-7. Look at **Worst vs Best Buckets** in Hotness Assist — which metrics were highest at peak?
-8. Check the **Cross-Metric Correlation** table — which metrics are strongly linked?
-9. The metric with the highest Z-score and the strongest correlations is your primary suspect.
+7. Look at **What's Different — W1 vs B1** in Hotness Assist — which metrics were highest at peak?
+8. If a second worst bucket exists, check **Common Bad Signals (W1 vs W2)** — metrics elevated in both are your strongest leads.
+9. Check the **Cross-Metric Correlation** table — which metrics are strongly linked?
+10. The metric with the highest Z-score and the strongest correlations is your primary suspect.
 
 ### Step 4 — Drill down
 
-10. Click **Explore** on the primary suspect metric
-11. Review the entity breakdown — which services/hosts are driving the value?
-12. Review diagnosis scenarios — what specific conditions are flagged?
-13. Click the **Launch** button to open the full Dynatrace app at the right scope
+11. Click **Explore** on the primary suspect metric
+12. Review the entity breakdown — which services/hosts are driving the value?
+13. Review diagnosis scenarios — what specific conditions are flagged?
+14. Click the **Launch** button to open the full Dynatrace app at the right scope
 
 ### Step 5 — Validate the fix
 
-14. After a remediation action (restart, config change, rollback), return to NavigatorIQ
-15. Hit **⟳ Refresh** to re-run queries
-16. Watch the heat strip — bars should start trending blue/yellow
-17. If a deployment caused the incident, verify the new green dot appears and subsequent bars cool down
+15. After a remediation action (restart, config change, rollback), return to NavigatorIQ
+16. Hit **⟳ Refresh** to re-run queries
+17. Watch the heat strip — bars should start trending blue/yellow
+18. If a deployment caused the incident, verify the new green dot appears and subsequent bars cool down
 
 ### Step 6 — Post-incident review
 
-18. Switch to **Last 7 Days** to see the spike in weekly context
-19. Open **Hotness Calendar** — was this hour/day pattern normal or truly anomalous?
-20. Review thresholds — was the alert threshold appropriate, or does it need tuning?
+19. Switch to **Last 7 Days** to see the spike in weekly context
+20. Open **Hotness Calendar** — was this hour/day pattern normal or truly anomalous?
+21. Review thresholds — was the alert threshold appropriate, or does it need tuning?
 
 ---
 
