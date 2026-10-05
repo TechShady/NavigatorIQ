@@ -9,7 +9,7 @@ interface Props {
 
 type Status = "idle" | "success";
 
-function unitLabel(displayUnit: string): string {
+function unitLabel(displayUnit: string | undefined): string {
   switch (displayUnit) {
     case "pct": return "percent (0–100%)";
     case "ms": return "milliseconds";
@@ -17,7 +17,7 @@ function unitLabel(displayUnit: string): string {
     case "µs->ms": return "microseconds — convert to ms for readability";
     case "count": return "count (may be bytes for network/memory metrics — convert to GiB if large)";
     case "cls": return "CLS score (0–1, lower is better)";
-    default: return displayUnit;
+    default: return displayUnit ?? "value";
   }
 }
 
