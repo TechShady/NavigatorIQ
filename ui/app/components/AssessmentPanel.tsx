@@ -1016,7 +1016,12 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
     );
   }
 
-  const total = assessment.redItems.length + assessment.yellowItems.length + assessment.greenItems.length;
+  // Count includes traffic metrics visible in buckets (isTraffic items are excluded from
+  // red/yellow/green items but are still monitored and shown in Why is this hot?)
+  const trafficCount = heatMetrics
+    ? heatMetrics.filter((m) => m.isTraffic && assessment.bucketDetails.some((bd) => bd.metrics.some((mm) => mm.label === m.label))).length
+    : 0;
+  const total = assessment.redItems.length + assessment.yellowItems.length + assessment.greenItems.length + trafficCount;
   const hasHeat = assessment.heatScores.length > 1;
   const selectedDetail: HeatBucketDetail | null =
     selectedBucket !== null && assessment.bucketDetails[selectedBucket]

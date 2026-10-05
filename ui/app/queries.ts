@@ -433,9 +433,13 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     if (arrayField) {
       timeline = parseMetricTimeline(arr(r0, arrayField), metric.displayUnit);
     } else {
-      // Scalar single-record (e.g. summarize without by:{slot}).
-      // Use the "value" field as a constant so the metric still appears.
-      const sv = r0["value"];
+      // Scalar single-record (e.g. summarize without by:{slot}, field named "apdex" etc.).
+      // Find a numeric field ("value" preferred, else first numeric) and use as constant baseline.
+      const scalarField = "value" in r0
+        ? "value"
+        : Object.keys(r0).find((k) => { const v = r0[k]; return typeof v === "number" && isFinite(v as number); });
+      if (!scalarField) return null;
+      const sv = r0[scalarField];
       const n = typeof sv === "number" && isFinite(sv) ? sv : null;
       if (n === null) return null;
       timeline = [n, n];
