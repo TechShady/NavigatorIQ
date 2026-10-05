@@ -185,7 +185,9 @@ function BucketDiagPanel({
         )}
         {detail.metrics.map((m, i) => {
           const barColor = metricColor(m.label, m.value, m.zScore, m.isTraffic);
-          const barW = Math.min(100, Math.abs(m.zScore) / 3 * 100);
+          const barW = m.zScore === 0
+            ? (m.value >= 0 && m.value <= 1 ? Math.round(m.value * 100) : 25)
+            : Math.min(100, Math.abs(m.zScore) / 3 * 100);
           const canExplore = !m.isTraffic && !!m.metricKey;
           const hasAppLink = !!m.exploreAppPath;
           const openAppLink = () => {

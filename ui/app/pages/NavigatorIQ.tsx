@@ -630,7 +630,6 @@ export function NavigatorIQ() {
 
         {/* Right controls */}
         <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
-          <span style={{ fontSize: 11, opacity: 0.4, fontFamily: "monospace", marginRight: 4 }}>v{APP_VERSION}</span>
           <button
             onClick={() => setRefreshSeed((s) => s + 1)}
             title="Refresh queries"
@@ -660,6 +659,7 @@ export function NavigatorIQ() {
           >
             ⚙ Settings
           </button>
+          <span style={{ fontSize: 11, opacity: 0.4, fontFamily: "monospace" }}>v{APP_VERSION}</span>
         </div>
       </div>
 
