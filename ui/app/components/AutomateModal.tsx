@@ -9,6 +9,18 @@ interface Props {
 
 type Status = "idle" | "success";
 
+function unitLabel(displayUnit: string): string {
+  switch (displayUnit) {
+    case "pct": return "percent (0–100%)";
+    case "ms": return "milliseconds";
+    case "ns->ms": return "nanoseconds — convert to ms for readability";
+    case "µs->ms": return "microseconds — convert to ms for readability";
+    case "count": return "count (may be bytes for network/memory metrics — convert to GiB if large)";
+    case "cls": return "CLS score (0–1, lower is better)";
+    default: return displayUnit;
+  }
+}
+
 function buildMetricDql(metric: HeatMetricConfig): string {
   if (metric.dqlQuery?.trim()) {
     const dql = metric.dqlQuery
@@ -59,14 +71,18 @@ function buildWorkflow(personaLabel: string, heatMetrics: HeatMetricConfig[], em
       predecessors: [],
     };
 
+    const thresholdHint = metric.warningThreshold != null
+      ? `Warning: ${metric.warningThreshold}, Critical: ${metric.criticalThreshold ?? "N/A"}`
+      : "No threshold defined";
+
     tasks[promptName] = {
       name: promptName,
       input: {
         config: "disabled",
         prompt: `Summarize the status of: ${metric.label}`,
         autoTrim: true,
-        instruction: "In exactly 2-3 sentences: state the current level, whether it is within acceptable range, and the single most important action (if any). Be concise — no bullet points.",
-        supplementary: `Convert units for readability where applicable (e.g. bytes → GiB).\nUse this metric data:\n{{result("${queryName}")["records"]}}\n`,
+        instruction: `In 2-3 sentences: report the avgValue in ${unitLabel(metric.displayUnit)}, state whether it is healthy vs the thresholds, and name one action if needed. If avgValue is null or the data array is empty, respond with exactly: "No data available for ${metric.label} in the monitored period." No bullet points or headers.`,
+        supplementary: `Metric: ${metric.label}\nUnit: ${unitLabel(metric.displayUnit)}\nThresholds: ${thresholdHint}\n7-day summary:\n{{result("${queryName}")["records"]}}\n`,
       },
       action: "dynatrace.davis.copilot.workflow.actions:davis-copilot",
       position: { x: xPos, y: 2 },
