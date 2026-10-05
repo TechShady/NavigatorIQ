@@ -472,7 +472,7 @@ export function makeMetricFmt(unit?: MetricDisplayUnit): (v: number) => string {
     case "µs->ms":  return fmtMs;
     case "pct":     return (v: number) => `${v.toFixed(2)}%`;
     case "cls":     return (v: number) => parseFloat(v.toFixed(4)).toString();
-    default:        return (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : Math.round(v).toLocaleString();
+    default:        return (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : (!Number.isInteger(v) && Math.abs(v) < 100) ? parseFloat(v.toFixed(3)).toString() : Math.round(v).toLocaleString();
   }
 }
 
