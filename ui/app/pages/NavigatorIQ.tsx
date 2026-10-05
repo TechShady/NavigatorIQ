@@ -38,6 +38,7 @@ import { AssessmentPanel } from "../components/AssessmentPanel";
 import { AppLinksPanel } from "../components/AppLinksPanel";
 import { ForecastModal } from "../components/ForecastModal";
 import { HelpModal } from "../components/HelpModal";
+import { AutomateModal } from "../components/AutomateModal";
 import "./NavigatorIQ.css";
 
 const SHARED_SETTINGS_KEY = "iq-settings-v1";    // shared across all users (customPersonas only)
@@ -80,6 +81,7 @@ export function NavigatorIQ() {
   const [refreshSeed, setRefreshSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [automateOpen, setAutomateOpen] = useState(false);
   const [forecastItem, setForecastItem] = useState<AssessmentItem | null>(null);
   // ─── Settings: per-user (personas + global) + shared (customPersonas) ──
   const sharedState = useAppState({ key: SHARED_SETTINGS_KEY });
@@ -638,6 +640,14 @@ export function NavigatorIQ() {
           </button>
           <CopyReportButton assessment={assessmentWithSparklines} persona={activePersonaDef.label} tabLabel={TAB_LABELS[tab]} />
           <button
+            onClick={() => setAutomateOpen(true)}
+            title="Create an automated weekly report workflow for this persona"
+            style={{ background: "#4589FF", border: "1px solid rgba(69,137,255,0.8)", borderRadius: 6, color: "#fff", fontSize: 12, fontWeight: 700, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, lineHeight: 1 }}
+          >
+            <AutomateIcon />
+            Automate
+          </button>
+          <button
             onClick={() => setHelpOpen(true)}
             title="Help"
             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 700, padding: "5px 10px", cursor: "pointer", lineHeight: 1 }}
@@ -679,6 +689,13 @@ export function NavigatorIQ() {
       </div>
 
       {/* ── Modals ── */}
+      {automateOpen && (
+        <AutomateModal
+          persona={activePersonaDef}
+          heatMetrics={heatMetrics}
+          onClose={() => setAutomateOpen(false)}
+        />
+      )}
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 
       {settingsOpen && (
@@ -701,6 +718,18 @@ export function NavigatorIQ() {
         />
       )}
     </div>
+  );
+}
+
+// ─── Automate button icon (3×3 grid of dots) ─────────────────────────────────
+
+function AutomateIcon() {
+  return (
+    <span style={{ display: "inline-grid", gridTemplateColumns: "repeat(3, 3px)", gap: "1.5px", verticalAlign: "middle", lineHeight: 0 }}>
+      {Array(9).fill(null).map((_, i) => (
+        <span key={i} style={{ width: 3, height: 3, background: "rgba(255,255,255,0.9)", borderRadius: 0.5, display: "block" }} />
+      ))}
+    </span>
   );
 }
 
