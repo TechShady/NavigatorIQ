@@ -775,16 +775,24 @@ function assessFromBucketDetails(
     const crit = cfg.criticalThreshold;
     const hasThresholds = warn !== undefined || crit !== undefined;
 
+    // Inverted metrics (e.g. Apdex, conversion rate): warningThreshold > criticalThreshold means
+    // higher values are better — compare with <= instead of >=.
+    const inverted = warn !== undefined && crit !== undefined && warn > crit;
     let severity: Severity = "green";
     if (hasThresholds) {
-      if (crit !== undefined && avg >= crit) severity = "red";
-      else if (warn !== undefined && avg >= warn) severity = "yellow";
+      if (inverted) {
+        if (crit !== undefined && avg <= crit) severity = "red";
+        else if (warn !== undefined && avg <= warn) severity = "yellow";
+      } else {
+        if (crit !== undefined && avg >= crit) severity = "red";
+        else if (warn !== undefined && avg >= warn) severity = "yellow";
+      }
     }
 
     const halfIdx = Math.floor(values.length / 2);
     const firstHalfAvg = halfIdx > 0 ? values.slice(0, halfIdx).reduce((a, b) => a + b, 0) / halfIdx : avg;
     const secondHalfAvg = (values.length - halfIdx) > 0 ? values.slice(halfIdx).reduce((a, b) => a + b, 0) / (values.length - halfIdx) : avg;
-    const recovering = severity !== "red" && crit !== undefined && firstHalfAvg >= crit && secondHalfAvg < crit;
+    const recovering = severity !== "red" && crit !== undefined && (inverted ? firstHalfAvg <= crit && secondHalfAvg > crit : firstHalfAvg >= crit && secondHalfAvg < crit);
     // Intra-window trend: compare second half of buckets to first half
     const trendData = halfIdx >= 2 && (values.length - halfIdx) >= 2 ? calcTrend(secondHalfAvg, firstHalfAvg) : undefined;
 

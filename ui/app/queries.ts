@@ -433,8 +433,12 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     if (arrayField) {
       timeline = parseMetricTimeline(arr(r0, arrayField), metric.displayUnit);
     } else {
-      // Scalar single-record — not a timeseries, can't produce a heat strip.
-      return null;
+      // Scalar single-record (e.g. summarize without by:{slot}).
+      // Use the "value" field as a constant so the metric still appears.
+      const sv = r0["value"];
+      const n = typeof sv === "number" && isFinite(sv) ? sv : null;
+      if (n === null) return null;
+      timeline = [n, n];
     }
   } else {
     // Multi-row records (one per time bucket): prefer "value" field, fall back to first numeric field.

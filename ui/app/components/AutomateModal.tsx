@@ -90,30 +90,13 @@ function buildWorkflow(personaLabel: string, heatMetrics: HeatMetricConfig[], em
   };
 
   // Email task
-  const metricSections = heatMetrics.map((m, i) => {
-    const promptName = `metric_${i}_prompt`;
-    return `## ${m.label}\n{{result("${promptName}").text}}`;
-  }).join("\n\n---\n\n");
-
   tasks["email_report"] = {
     name: "email_report",
     input: {
       cc: [],
       to: [email],
       bcc: [],
-      content: [
-        `# NavigatorIQ ${personaLabel} Weekly Report`,
-        ``,
-        `## Executive Summary`,
-        ``,
-        `{{result("overall_prompt").text}}`,
-        ``,
-        `---`,
-        ``,
-        `# Metric Details`,
-        ``,
-        metricSections,
-      ].join("\n"),
+      content: `{{result("overall_prompt").text}}\n\n---`,
       subject: `NavigatorIQ ${personaLabel} Weekly Report`,
     },
     action: "dynatrace.email:send-email",
