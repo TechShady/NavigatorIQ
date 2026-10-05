@@ -11,10 +11,16 @@ type Status = "idle" | "success";
 
 function buildMetricDql(metric: HeatMetricConfig): string {
   if (metric.dqlQuery?.trim()) {
-    return metric.dqlQuery
+    const dql = metric.dqlQuery
       .replace(/\$\{from\}/g, "now()-7d")
       .replace(/\$\{to\}/g, "now()")
       .replace(/\$\{interval\}/g, "1h");
+    // timeseries / makeTimeseries return a raw array in `value` — collapse to
+    // summary scalars so Davis Copilot receives interpretable numbers, not arrays.
+    if (/^\s*timeseries\b/m.test(dql) || /\|\s*makeTimeseries\b/.test(dql)) {
+      return dql + "\n| fieldsAdd avgValue=arrayAvg(value), maxValue=arrayMax(value)\n| fields avgValue, maxValue";
+    }
+    return dql;
   }
   if (!metric.metricKey) return "fetch logs | limit 1";
   if (metric.type === "ratio" && metric.denominatorKey) {
@@ -22,11 +28,13 @@ function buildMetricDql(metric: HeatMetricConfig): string {
       `timeseries numerator=${metric.aggregation}(${metric.metricKey}), denominator=${metric.aggregation}(${metric.denominatorKey}), from:now()-7d, to:now()`,
       `| fieldsAdd totalNumerator=arraySum(numerator), totalDenominator=arraySum(denominator)`,
       `| fieldsAdd ratePct=if(totalDenominator>0, toDouble(totalNumerator)/toDouble(totalDenominator)*100, else:0.0)`,
+      `| fields totalNumerator, totalDenominator, ratePct`,
     ].join("\n");
   }
   return [
     `timeseries value=${metric.aggregation}(${metric.metricKey}), from:now()-7d, to:now()`,
-    `| fieldsAdd avgValue=arrayAvg(value)`,
+    `| fieldsAdd avgValue=arrayAvg(value), maxValue=arrayMax(value)`,
+    `| fields avgValue, maxValue`,
   ].join("\n");
 }
 
@@ -55,15 +63,15 @@ function buildWorkflow(personaLabel: string, heatMetrics: HeatMetricConfig[], em
       name: promptName,
       input: {
         config: "disabled",
-        prompt: `Provide a report for the following use case:\n## ${metric.label} Analysis Report`,
+        prompt: `Summarize the status of: ${metric.label}`,
         autoTrim: true,
-        instruction: "Provide a Summary, Insights, Observations and Recommendations.",
-        supplementary: `Format examples in tables instead of bulleted lists.\nWhere applicable convert units for readability, e.g. 1000000000 bytes is 1 GiB.\nUse this analysis:\n{{result("${queryName}")["records"]}}\n`,
+        instruction: "In exactly 2-3 sentences: state the current level, whether it is within acceptable range, and the single most important action (if any). Be concise — no bullet points.",
+        supplementary: `Convert units for readability where applicable (e.g. bytes → GiB).\nUse this metric data:\n{{result("${queryName}")["records"]}}\n`,
       },
       action: "dynatrace.davis.copilot.workflow.actions:davis-copilot",
       position: { x: xPos, y: 2 },
       conditions: { states: { [queryName]: "OK" } },
-      description: `Analyze ${metric.label} with Dynatrace Intelligence`,
+      description: `Brief status of ${metric.label}`,
       predecessors: [queryName],
     };
   });
@@ -79,8 +87,8 @@ function buildWorkflow(personaLabel: string, heatMetrics: HeatMetricConfig[], em
       config: "disabled",
       prompt: `Provide a comprehensive weekly report for the following use case:\n## NavigatorIQ ${personaLabel} Weekly Report`,
       autoTrim: true,
-      instruction: "Provide an Executive Summary, Key Findings, Trends, and Actionable Recommendations.",
-      supplementary: `Format examples in tables instead of bulleted lists.\nUse this combined metric analysis:\n${supplementaryParts}\n`,
+      instruction: "Provide an Executive Summary, Key Findings, Trends, and Actionable Recommendations. Format as a professional weekly report with tables where appropriate.",
+      supplementary: `Use these per-metric status summaries to build your report:\n${supplementaryParts}\n`,
     },
     action: "dynatrace.davis.copilot.workflow.actions:davis-copilot",
     position: { x: 0, y: 3 },
@@ -132,7 +140,7 @@ function buildWorkflow(personaLabel: string, heatMetrics: HeatMetricConfig[], em
     type: "STANDARD",
     input: {},
     hourlyExecutionLimit: 10,
-    guide: `# NavigatorIQ ${personaLabel} Weekly Report\nThis workflow runs every Monday at 8:00 AM and sends a ${personaLabel} persona performance report. It queries ${n} metric${n !== 1 ? "s" : ""} for the last 7 days, analyzes each with Dynatrace Intelligence, then compiles an overall summary and emails the results.`,
+    guide: `# NavigatorIQ ${personaLabel} Weekly Report\nThis workflow runs every Monday at 8:00 AM and sends a ${personaLabel} persona performance report. It queries ${n} metric${n !== 1 ? "s" : ""} for the last 7 days, generates a concise status summary for each with Dynatrace Intelligence, then compiles an executive summary and emails the results.`,
     tasks,
   };
 }
