@@ -424,10 +424,27 @@ export function parseDqlHeatResult(records: DqlRecord[] | undefined, metric: Hea
     return { label: metric.label, timeline: [0, 0], isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: effectiveMetricKey, exploreAppPath: metric.exploreAppPath };
   }
   let timeline: number[];
-  if (records.length === 1 && Array.isArray(records[0]["value"])) {
-    timeline = parseMetricTimeline(arr(records[0], "value"), metric.displayUnit);
+  if (records.length === 1) {
+    // Single-record timeseries: prefer "value" field, fall back to first array field.
+    // This handles queries like `timeseries apdex = avg(...)` where the field isn't named "value".
+    const r0 = records[0];
+    const arrayField = Array.isArray(r0["value"]) ? "value"
+      : Object.keys(r0).find((k) => Array.isArray(r0[k]) && (r0[k] as unknown[]).length > 1);
+    if (arrayField) {
+      timeline = parseMetricTimeline(arr(r0, arrayField), metric.displayUnit);
+    } else {
+      // Scalar single-record — not a timeseries, can't produce a heat strip.
+      return null;
+    }
   } else {
-    timeline = records.map((r) => { const v = r["value"]; const n = Number(v); return isFinite(n) ? n : 0; });
+    // Multi-row records (one per time bucket): prefer "value" field, fall back to first numeric field.
+    // This handles queries like `summarize apdex = ..., by: {slot}` where the field isn't named "value".
+    const sampleRecord = records[0];
+    const valueField = "value" in sampleRecord
+      ? "value"
+      : Object.keys(sampleRecord).find((k) => { const v = sampleRecord[k]; return typeof v === "number" && isFinite(v); });
+    if (!valueField) return null;
+    timeline = records.map((r) => { const v = r[valueField]; const n = Number(v); return isFinite(n) ? n : 0; });
   }
   if (timeline.length < 2) return null;
   return { label: metric.label, timeline, isTraffic: metric.isTraffic, inverted: isInverted(metric), fmt, metricKey: effectiveMetricKey, exploreAppPath: metric.exploreAppPath };
