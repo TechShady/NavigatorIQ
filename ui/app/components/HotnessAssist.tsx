@@ -467,7 +467,9 @@ function MetricRow({ m }: { m: HeatBucketMetric }) {
     : m.zScore >= 2.5 ? "#FF073A"
     : m.zScore >= 1.5 ? "#FF3D9A"
     : m.zScore >= 0.75 ? "#FFF04D" : "#4589FF";
-  const barW = Math.min(100, Math.abs(m.zScore) / 3 * 100);
+  const barW = m.zScore === 0
+    ? (m.value >= 0 && m.value <= 1 ? Math.round(m.value * 100) : 25)
+    : Math.min(100, Math.abs(m.zScore) / 3 * 100);
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
