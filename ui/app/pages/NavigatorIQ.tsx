@@ -39,6 +39,7 @@ import { AppLinksPanel } from "../components/AppLinksPanel";
 import { ForecastModal } from "../components/ForecastModal";
 import { HelpModal } from "../components/HelpModal";
 import { AutomateModal } from "../components/AutomateModal";
+import { DTIntelligenceContext, DTIntelligenceButton, useDTIntelligence, buildDTPromptNavigatorIQ } from "../components/DynatraceIntelligence";
 import "./NavigatorIQ.css";
 
 const SHARED_SETTINGS_KEY = "iq-settings-v1";    // shared across all users (customPersonas only)
@@ -82,6 +83,7 @@ export function NavigatorIQ() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [automateOpen, setAutomateOpen] = useState(false);
+  const [dtOpen, setDtOpen] = useState(false);
   const [forecastItem, setForecastItem] = useState<AssessmentItem | null>(null);
   // ─── Settings: per-user (personas + global) + shared (customPersonas) ──
   const sharedState = useAppState({ key: SHARED_SETTINGS_KEY });
@@ -578,6 +580,14 @@ export function NavigatorIQ() {
   const personaLinks = settings.personas[persona]?.appLinks;
   const allItems = [...assessmentWithSparklines.redItems, ...assessmentWithSparklines.yellowItems, ...assessmentWithSparklines.greenItems];
 
+  const dtIntelligenceEnabled = settings.global?.dtIntelligenceEnabled ?? false;
+  const buildDTPrompt = useCallback(() => buildDTPromptNavigatorIQ({
+    assessment: assessmentWithSparklines,
+    curResults,
+    persona: activePersonaDef.label,
+    tabLabel: TAB_LABELS[tab],
+  }), [assessmentWithSparklines, curResults, activePersonaDef, tab]);
+
   const headerStyle: React.CSSProperties = {
     background: "linear-gradient(135deg,rgba(9,12,22,0.98) 0%,rgba(12,16,28,0.98) 100%)",
     borderBottom: "1px solid rgba(69,137,255,0.2)",
@@ -592,6 +602,7 @@ export function NavigatorIQ() {
   };
 
   return (
+    <DTIntelligenceContext.Provider value={{ open: dtOpen, close: () => setDtOpen(false), activeTab: 0 }}>
     <div className="iq-page">
       <PersonaPickerModal
         appVersion={APP_VERSION}
@@ -630,6 +641,9 @@ export function NavigatorIQ() {
 
         {/* Right controls */}
         <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
+          {dtIntelligenceEnabled && (
+            <DTIntelligenceButton open={dtOpen} onToggle={() => setDtOpen((v) => !v)} />
+          )}
           <button
             onClick={() => setRefreshSeed((s) => s + 1)}
             title="Refresh queries"
@@ -681,6 +695,7 @@ export function NavigatorIQ() {
       {/* ── Content ── */}
       <div className="iq-content">
         <div className="iq-main">
+          {dtIntelligenceEnabled && <DTIWrapper buildPrompt={buildDTPrompt} />}
           <AssessmentPanel assessment={assessmentWithSparklines} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblemCounts={davisProblemCounts} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = effectiveInterval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={effectiveFrom} to={effectiveTo} onZoomRange={handleZoomRange} />
         </div>
         <div className="iq-sidebar">
@@ -718,7 +733,14 @@ export function NavigatorIQ() {
         />
       )}
     </div>
+    </DTIntelligenceContext.Provider>
   );
+}
+
+// ── DTIWrapper: child of DTIntelligenceContext.Provider so the hook can read context ──
+function DTIWrapper({ buildPrompt }: { buildPrompt: () => { text: string; contextData: string } }) {
+  const { panel } = useDTIntelligence(0, buildPrompt);
+  return <>{panel}</>;
 }
 
 // ─── Automate button icon (3×3 grid of dots) ─────────────────────────────────

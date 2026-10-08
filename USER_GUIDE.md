@@ -1,6 +1,6 @@
 # NavigatorIQ Launcher — User Guide
 
-> **Version:** 0.4.75 | **Platform:** Dynatrace App Platform | **Type:** Community App (unofficial)
+> **Version:** 0.4.102 | **Platform:** Dynatrace App Platform | **Type:** Community App (unofficial)
 
 ---
 
@@ -19,12 +19,13 @@
 11. [KPI Heatmap](#11-kpi-heatmap)
 12. [Forecast](#12-forecast)
 13. [App Links Panel](#13-app-links-panel)
-14. [Settings — Personal](#14-settings--personal)
-15. [Settings — All Users (Shared)](#15-settings--all-users-shared)
-16. [Custom DQL Metrics](#16-custom-dql-metrics)
-17. [Best Practices](#17-best-practices)
-18. [Incident Response Workflow](#18-incident-response-workflow)
-19. [Troubleshooting](#19-troubleshooting)
+14. [Automate — Weekly Report Workflow](#14-automate--weekly-report-workflow)
+15. [Settings — Personal](#15-settings--personal)
+16. [Settings — All Users (Shared)](#16-settings--all-users-shared)
+17. [Custom DQL Metrics](#17-custom-dql-metrics)
+18. [Best Practices](#18-best-practices)
+19. [Incident Response Workflow](#19-incident-response-workflow)
+20. [Troubleshooting](#20-troubleshooting)
 
 ---
 
@@ -142,12 +143,18 @@ These markers let you instantly correlate "something spiked" with "we deployed" 
 | Action | Result |
 |--------|--------|
 | Click a bar | Opens **Bucket Diagnosis** for that specific window |
-| **Click and drag** across several bars | Highlights the range in blue; releasing opens **Bucket Diagnosis** for the hottest bucket in the selected range |
+| **Click and drag** across several bars | Highlights the range with a blue outline; releasing **zooms the entire app** into that time window |
 | Click **🔥 Hotness Assist** | Opens full timeline analysis panel |
 | Click **📅** | Opens **Hotness Calendar** (day × hour heatmap) |
 | Click **📈 Forecast** on an assessment item | Opens **Forecast** panel for that metric |
 
-> **Drag-select tip:** Use drag-select to zoom into a suspicious window. For example, if you see three consecutive red bars in a 7-day view, drag across them to immediately open diagnosis for the worst moment in that period.
+### Drag-to-zoom
+
+When you release a drag-select, NavigatorIQ sets a **custom zoom window** covering the selected bars. A blue banner appears below the header showing the zoomed time range (e.g. `10/7 14:30 → 10/7 16:00`) and the effective bucket size. All queries — heat strip, assessment, narrative, and every panel — reload against this custom window.
+
+Click **✕ Exit zoom** in the banner to return to the full timeframe tab.
+
+> **When to use zoom:** If you see three consecutive red bars in a 7-day view, drag across them to instantly reload all data for that specific window at a finer granularity. Zoom picks the tightest bucket size that fits (down to 1-minute buckets for windows under 30 minutes).
 
 ---
 
@@ -226,7 +233,7 @@ The **Explore** panel opens from an assessment item or from a row in Bucket Diag
 - **Sparkline** — the metric's full time-series at the current bucket granularity with color-coded bands
 - **Entity breakdown** — for supported metrics, a ranked list of the top contributing entities (services, hosts, databases)
 - **Diagnosis scenarios** — a set of checks for that metric with CRITICAL / REVIEW / OK status and a recommended action for each
-- **Launch button** — opens the relevant Dynatrace app directly (Services, Logs, Infra, etc.)
+- **Launch button** — opens the relevant Dynatrace app directly (Services, Logs, Infra, etc.) with the current timeframe pre-applied so you land at exactly the right time window
 
 ### Digital Experience extras
 
@@ -353,6 +360,8 @@ Each assessment item has a **🗓️** button that opens a **KPI Heatmap** — a
 - Hover any cell to see the exact raw value and hour range
 - Best and worst hour/day are highlighted with a ring indicator
 - Color scale uses relative Z-scoring within the metric's own history, so low-variance metrics still show variation
+- **Clickable insight cards** — the Analyze section shows insight cards (Hot Zone, Worst Hour, Worst Day, Best Hour, Best Day). Click a card to highlight the corresponding rows or columns in the heatmap grid. Click the card again (or the legend's Clear button) to remove the highlight.
+- **Legend filter** — click any color band in the legend to dim cells outside that heat level, isolating only the cells you care about
 
 ### Use cases
 
@@ -406,7 +415,38 @@ Configure which apps appear and in what order in **Settings → Personal → App
 
 ---
 
-## 14. Settings — Personal
+## 14. Automate — Weekly Report Workflow
+
+The **Automate** button (grid icon, ⠿) in the header generates a ready-to-import Dynatrace Workflow that sends a weekly metric report for the current persona.
+
+### What it does
+
+The generated workflow runs **every Monday at 8:00 AM** and:
+
+1. Queries each of the persona's heat metrics over the last 7 days using DQL
+2. Sends each metric's data to Dynatrace Intelligence for a 2–3 sentence health summary
+3. Compiles all per-metric summaries into an overall executive report (Executive Summary, Key Findings, Trends, Recommendations)
+4. Emails the finished report to the address you specify
+
+### How to use it
+
+1. Click the **Automate** button (grid icon) in the header
+2. Enter the email address that should receive the weekly report
+3. Click **↓ Download Workflow JSON** — a `.workflow.json` file is saved to your downloads
+4. Open the **Workflows** app in Dynatrace
+5. Click **Upload** (top-right) and select the downloaded file
+6. The workflow activates immediately and will run every Monday at 8:00 AM Eastern
+
+### Notes
+
+- The workflow name is `NavigatorIQ <Persona> Weekly Report` and is created as a private workflow owned by whoever uploads it
+- Each persona generates its own workflow — you can have separate workflows for Developer, SRE, DBA, etc.
+- The workflow uses the persona's currently configured heat metrics at the time you download it; re-download if you change your metric configuration
+- You need the **Dynatrace Intelligence (Davis Copilot)** and **Workflows** apps available in your tenant
+
+---
+
+## 15. Settings — Personal
 
 Personal settings are saved to your Dynatrace user state. They are private to you and do not affect other users. Open with the **⚙️** button in the header.
 
@@ -463,7 +503,7 @@ For each metric, configure:
 
 ---
 
-## 15. Settings — All Users (Shared)
+## 16. Settings — All Users (Shared)
 
 Shared settings are visible to everyone in the tenant. Only configure things here that you want all users to see.
 
@@ -478,7 +518,7 @@ Once created, each user can independently configure heat metrics, thresholds, an
 
 ---
 
-## 16. Custom DQL Metrics
+## 17. Custom DQL Metrics
 
 Custom DQL metrics are the most powerful way to extend NavigatorIQ to any data in your environment.
 
@@ -545,7 +585,7 @@ fetch user.events, from:${from}, to:${to}
 
 ---
 
-## 17. Best Practices
+## 18. Best Practices
 
 ### Timeframe selection
 
@@ -584,7 +624,7 @@ During major incidents, set auto-refresh to 300000ms (5 minutes) in Settings →
 
 ---
 
-## 18. Incident Response Workflow
+## 19. Incident Response Workflow
 
 This is the recommended flow for using NavigatorIQ during an active incident.
 
@@ -629,7 +669,7 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 
 ---
 
-## 19. Troubleshooting
+## 20. Troubleshooting
 
 ### The app shows "No Data" for all metrics
 

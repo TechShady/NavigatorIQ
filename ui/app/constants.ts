@@ -1,6 +1,6 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
 
-export const APP_VERSION = "0.4.102";
+export const APP_VERSION = "0.4.104";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -142,7 +142,7 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
 
 export const CUSTOM_APPS = {
   userJourney: { label: "User Journey & Experience", appPath: "my.user.journey.app" },
-  servicesOverview: { label: "Services Overview", appPath: "my.services.overview.app" },
+  servicesOverview: { label: "Services Overview", appPath: "my.backend.overview.app" },
   frontendOverview: { label: "Frontend Overview", appPath: "my.frontend.overview.app" },
 };
 

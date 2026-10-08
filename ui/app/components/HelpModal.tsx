@@ -143,7 +143,7 @@ const SECTIONS: HelpSection[] = [
           <li><span style={{ color: "#10B981" }}>● Green dot</span> in the marker zone above a bar — a deployment event occurred in that interval</li>
           <li><span style={{ color: "#FF073A", fontWeight: 700 }}>Red number</span> in the marker zone — how many Davis Problems <em>opened</em> in that interval. In dense views (Today / 7d), shows as a size-scaled red dot instead of a number to avoid overlap</li>
           <li><strong style={{ color: "#fff" }}>Click a bar</strong> — opens Bucket Diagnosis for that specific window</li>
-          <li><strong style={{ color: "#fff" }}>Click and drag across multiple bars</strong> — highlights a range with a blue tint; releasing opens Bucket Diagnosis for the hottest bucket within the selected range</li>
+          <li><strong style={{ color: "#fff" }}>Click and drag across multiple bars</strong> — highlights a range with a blue outline; releasing <em>zooms the entire app</em> into that custom time window (all queries reload). A blue banner shows the zoom range; click <strong style={{ color: "#fff" }}>✕ Exit zoom</strong> to return to the full tab window.</li>
           <li><strong style={{ color: "#fff" }}>🔥 Hotness Assist</strong> — deep-dive analysis panel for the full timeline</li>
           <li><strong style={{ color: "#fff" }}>📅 Calendar</strong> — day × hour heatmap showing when your environment runs hot across an extended window</li>
           <li><strong style={{ color: "#fff" }}>📈 Forecast</strong> — projects metric trends using multiple forecasting models</li>
@@ -440,6 +440,8 @@ const SECTIONS: HelpSection[] = [
           <li>Per-user settings mean teammates can have completely different metric configs and thresholds without affecting each other</li>
           <li>Custom personas from Settings → All Users appear for everyone in the tenant — useful for specialized teams or cross-functional squads</li>
           <li>The <strong style={{ color: "#fff" }}>NavigatorIQ Launcher Intelligence</strong> narrative is the fastest way to brief someone mid-incident — it reads like a summary from an analyst, not a raw metric dump</li>
+          <li>The <strong style={{ color: "#fff" }}>Automate</strong> button (grid icon) generates a Dynatrace Workflow JSON for a weekly email report — enter an email, download the JSON, upload it to Workflows, and get a Monday 8 AM briefing automatically</li>
+          <li><strong style={{ color: "#fff" }}>Drag-to-zoom</strong> on the heat strip: drag across several bars to reload all data for that specific window at a finer bucket size (down to 1-minute buckets for short windows). Use this when 7-day view shows a suspicious cluster of red bars.</li>
         </ul>
       </div>
     ),

@@ -537,7 +537,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                   <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(69,137,255,0.9)", marginBottom: 6 }}>How App Paths Work</div>
                   <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
                     App paths are Dynatrace app IDs. For built-in apps use e.g. <code style={{ color: "#7ab4ff" }}>dynatrace.classic.services</code>.<br />
-                    For your custom apps use their app.config.json ID, e.g. <code style={{ color: "#7ab4ff" }}>my.services.overview.app</code>.<br />
+                    For your custom apps use their app.config.json ID, e.g. <code style={{ color: "#7ab4ff" }}>my.backend.overview.app</code>.<br />
                     Tenant URL is automatically prepended at runtime.
                   </div>
                 </div>
@@ -737,7 +737,20 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                   </div>
                 </div>
 
-                <div style={{ marginTop: 28, padding: "16px 18px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ marginTop: 20, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "rgba(165,110,255,0.05)", borderRadius: 8, border: "1px solid rgba(165,110,255,0.15)" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#e8eaf0" }}>✦ Dynatrace Intelligence</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 3 }}>Show the Dynatrace Intelligence button for Davis CoPilot AI analysis.</div>
+                  </div>
+                  <button
+                    onClick={() => { setDraft((prev) => ({ ...prev, global: { ...prev.global, dtIntelligenceEnabled: !(prev.global?.dtIntelligenceEnabled ?? false) } })); markDirty(); }}
+                    style={{ flexShrink: 0, width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer", background: (draft.global?.dtIntelligenceEnabled ?? false) ? "rgba(165,110,255,0.7)" : "rgba(255,255,255,0.12)", transition: "background 0.2s", position: "relative" }}
+                  >
+                    <span style={{ position: "absolute", top: 3, left: (draft.global?.dtIntelligenceEnabled ?? false) ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 20, padding: "16px 18px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginBottom: 10 }}>About NavigatorIQ Launcher</div>
                   <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
                     NavigatorIQ Launcher is an unofficial community app for Dynatrace. It is not supported by Dynatrace.<br />

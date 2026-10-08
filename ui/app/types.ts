@@ -85,6 +85,7 @@ export interface PersonaSettings {
 export interface GlobalSettings {
   defaultPersona: PersonaId;
   refreshIntervalMs: number;
+  dtIntelligenceEnabled?: boolean;
 }
 
 export interface SavedSettings {
