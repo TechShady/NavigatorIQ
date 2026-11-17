@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState, useEffect, useRef } from "react";
 import { publicClient as davisCopilotClient } from "@dynatrace-sdk/client-davis-copilot";
 import { AIAssistPanel, ensureStyles } from "./AIAssist";
@@ -33,13 +34,13 @@ export const DTIntelligenceContext = React.createContext<{ open: boolean; close:
 function DTLoadingPanel({ onClose }: { onClose: () => void }) {
   ensureDTStyles();
   return (
-    <div className="cio-ai-panel">
+    <PopupWindow className="cio-ai-panel">
       <div className="cio-ai-header">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
           <path d="M12 2L13.5 10.5L22 12L13.5 13.5L12 22L10.5 13.5L2 12L10.5 10.5Z" fill="#c084fc" />
         </svg>
         <span className="cio-ai-title">Dynatrace Intelligence</span>
-        <button className="cio-ai-close" onClick={onClose}>✕</button>
+        <PopupCloseButton className="cio-ai-close" onClick={onClose}>✕</PopupCloseButton>
       </div>
       <div className="cio-ai-body">
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 0" }}>
@@ -47,19 +48,19 @@ function DTLoadingPanel({ onClose }: { onClose: () => void }) {
           <span style={{ fontSize: 13, color: "#8b92a8" }}>Analyzing with Davis CoPilot…</span>
         </div>
       </div>
-    </div>
+    </PopupWindow>
   );
 }
 
 function DTErrorPanel({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="cio-ai-panel">
+    <PopupWindow className="cio-ai-panel">
       <div className="cio-ai-header">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
           <path d="M12 2L13.5 10.5L22 12L13.5 13.5L12 22L10.5 13.5L2 12L10.5 10.5Z" fill="#c084fc" />
         </svg>
         <span className="cio-ai-title">Dynatrace Intelligence</span>
-        <button className="cio-ai-close" onClick={onClose}>✕</button>
+        <PopupCloseButton className="cio-ai-close" onClick={onClose}>✕</PopupCloseButton>
       </div>
       <div className="cio-ai-body">
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "4px 10px", borderRadius: 6, background: "rgba(248,49,47,0.06)", borderLeft: "3px solid #F8312F" }}>
@@ -67,7 +68,7 @@ function DTErrorPanel({ message, onClose }: { message: string; onClose: () => vo
           <span style={{ fontSize: 13, color: "#c8cedf" }}>{message}</span>
         </div>
       </div>
-    </div>
+    </PopupWindow>
   );
 }
 

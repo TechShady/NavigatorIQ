@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 
 // ─── Linear regression forecast ───
@@ -412,6 +413,15 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   const fmDragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
   const fmRzRef = useRef<{ startX: number; startY: number; startW: number; startH: number; mode: "w" | "h" | "wh" } | null>(null);
   const fmContRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(900);
+  useEffect(() => {
+    if (!fmContRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      setChartWidth(Math.max(260, Math.floor(entries[0].contentRect.width)));
+    });
+    observer.observe(fmContRef.current);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (fmDragRef.current) { const { startX, startY, startL, startT } = fmDragRef.current; setFmPos({ x: startL + (e.clientX - startX), y: startT + (e.clientY - startY) }); }
@@ -493,7 +503,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
 
   const totalPoints = historicalData.length + forecastData.length;
   const MARGIN = { top: 40, right: 60, bottom: 60, left: 70 };
-  const W = 900; const H = 400;
+  const W = chartWidth; const H = 400;
   const plotW = W - MARGIN.left - MARGIN.right;
   const plotH = H - MARGIN.top - MARGIN.bottom;
   const yMin = 0;
@@ -513,11 +523,12 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   const timeLabels = useMemo(() => {
     if (totalPoints < 2) return [];
     const labels: { x: number; text: string }[] = [];
-    const step = Math.max(1, Math.floor(totalPoints / Math.min(12, totalPoints)));
+    const labelCount = Math.min(12, totalPoints, Math.max(2, Math.floor(plotW / 70)));
+    const step = Math.max(1, Math.ceil(totalPoints / labelCount));
     const totalDuration = duration + appliedForecastDays * 24 * 3600 * 1000;
     for (let i = 0; i < totalPoints; i += step) labels.push({ x: xScale(i), text: formatDate(activeFromMs + i * bucketMs, totalDuration > 5 * 24 * 3600 * 1000) });
     return labels;
-  }, [totalPoints, activeFromMs, bucketMs, duration, appliedForecastDays]);
+  }, [totalPoints, activeFromMs, bucketMs, duration, appliedForecastDays, chartWidth]);
 
   const yTicks = useMemo(() => {
     const ticks: { y: number; value: number }[] = [];
@@ -534,7 +545,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
     const upper = confidence.upper.map((v, i) => `${xScale(historicalData.length + i).toFixed(1)},${yScale(v).toFixed(1)}`);
     const lower = [...confidence.lower].reverse().map((v, i) => `${xScale(historicalData.length + confidence.lower.length - 1 - i).toFixed(1)},${yScale(v).toFixed(1)}`);
     return [...upper, ...lower].join(" ");
-  }, [confidence, historicalData.length]);
+  }, [confidence, historicalData.length, chartWidth]);
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -569,7 +580,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   };
 
   return (
-    <div ref={fmContRef} style={{ position: "fixed", left: fmPos.x, top: fmPos.y, zIndex: 99999, background: "rgba(20,24,46,0.97)", borderRadius: 12, padding: "24px 32px", width: fmSizeW > 0 ? fmSizeW : Math.min(Math.max(900 + 64, 964), window.innerWidth - 40), ...(fmSizeH > 0 ? { height: fmSizeH, overflow: "hidden", display: "flex", flexDirection: "column" } : { overflow: "auto", maxHeight: "90vh" }), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", border: "1px solid rgba(128,128,128,0.2)", userSelect: "none" }}>
+    <PopupWindow ref={fmContRef} style={{ position: "fixed", left: fmPos.x, top: fmPos.y, zIndex: 99999, background: "rgba(20,24,46,0.97)", borderRadius: 12, padding: "24px 32px", width: fmSizeW > 0 ? fmSizeW : Math.min(Math.max(900 + 64, 964), window.innerWidth - 40), ...(fmSizeH > 0 ? { height: fmSizeH, overflow: "hidden", display: "flex", flexDirection: "column" } : { overflow: "auto", maxHeight: "90vh" }), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", border: "1px solid rgba(128,128,128,0.2)", userSelect: "none" }}>
       <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("select")) return; fmDragRef.current = { startX: e.clientX, startY: e.clientY, startL: fmPos.x, startT: fmPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, cursor: "move" }}>
         <div>
           <h2 style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 700 }}>{label} — {appliedForecastDays}-Day Forecast</h2>
@@ -590,7 +601,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
             <button onClick={exportForecastPdf} style={{ background: "rgba(69,137,255,0.15)", color: "#4589FF", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
               📄 PDF
             </button>
-            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", color: "#fff", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>✕ Close</button>
+            <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", color: "#fff", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>✕ Close</PopupCloseButton>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 6, border: "1px solid rgba(128,128,128,0.12)" }}>
@@ -661,6 +672,6 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
       <div onMouseDown={(e) => { e.stopPropagation(); fmRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (fmContRef.current?.offsetWidth ?? fmSizeW) || 964, startH: (fmContRef.current?.offsetHeight ?? fmSizeH) || 600, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
         <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
-    </div>
+    </PopupWindow>
   );
 }

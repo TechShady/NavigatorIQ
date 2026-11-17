@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton, PopupStatusWindow } from "./PopupWindow";
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
@@ -123,7 +124,7 @@ const CLEAN_SUB = `arrayElement(splitString(arrayElement(splitString(coalesce(pa
 
 // ─── Query builder ────────────────────────────────────────────────────────────
 
-function buildExploreQuery(metricKey: string, metricLabel: string, cfg: EntityConfig, from: string, to: string): string {
+function buildExploreQuery(metricKey: string, metricLabel: string, cfg: EntityConfig, from: string, to: string, dimensionConfig?: { dimensions: string; label?: string }): string {
   if (cfg.queryType === "frontend") {
     const lbl = metricLabel.toLowerCase();
     const isErrorRate = metricKey === "dt.rum.error.count" || (lbl.includes("error") && lbl.includes("rate"));
@@ -222,9 +223,14 @@ function buildExploreQuery(metricKey: string, metricLabel: string, cfg: EntityCo
 
   const scale = cfg.valueMultiplier ?? 1;
   const scaleExpr = scale !== 1 ? `arrayAvg(val)*${scale}` : `arrayAvg(val)`;
+  
+  // Use custom dimension config if provided, otherwise use the default entity field
+  const dimClause = dimensionConfig?.dimensions ?? cfg.entityField;
+  const displayNameExpr = dimensionConfig?.dimensions ?? `coalesce(entityName(${cfg.entityField}), toString(${cfg.entityField}))`;
+  
   return (
-    `timeseries val=avg(${metricKey}), from:${from}, to:${to}, by:{${cfg.entityField}}\n` +
-    `| fieldsAdd entityId=toString(${cfg.entityField}), avg=${scaleExpr}, displayName=coalesce(entityName(${cfg.entityField}), toString(${cfg.entityField}))\n` +
+    `timeseries val=avg(${metricKey}), from:${from}, to:${to}, by:{${dimClause}}\n` +
+    `| fieldsAdd entityId=toString(${dimClause}), avg=${scaleExpr}, displayName=coalesce(${displayNameExpr})\n` +
     `| sort avg desc\n` +
     `| limit 10\n` +
     `| fields entityId, displayName, avg`
@@ -587,7 +593,7 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
   }, []);
 
   return createPortal(
-    <div ref={dContRef} style={{ position: "fixed", left: dPos.x, top: dPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: dSizeW > 0 ? dSizeW : 600, ...(dSizeH > 0 ? { height: dSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+    <PopupWindow ref={dContRef} style={{ position: "fixed", left: dPos.x, top: dPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: dSizeW > 0 ? dSizeW : 600, ...(dSizeH > 0 ? { height: dSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
       <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; dDragRef.current = { startX: e.clientX, startY: e.clientY, startL: dPos.x, startT: dPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -598,7 +604,7 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button onClick={() => exportDiagnosePdf(label, diagnoseScenarios, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
-          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</PopupCloseButton>
         </div>
       </div>
       <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
@@ -627,7 +633,7 @@ function EntityDiagnoseOverlay({ label, rawValue, sparkline, color = "#4589FF", 
       <div onMouseDown={(e) => { e.stopPropagation(); dRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (dContRef.current?.offsetWidth ?? dSizeW) || 600, startH: (dContRef.current?.offsetHeight ?? dSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
         <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }
@@ -755,7 +761,7 @@ function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589F
   }, []);
 
   return createPortal(
-    <div ref={cbContRef} style={{ position: "fixed", left: cbPos.x, top: cbPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: cbSizeW > 0 ? cbSizeW : 480, ...(cbSizeH > 0 ? { height: cbSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+    <PopupWindow ref={cbContRef} style={{ position: "fixed", left: cbPos.x, top: cbPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: cbSizeW > 0 ? cbSizeW : 480, ...(cbSizeH > 0 ? { height: cbSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
       <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; cbDragRef.current = { startX: e.clientX, startY: e.clientY, startL: cbPos.x, startT: cbPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -766,7 +772,7 @@ function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589F
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button onClick={exportPdf} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
-          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>✕</PopupCloseButton>
         </div>
       </div>
       <div style={{ padding: "8px 12px", marginBottom: 14, background: `${severityColor[panelSeverity]}12`, borderLeft: `3px solid ${severityColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
@@ -889,7 +895,7 @@ function EntityCostBaselineOverlay({ label, rawValue, sparkline, color = "#4589F
       <div onMouseDown={(e) => { e.stopPropagation(); cbRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (cbContRef.current?.offsetWidth ?? cbSizeW) || 480, startH: (cbContRef.current?.offsetHeight ?? cbSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
         <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }
@@ -959,7 +965,7 @@ function EntityImpactOverlay({ label, rawValue, sparkline, color = "#4589FF", ef
   }, []);
 
   return createPortal(
-    <div ref={iContRef} style={{ position: "fixed", left: iPos.x, top: iPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: iSizeW > 0 ? iSizeW : 480, ...(iSizeH > 0 ? { height: iSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+    <PopupWindow ref={iContRef} style={{ position: "fixed", left: iPos.x, top: iPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: iSizeW > 0 ? iSizeW : 480, ...(iSizeH > 0 ? { height: iSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
       <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; iDragRef.current = { startX: e.clientX, startY: e.clientY, startL: iPos.x, startT: iPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
         <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
@@ -970,7 +976,7 @@ function EntityImpactOverlay({ label, rawValue, sparkline, color = "#4589FF", ef
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
           <button onClick={() => exportImpactPdf(label, curr, pMax, pMin, mean, trendLabel, stabilityLabel, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
-          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</PopupCloseButton>
         </div>
       </div>
       <div style={{ padding: "8px 12px", marginBottom: 14, background: `${sevColor[panelSeverity]}12`, borderLeft: `3px solid ${sevColor[panelSeverity]}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
@@ -1004,7 +1010,7 @@ function EntityImpactOverlay({ label, rawValue, sparkline, color = "#4589FF", ef
       <div onMouseDown={(e) => { e.stopPropagation(); iRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (iContRef.current?.offsetWidth ?? iSizeW) || 480, startH: (iContRef.current?.offsetHeight ?? iSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
         <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }
@@ -1068,7 +1074,7 @@ function EntityAnomalyOverlay({ label, rawValue, sparkline, color = "#4589FF", e
   }, []);
 
   return createPortal(
-    <div ref={anContRef} style={{ position: "fixed", left: anPos.x, top: anPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: anSizeW > 0 ? anSizeW : 480, ...(anSizeH > 0 ? { height: anSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
+    <PopupWindow ref={anContRef} style={{ position: "fixed", left: anPos.x, top: anPos.y, zIndex: 100010, background: "rgba(20,24,46,0.98)", border: `1px solid ${color}40`, borderRadius: 12, padding: "24px 28px", width: anSizeW > 0 ? anSizeW : 480, ...(anSizeH > 0 ? { height: anSizeH } : {}), boxShadow: "0 8px 40px rgba(0,0,0,0.5)", userSelect: "none", display: "flex", flexDirection: "column" }}>
       <div onMouseDown={(e) => { if ((e.target as HTMLElement).closest("button")) return; anDragRef.current = { startX: e.clientX, startY: e.clientY, startL: anPos.x, startT: anPos.y }; }} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, cursor: "move" }}>
         <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
@@ -1079,7 +1085,7 @@ function EntityAnomalyOverlay({ label, rawValue, sparkline, color = "#4589FF", e
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
           <button onClick={() => exportAnomalyPdf(label, curr, mean, std, deviation, anomalyStatus, execSummary, nextStep, color)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&#x1F4C4; PDF</button>
-          <button onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, color: "#fff", padding: "4px 10px", cursor: "pointer", fontSize: 13 }}>&#x2715;</PopupCloseButton>
         </div>
       </div>
       <div style={{ padding: "8px 12px", marginBottom: 14, background: `${anomalyStatus.color}12`, borderLeft: `3px solid ${anomalyStatus.color}`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.5 }}>
@@ -1118,7 +1124,7 @@ function EntityAnomalyOverlay({ label, rawValue, sparkline, color = "#4589FF", e
       <div onMouseDown={(e) => { e.stopPropagation(); anRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (anContRef.current?.offsetWidth ?? anSizeW) || 480, startH: (anContRef.current?.offsetHeight ?? anSizeH) || 400, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
         <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }
@@ -1143,9 +1149,10 @@ interface ExploreModalProps {
   from: string;
   to: string;
   onClose: () => void;
+  dimensionConfig?: { dimensions: string; label?: string };
 }
 
-export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: ExploreModalProps) {
+export function ExploreModal({ metricKey, metricLabel, from, to, onClose, dimensionConfig }: ExploreModalProps) {
   const [rows, setRows] = useState<EntityRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cfg = detectEntityConfig(metricKey, metricLabel);
@@ -1266,11 +1273,11 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
     setRows(null);
     setError(null);
 
-    const currQ = buildExploreQuery(metricKey, metricLabel, cfg, from, to);
+    const currQ = buildExploreQuery(metricKey, metricLabel, cfg, from, to, dimensionConfig);
     // Previous period: same window length, shifted back — e.g. now()-4h → now()-2h
     const prevFrom = doubleFrom(from);
     const canTrend = prevFrom !== from;
-    const prevQ = canTrend ? buildExploreQuery(metricKey, metricLabel, cfg, prevFrom, from) : null;
+    const prevQ = canTrend ? buildExploreQuery(metricKey, metricLabel, cfg, prevFrom, from, dimensionConfig) : null;
 
     const currPromise = queryExecutionClient.queryExecute({ body: { query: currQ, requestTimeoutMilliseconds: 30000 } });
     const prevPromise = prevQ
@@ -1318,7 +1325,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, width: 1080, maxWidth: "94vw", maxHeight: "72vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
+      <PopupWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, width: 1080, maxWidth: "94vw", maxHeight: "72vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
         {/* Header */}
         <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
@@ -1326,7 +1333,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
             {cfg && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>Top impacted {cfg.appLabel.toLowerCase()} · click a chip to drill down</div>}
             {!cfg && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>Custom DQL metric — no entity drill-down available</div>}
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>✕</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>✕</PopupCloseButton>
         </div>
 
         {/* Body */}
@@ -1440,7 +1447,7 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
             </div>
           </div>
         )}
-      </div>
+      </PopupWindow>
     </div>
   );
 
@@ -1456,13 +1463,13 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       {activeChip?.type === "forecast" && chipRow && (
         sparklineLoading ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Loading forecast data…</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }} onClose={() => setActiveChip(null)}>Loading forecast data…</PopupStatusWindow>
           </div>,
           document.body
         ) : sparklineError ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setActiveChip(null)}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load sparkline: {sparklineError}</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }} onClose={() => setActiveChip(null)}>Failed to load sparkline: {sparklineError}</PopupStatusWindow>
           </div>,
           document.body
         ) : entitySparkline ? createPortal(
@@ -1483,13 +1490,13 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       {activeChip?.type === "diagnose" && chipRow && (
         sparklineLoading ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Running diagnostics…</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }} onClose={() => setActiveChip(null)}>Running diagnostics…</PopupStatusWindow>
           </div>,
           document.body
         ) : sparklineError ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setActiveChip(null)}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }} onClose={() => setActiveChip(null)}>Failed to load data: {sparklineError}</PopupStatusWindow>
           </div>,
           document.body
         ) : entitySparkline ? (
@@ -1508,13 +1515,13 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       {(activeChip?.type === "baseline" || activeChip?.type === "cost") && chipRow && (
         sparklineLoading ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Loading data…</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }} onClose={() => setActiveChip(null)}>Loading data…</PopupStatusWindow>
           </div>,
           document.body
         ) : sparklineError ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setActiveChip(null)}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }} onClose={() => setActiveChip(null)}>Failed to load data: {sparklineError}</PopupStatusWindow>
           </div>,
           document.body
         ) : entitySparkline ? (
@@ -1561,13 +1568,13 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       {activeChip?.type === "impact" && chipRow && (
         sparklineLoading ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Loading impact data…</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }} onClose={() => setActiveChip(null)}>Loading impact data…</PopupStatusWindow>
           </div>,
           document.body
         ) : sparklineError ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setActiveChip(null)}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }} onClose={() => setActiveChip(null)}>Failed to load data: {sparklineError}</PopupStatusWindow>
           </div>,
           document.body
         ) : entitySparkline ? (
@@ -1586,13 +1593,13 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose }: Expl
       {activeChip?.type === "anomaly" && chipRow && (
         sparklineLoading ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Analyzing anomalies…</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "rgba(255,255,255,0.6)", fontSize: 14 }} onClose={() => setActiveChip(null)}>Analyzing anomalies…</PopupStatusWindow>
           </div>,
           document.body
         ) : sparklineError ? createPortal(
           <div style={{ position: "fixed", inset: 0, zIndex: 100011, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setActiveChip(null)}>
-            <div style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }}>Failed to load data: {sparklineError}</div>
+            <PopupStatusWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "24px 32px", color: "#F87171", fontSize: 13 }} onClose={() => setActiveChip(null)}>Failed to load data: {sparklineError}</PopupStatusWindow>
           </div>,
           document.body
         ) : entitySparkline ? (

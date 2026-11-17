@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
@@ -1034,7 +1035,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deploymentStatuses]);
   return createPortal(
-    <div style={{
+    <PopupWindow style={{
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9991, width: panelW,
       background: "rgba(14,18,36,0.97)", border: "1px solid rgba(255,120,30,0.35)",
       borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.78)",
@@ -1072,7 +1073,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
           >
             📋
           </button>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</PopupCloseButton>
         </div>
       </div>
 
@@ -1449,7 +1450,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
           <line x1="5" y1="9" x2="9" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }

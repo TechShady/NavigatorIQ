@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React from "react";
 import { createPortal } from "react-dom";
 
@@ -287,7 +288,7 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
   const panelW = LEFT_PAD + 7 * (CELL_W + GAP) + 48;
 
   const content = (
-    <div style={{
+    <PopupWindow style={{
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9001,
       background: "linear-gradient(135deg, #0f1117 0%, #131720 100%)",
       border: "1px solid rgba(69,137,255,0.3)", borderRadius: 12,
@@ -315,7 +316,7 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
             style={{ fontSize: 10, padding: "3px 9px", background: showAnalysis ? "rgba(255,61,154,0.15)" : "rgba(128,128,128,0.08)", border: `1px solid ${showAnalysis ? "rgba(255,61,154,0.4)" : "rgba(128,128,128,0.2)"}`, borderRadius: 5, color: showAnalysis ? "#FF3D9A" : "#ccc", cursor: "pointer", fontWeight: 600 }}
             title="Analyze heatmap patterns"
           >{showAnalysis ? "▲ Analyze" : "▼ Analyze"}</button>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</PopupCloseButton>
         </div>
       </div>
 
@@ -464,7 +465,7 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
           <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       </div>
-    </div>
+    </PopupWindow>
   );
 
   return createPortal(content, document.body);

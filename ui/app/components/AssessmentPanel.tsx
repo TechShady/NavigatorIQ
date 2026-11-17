@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
@@ -97,7 +98,7 @@ function BucketDiagPanel({
   from?: string;
   to?: string;
 }) {
-  const [exploreMetric, setExploreMetric] = useState<{ key: string; label: string } | null>(null);
+  const [exploreMetric, setExploreMetric] = useState<{ key: string; label: string; dimensionConfig?: { dimensions: string; label?: string } } | null>(null);
   const levelColor = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const levelLabel = (z: number) => z >= 2.5 ? "Critical Spike" : z >= 1.5 ? "Warm" : z >= 0.75 ? "Elevated" : "Normal";
 
@@ -136,7 +137,7 @@ function BucketDiagPanel({
   const perfMetrics = detail.metrics.filter((m) => !m.isTraffic && m.zScore > 0).sort((a, b) => b.zScore - a.zScore);
 
   return createPortal(
-    <div style={{
+    <PopupWindow style={{
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9990, width: 380,
       background: "rgba(14,18,36,0.97)", border: `1px solid ${lc}35`,
       borderRadius: 14, boxShadow: "0 16px 60px rgba(0,0,0,0.75)",
@@ -154,7 +155,7 @@ function BucketDiagPanel({
           <span style={{ fontSize: 16 }}>🔎</span>
           <span style={{ fontSize: 14, fontWeight: 800 }}>Bucket {detail.bucketIndex + 1} {String.fromCharCode(183)} Why is this hot?</span>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 20, cursor: "pointer", padding: "0 3px", lineHeight: 1 }}>{String.fromCharCode(215)}</button>
+        <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.45)", fontSize: 20, cursor: "pointer", padding: "0 3px", lineHeight: 1 }}>{String.fromCharCode(215)}</PopupCloseButton>
       </div>
 
       {/* Scrollable body */}
@@ -201,7 +202,10 @@ function BucketDiagPanel({
                   <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{m.label}</span>
                   {canExplore && (
                     <button
-                      onClick={() => setExploreMetric({ key: m.metricKey!, label: m.label })}
+                      onClick={() => {
+                        const metric = heatMetrics?.find((hm) => hm.label === m.label);
+                        setExploreMetric({ key: m.metricKey!, label: m.label, dimensionConfig: metric?.dimensionConfig });
+                      }}
                       title={"Follow the red " + String.fromCharCode(8212) + " see impacted entities"}
                       style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 4, color: "#7ab4ff", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
                     >{String.fromCharCode(8599)}</button>
@@ -236,6 +240,7 @@ function BucketDiagPanel({
             metricLabel={exploreMetric.label}
             from={from ?? "now()-2h"}
             to={to ?? "now()"}
+            dimensionConfig={exploreMetric.dimensionConfig}
             onClose={() => setExploreMetric(null)}
           />
         )}
@@ -266,7 +271,7 @@ function BucketDiagPanel({
         );
       })()}
       </div>{/* end scrollable body */}
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }

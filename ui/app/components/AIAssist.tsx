@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useMemo } from "react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -308,7 +309,7 @@ export function AIAssistPanel({ data, onClose, title = "AI Insights" }: { data: 
   const insightDurations = data.insights.map(ins => ins.text.split(/\s+/).length * 50);
 
   return (
-    <div className="cio-ai-panel">
+    <PopupWindow className="cio-ai-panel">
       <div className="cio-ai-header">
         <SparkleIcon />
         <span className="cio-ai-title">{title}</span>
@@ -320,7 +321,7 @@ export function AIAssistPanel({ data, onClose, title = "AI Insights" }: { data: 
             <polyline points="9 15 12 18 15 15"/>
           </svg>
         </button>
-        <button className="cio-ai-close" onClick={onClose}>✕</button>
+        <PopupCloseButton className="cio-ai-close" onClick={onClose}>✕</PopupCloseButton>
       </div>
       <div className="cio-ai-body">
         {/* Summary */}
@@ -366,7 +367,7 @@ export function AIAssistPanel({ data, onClose, title = "AI Insights" }: { data: 
           </div>
         )}
       </div>
-    </div>
+    </PopupWindow>
   );
 }
 

@@ -1,5 +1,6 @@
-﻿[
+[
   { "url": "https://guu84124.apps.dynatrace.com", "label": "primary" },
   { "url": "https://rer30726.apps.dynatrace.com", "label": "rer30726" },
-  { "url": "https://orf80966.apps.dynatrace.com", "label": "orf80966" }
+  { "url": "https://orf80966.apps.dynatrace.com", "label": "orf80966" },
+  { "url": "https://nfs71728.apps.dynatrace.com", "label": "nfs71728" }
 ]

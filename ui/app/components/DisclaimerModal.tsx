@@ -1,3 +1,4 @@
+import { PopupWindow, PopupToggle } from "./PopupWindow";
 import React, { useState, useEffect } from "react";
 import { useUserAppState, useSetUserAppState } from "@dynatrace-sdk/react-hooks";
 import appConfig from "../../../app.config.json";
@@ -46,13 +47,14 @@ export function DisclaimerModal() {
         @keyframes iq-disclaimer-fadein { from { opacity: 0; } to { opacity: 1; } }
         @keyframes iq-disclaimer-slidein { from { opacity: 0; transform: translateY(-16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
       `}</style>
-      <div style={{ background: "linear-gradient(160deg,#111520 0%,#0D1018 100%)", border: `1px solid ${AMBER_BORDER}`, borderTop: `3px solid ${AMBER}`, borderRadius: 12, maxWidth: 560, width: "100%", boxShadow: `0 0 60px rgba(0,0,0,0.8),0 0 30px ${AMBER_GLOW},inset 0 1px 0 rgba(245,158,11,0.08)`, animation: "iq-disclaimer-slidein 0.3s cubic-bezier(0.34,1.2,0.64,1)", overflow: "hidden" }}>
+      <PopupWindow style={{ background: "linear-gradient(160deg,#111520 0%,#0D1018 100%)", border: `1px solid ${AMBER_BORDER}`, borderTop: `3px solid ${AMBER}`, borderRadius: 12, maxWidth: 560, width: "100%", boxShadow: `0 0 60px rgba(0,0,0,0.8),0 0 30px ${AMBER_GLOW},inset 0 1px 0 rgba(245,158,11,0.08)`, animation: "iq-disclaimer-slidein 0.3s cubic-bezier(0.34,1.2,0.64,1)", overflow: "hidden" }}>
         <div style={{ background: "linear-gradient(135deg,rgba(245,158,11,0.12) 0%,rgba(245,158,11,0.04) 100%)", borderBottom: "1px solid rgba(245,158,11,0.2)", padding: "28px 32px 24px", display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{ flexShrink: 0, marginTop: 2 }}><WarningIcon /></div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: AMBER, marginBottom: 6 }}>Important Notice</div>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#FFFFFF", lineHeight: 1.25 }}>Unofficial Community Application</h2>
           </div>
+          <div style={{ marginLeft: "auto", color: AMBER }}><PopupToggle /></div>
         </div>
         <div style={{ padding: "28px 32px" }}>
           <p style={{ margin: "0 0 20px", fontSize: 14.5, lineHeight: 1.7, color: "rgba(255,255,255,0.85)" }}>
@@ -75,7 +77,7 @@ export function DisclaimerModal() {
             Continue to NavigatorIQ Launcher
           </button>
         </div>
-      </div>
+      </PopupWindow>
     </div>
   );
 }

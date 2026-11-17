@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -196,7 +197,7 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
   }, [selectedPct]);
 
   return createPortal(
-    <div ref={dmContRef} style={{
+    <PopupWindow ref={dmContRef} style={{
       position: "fixed", left: dmPos.x, top: dmPos.y, zIndex: 9999,
       background: "#151829", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14,
       padding: "26px 32px", width: dmSizeW > 0 ? dmSizeW : 820,
@@ -231,7 +232,7 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
             ))}
           </div>
           <button onClick={() => exportDimensionPdf(label, geoData, browserData)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "inherit", fontSize: 18, cursor: "pointer", opacity: 0.35, padding: "4px 8px", lineHeight: 1 }}>&#x2715;</button>
+          <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "inherit", fontSize: 18, cursor: "pointer", opacity: 0.35, padding: "4px 8px", lineHeight: 1 }}>&#x2715;</PopupCloseButton>
         </div>
       </div>
 
@@ -255,7 +256,7 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
       <div onMouseDown={(e) => { e.stopPropagation(); dmRzRef.current = { startX: e.clientX, startY: e.clientY, startW: (dmContRef.current?.offsetWidth ?? dmSizeW) || 820, startH: (dmContRef.current?.offsetHeight ?? dmSizeH) || 450, mode: "wh" }; }} style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 2 }}>
         <svg width={10} height={10} viewBox="0 0 10 10"><path d="M9 1L1 9M5 1L1 5M9 5L5 9" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeLinecap="round" /></svg>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }

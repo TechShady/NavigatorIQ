@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React from "react";
 import { createPortal } from "react-dom";
 import {
@@ -266,7 +267,7 @@ export function HotnessForecastPanel({
   const confColor = confidence >= 80 ? "#3EC96A" : confidence >= 65 ? "#FFF04D" : "#FF8C42";
 
   return createPortal(
-    <div style={{
+    <PopupWindow style={{
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: "min(1200px, calc(100vw - 40px))",
       background: "rgba(14,18,36,0.97)", border: "1px solid rgba(69,137,255,0.3)",
       borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.78)",
@@ -285,10 +286,10 @@ export function HotnessForecastPanel({
           <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: 0.4 }}>Hotness Forecast</span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>drag to move</span>
         </div>
-        <button onClick={onClose} style={{
+        <PopupCloseButton onClick={onClose} style={{
           background: "none", border: "none", color: "rgba(255,255,255,0.45)",
           fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1,
-        }}>×</button>
+        }}>×</PopupCloseButton>
       </div>
 
       {/* Controls */}
@@ -495,7 +496,7 @@ export function HotnessForecastPanel({
           </span>
         </div>
       </div>
-    </div>,
+    </PopupWindow>,
     document.body
   );
 }

@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -454,7 +455,7 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 99998, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 14, width: "100%", maxWidth: 900, maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.85)", overflow: "hidden" }}>
+      <PopupWindow style={{ background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 14, width: "100%", maxWidth: 900, maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.85)", overflow: "hidden" }}>
         {/* Header */}
         <div style={{ padding: "18px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
@@ -471,16 +472,16 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
             >
               📄 User Guide
             </a>
-            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.15)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "8px 16px", cursor: "pointer" }}>
+            <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.15)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "8px 16px", cursor: "pointer" }}>
               Close
-            </button>
+            </PopupCloseButton>
           </div>
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <div className="iq-help-layout" style={{ flex: 1, overflow: "hidden", display: "flex" }}>
           {/* Nav */}
-          <div style={{ width: 210, borderRight: "1px solid rgba(255,255,255,0.06)", padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, overflowY: "auto" }}>
+          <div className="iq-help-nav" style={{ width: 210, borderRight: "1px solid rgba(255,255,255,0.06)", padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, overflowY: "auto" }}>
             {SECTIONS.map((s) => (
               <button
                 key={s.id}
@@ -510,7 +511,7 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
             {section.content}
           </div>
         </div>
-      </div>
+      </PopupWindow>
     </div>,
     document.body
   );

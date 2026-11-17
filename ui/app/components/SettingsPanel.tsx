@@ -1,6 +1,7 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { PersonaId, AppLink, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings } from "../types";
-import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_HEAT_METRICS, APP_VERSION } from "../constants";
+import type { PersonaId, AppLink, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings, DimensionConfig } from "../types";
+import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_HEAT_METRICS, APP_VERSION, DIMENSION_PRESETS } from "../constants";
 
 interface SettingsPanelProps {
   settings: SavedSettings;
@@ -296,6 +297,71 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
           )}
         </div>
       </div>
+
+      {/* ── Dimension Configuration for "Follow the Red" ── */}
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Follow the Red — Dimension Split</div>
+        <div>
+          <label style={LABEL_STYLE}>Dimensions (comma-separated)</label>
+          <input
+            value={metric.dimensionConfig?.dimensions ?? ""}
+            onChange={(e) => onChange(index, { 
+              ...metric, 
+              dimensionConfig: { 
+                dimensions: e.target.value,
+                label: metric.dimensionConfig?.label
+              }
+            })}
+            placeholder="e.g. entityName(dt.entity.service) or frontend.name, page.name"
+            style={INPUT_STYLE}
+          />
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>Splits data in drill-down view by these dimensions (e.g., service name, page name)</div>
+          
+          {/* Preset suggestions if available for this metric */}
+          {(() => {
+            const presets = DIMENSION_PRESETS[metric.metricKey] ?? [];
+            if (presets.length > 0) {
+              return (
+                <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {presets.map((preset, i) => (
+                    <button
+                      key={i}
+                      onClick={() => onChange(index, { 
+                        ...metric, 
+                        dimensionConfig: { 
+                          dimensions: preset.dimensions,
+                          label: preset.label
+                        }
+                      })}
+                      style={{ background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.3)", color: "rgba(69,137,255,0.8)", borderRadius: 4, padding: "3px 8px", fontSize: 10, cursor: "pointer", transition: "all 0.15s" }}
+                      title="Click to use this preset"
+                    >
+                      {preset.label || preset.dimensions.slice(0, 30) + (preset.dimensions.length > 30 ? "…" : "")}
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <label style={LABEL_STYLE}>Dimension Label (optional)</label>
+          <input
+            value={metric.dimensionConfig?.label ?? ""}
+            onChange={(e) => onChange(index, { 
+              ...metric, 
+              dimensionConfig: { 
+                dimensions: metric.dimensionConfig?.dimensions ?? "",
+                label: e.target.value || undefined
+              }
+            })}
+            placeholder="e.g. by Service & Handler"
+            style={INPUT_STYLE}
+          />
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>Display name for this dimension split in the UI</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -458,7 +524,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 99997, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 14, width: "100%", maxWidth: 860, maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.8)", overflow: "hidden" }}>
+      <PopupWindow style={{ background: "#0f1422", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 14, width: "100%", maxWidth: 860, maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.8)", overflow: "hidden" }}>
         {/* Header */}
         <div style={{ padding: "20px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
@@ -471,9 +537,9 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                 Save Changes
               </button>
             )}
-            <button onClick={onClose} style={{ background: "rgba(128,128,128,0.15)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "8px 16px", cursor: "pointer" }}>
+            <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.15)", border: "1px solid rgba(128,128,128,0.25)", borderRadius: 8, color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "8px 16px", cursor: "pointer" }}>
               {hasChanges ? "Discard" : "Close"}
-            </button>
+            </PopupCloseButton>
           </div>
         </div>
 
@@ -762,7 +828,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
             )}
           </div>
         </div>
-      </div>
+      </PopupWindow>
     </div>
   );
 }

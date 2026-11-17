@@ -57,6 +57,13 @@ export interface ThresholdConfig {
 
 export type MetricDisplayUnit = "raw" | "ms" | "ns->ms" | "µs->ms" | "pct" | "count" | "cls";
 
+export interface DimensionConfig {
+  /** Comma-separated list of dimension keys or display names */
+  dimensions: string;
+  /** Optional description of this dimension split (e.g. "by Service and Status") */
+  label?: string;
+}
+
 export interface HeatMetricConfig {
   label: string;
   metricKey: string;
@@ -74,6 +81,8 @@ export interface HeatMetricConfig {
   repoUrl?: string;
   /** When set, thresholds are calibrated for this many hours and auto-scale with bucket interval */
   thresholdBucketHours?: number;
+  /** Dimension configuration for "Follow the Red" drill-down */
+  dimensionConfig?: DimensionConfig;
 }
 
 export interface PersonaSettings {

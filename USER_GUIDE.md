@@ -54,6 +54,12 @@ When you open NavigatorIQ for the first time you will see two things:
 1. **Disclaimer modal** — confirms this is an unofficial community app. Check *Don't show this again* and click **Continue** if you accept.
 2. **Persona Picker** — select the persona that matches your role. You can change this at any time from the header.
 
+### Maximizing popup windows
+
+Every popup has a **Maximize window** icon beside its close control. Maximizing fills the app viewport in the same tab and enlarges small body text to 16px, with larger headings. Long content remains scrollable. Click **Restore window** to return to the previous size, position, and text sizes without losing selections or edits. Nested popups can be maximized independently. The Disclaimer and Persona Picker have the same maximize control and retain their existing Continue buttons.
+
+PDF export is unchanged and remains available separately in popups that support it.
+
 ### The layout
 
 ```
@@ -493,6 +499,47 @@ For each metric, configure:
 - **Warning threshold** and **Critical threshold** (leave empty for traffic metrics where high values are normal)
 - **Traffic / Performance toggle** — Traffic (blue) = high values are expected; Performance (orange) = high values are bad
 - **Display unit** — how values are shown in the UI (ms, %, count, etc.)
+- **Follow the Red — Dimension Split** — configure how data is broken down when you drill into this metric
+
+### Follow the Red — Dimension Split
+
+When you click the **"Follow the Red"** button (↗) next to a metric in the Assessment Panel, NavigatorIQ opens a drill-down view showing which entities (services, hosts, frontend apps, etc.) are driving the metric anomaly. The **Dimension Split** configuration controls how the data is grouped in that drill-down.
+
+#### Configuring dimensions
+
+For each metric, specify the dimension(s) to group by:
+
+**Example 1: Single dimension**
+```
+Dimensions: entityName(dt.entity.service)
+Label: by Service
+```
+This groups error counts by service name in the drill-down view.
+
+**Example 2: Multiple dimensions**
+```
+Dimensions: frontend.name, page.name
+Label: by App & Page
+```
+This groups frontend metrics by application name and page name, showing which app and page combination has the worst performance.
+
+**Example 3: Custom entity fields**
+```
+Dimensions: entityName(dt.entity.host), host.os
+Label: by Host & OS
+```
+Groups by host name and operating system.
+
+#### Dimension presets
+
+For common metrics, NavigatorIQ includes pre-configured dimension splits. When you edit a metric with a known metric key (e.g., `dt.service.request.failure_count`), preset buttons appear below the Dimensions field. Click a preset to instantly apply its dimension configuration.
+
+#### How dimensions affect drill-down
+
+- When you open the **Follow the Red** modal for a metric, the query groups data by your configured dimensions
+- Each row in the drill-down table represents one combination of your selected dimensions
+- **Top entities** are sorted by the metric value, so you see the most impactful groups first
+- Clicking a row may open additional diagnostic panels depending on the metric type
 
 ### General
 
@@ -514,7 +561,29 @@ Add a persona visible to all users:
 - **Label** — the persona name
 - **Description** — shown in the persona picker to explain who this persona is for
 
-Once created, each user can independently configure heat metrics, thresholds, and app links for a custom persona in their Personal settings.
+Once created, each user can independently configure heat metrics, thresholds, app links, and **dimension splits** for a custom persona in their Personal settings.
+
+#### Setting up dimensions for custom personas
+
+When you create a custom persona (e.g., "Mobile", "Payment Services", "Data Platform"), each user can define how metrics should be grouped in drill-down views:
+
+**Example: Mobile Persona with app-specific dimensions**
+
+A Platform Engineer creates a "📱 Mobile" custom persona shared with the team. Users then configure metrics like this in their Personal settings for the Mobile persona:
+
+```
+Metric: Error Count
+Metric key: dt.frontend.error.count
+Dimensions: app.name, device.type
+Label: by App & Device Type
+```
+
+This allows each team member to see which mobile app and device combination has the highest error rate when they drill into Error Count.
+
+**Benefits of customizable dimensions:**
+- **Role-specific insights** — different roles care about different groupings
+- **Data model flexibility** — dimensions adapt to your app's entity model and structure
+- **Fast problem identification** — group by what matters to your team (e.g., service name vs. handler; region vs. zone; app vs. screen)
 
 ---
 

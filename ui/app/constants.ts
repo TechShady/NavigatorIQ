@@ -1,6 +1,6 @@
-import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig } from "./types";
+import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig, DimensionConfig } from "./types";
 
-export const APP_VERSION = "0.4.104";
+export const APP_VERSION = "0.4.106";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
@@ -204,21 +204,21 @@ const DB_ERRORS_DQL = `fetch spans, from:\${from}, to:\${to}
 
 export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   developer: [
-    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
-    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.distributedtracing" },
+    { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services", dimensionConfig: { dimensions: "entityName(dt.entity.service)", label: "by Service" } },
+    { label: "Response Time", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.distributedtracing", dimensionConfig: { dimensions: "entityName(dt.entity.service)", label: "by Service" } },
     { label: "Request Volume", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
-    { label: "Error Rate", metricKey: "dt.service.request.failure_count", denominatorKey: "dt.service.request.count", aggregation: "sum", type: "ratio", isTraffic: false, displayUnit: "pct", warningThreshold: 5, criticalThreshold: 10, exploreAppPath: "dynatrace.services" },
+    { label: "Error Rate", metricKey: "dt.service.request.failure_count", denominatorKey: "dt.service.request.count", aggregation: "sum", type: "ratio", isTraffic: false, displayUnit: "pct", warningThreshold: 5, criticalThreshold: 10, exploreAppPath: "dynatrace.services", dimensionConfig: { dimensions: "entityName(dt.entity.service)", label: "by Service" } },
     { label: "N+1 Queries", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: N1_DQL_QUERY, warningThreshold: 50, criticalThreshold: 100, thresholdBucketHours: 1, exploreAppPath: "my.pattern.problems.app", repoUrl: "https://github.com/TechShady/pattern-problem-app" },
     { label: "Chatty APIs", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: CHATTY_DQL_QUERY, warningThreshold: 5, criticalThreshold: 15, thresholdBucketHours: 1, exploreAppPath: "my.pattern.problems.app", repoUrl: "https://github.com/TechShady/pattern-problem-app" },
     { label: "Circular Deps", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: CIRCULAR_DQL_QUERY, warningThreshold: 3, criticalThreshold: 10, thresholdBucketHours: 1, exploreAppPath: "my.pattern.problems.app", repoUrl: "https://github.com/TechShady/pattern-problem-app" },
     { label: "Slow Consumers", metricKey: "", aggregation: "sum", type: "dql", isTraffic: false, displayUnit: "count", dqlQuery: SLOW_DQL_QUERY, warningThreshold: 5, criticalThreshold: 15, thresholdBucketHours: 1, exploreAppPath: "my.pattern.problems.app", repoUrl: "https://github.com/TechShady/pattern-problem-app" },
   ],
   sre: [
-    { label: "Errors", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services" },
+    { label: "Errors", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services", dimensionConfig: { dimensions: "entityName(dt.entity.service)", label: "by Service" } },
     { label: "Traffic", metricKey: "dt.service.request.count", aggregation: "sum", isTraffic: true, displayUnit: "count" },
-    { label: "Latency", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.services" },
-    { label: "CPU Saturation", metricKey: "dt.host.cpu.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.infraops" },
-    { label: "Memory Saturation", metricKey: "dt.host.memory.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 90, exploreAppPath: "dynatrace.infraops" },
+    { label: "Latency", metricKey: "dt.service.request.response_time", aggregation: "avg", isTraffic: false, displayUnit: "ns->ms", warningThreshold: 500, criticalThreshold: 2000, exploreAppPath: "dynatrace.services", dimensionConfig: { dimensions: "entityName(dt.entity.service)", label: "by Service" } },
+    { label: "CPU Saturation", metricKey: "dt.host.cpu.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.infraops", dimensionConfig: { dimensions: "entityName(dt.entity.host)", label: "by Host" } },
+    { label: "Memory Saturation", metricKey: "dt.host.memory.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 90, exploreAppPath: "dynatrace.infraops", dimensionConfig: { dimensions: "entityName(dt.entity.host)", label: "by Host" } },
   ],
   platform: [
     { label: "CPU Usage", metricKey: "dt.host.cpu.usage", aggregation: "avg", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.infraops" },
@@ -240,13 +240,13 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "N+1 Queries", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: N1_DQL_QUERY, isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 100, thresholdBucketHours: 1, exploreAppPath: "my.pattern.problems.app", repoUrl: "https://github.com/TechShady/pattern-problem-app" },
   ],
   digital: [
-    { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 2500, criticalThreshold: 4000, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms", warningThreshold: 3000, criticalThreshold: 5000, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 800, criticalThreshold: 1800, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 200, criticalThreshold: 500, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "cls", warningThreshold: 0.1, criticalThreshold: 0.25, exploreAppPath: "dynatrace.experience.vitals" },
-    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector" },
-    { label: "Requests", metricKey: "dt.frontend.user_action.count", aggregation: "sum", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.experience.vitals" },
+    { label: "LCP", metricKey: "dt.frontend.web.page.largest_contentful_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 2500, criticalThreshold: 4000, exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name, page.name", label: "by App & Page" } },
+    { label: "Duration", metricKey: "dt.frontend.user_action.duration", aggregation: "avg", isTraffic: false, displayUnit: "ms", warningThreshold: 3000, criticalThreshold: 5000, exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name, page.name", label: "by App & Page" } },
+    { label: "TTFB", metricKey: "dt.frontend.web.navigation.time_to_first_byte", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 800, criticalThreshold: 1800, exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name, page.name", label: "by App & Page" } },
+    { label: "INP", metricKey: "dt.frontend.web.page.interaction_to_next_paint", aggregation: "avg", isTraffic: false, displayUnit: "µs->ms", warningThreshold: 200, criticalThreshold: 500, exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name, page.name", label: "by App & Page" } },
+    { label: "CLS", metricKey: "dt.frontend.web.page.cumulative_layout_shift", aggregation: "avg", isTraffic: false, displayUnit: "cls", warningThreshold: 0.1, criticalThreshold: 0.25, exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name, page.name", label: "by App & Page" } },
+    { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector", dimensionConfig: { dimensions: "frontend.name", label: "by App" } },
+    { label: "Requests", metricKey: "dt.frontend.user_action.count", aggregation: "sum", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name", label: "by App" } },
   ],
   network: [
     { label: "Bytes Sent", metricKey: "dt.process.network.bytes_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.bytes_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
@@ -276,6 +276,87 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "CPU Usage", metricKey: "dt.host.cpu.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.host.cpu.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 70, criticalThreshold: 85, exploreAppPath: "dynatrace.infraops" },
     { label: "Memory Usage", metricKey: "dt.host.memory.usage", aggregation: "avg", type: "dql", dqlQuery: "timeseries value=avg(dt.host.memory.usage), interval:${interval}, from:${from}, to:${to}", isTraffic: false, displayUnit: "pct", warningThreshold: 80, criticalThreshold: 90, exploreAppPath: "dynatrace.infraops" },
     { label: "Log Errors", metricKey: "", aggregation: "sum", type: "dql", dqlQuery: "fetch logs, from:${from}, to:${to}\n| filter status == \"ERROR\" or status == \"FATAL\"\n| makeTimeseries value=count(), interval:${interval}", isTraffic: false, displayUnit: "count", warningThreshold: 20, criticalThreshold: 100, exploreAppPath: "dynatrace.logs" },
+  ],
+};
+
+/** Dimension presets for different metric types */
+export const DIMENSION_PRESETS: Record<string, DimensionConfig[]> = {
+  // Service metrics
+  "dt.service.request.failure_count": [
+    { dimensions: "entityName(dt.entity.service)", label: "by Service" },
+    { dimensions: "entityName(dt.entity.service), entityName(dt.entity.service).handler", label: "by Service & Handler" },
+  ],
+  "dt.service.request.response_time": [
+    { dimensions: "entityName(dt.entity.service)", label: "by Service" },
+    { dimensions: "entityName(dt.entity.service), entityName(dt.entity.service).handler", label: "by Service & Handler" },
+  ],
+  "dt.service.request.count": [
+    { dimensions: "entityName(dt.entity.service)", label: "by Service" },
+    { dimensions: "entityName(dt.entity.service), entityName(dt.entity.service).handler", label: "by Service & Handler" },
+  ],
+  
+  // Frontend/RUM metrics
+  "dt.frontend.web.page.largest_contentful_paint": [
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+    { dimensions: "frontend.name", label: "by App" },
+  ],
+  "dt.frontend.web.page.first_contentful_paint": [
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+    { dimensions: "frontend.name", label: "by App" },
+  ],
+  "dt.frontend.web.page.interaction_to_next_paint": [
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+    { dimensions: "frontend.name", label: "by App" },
+  ],
+  "dt.frontend.web.navigation.time_to_first_byte": [
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+    { dimensions: "frontend.name", label: "by App" },
+  ],
+  "dt.frontend.user_action.duration": [
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+    { dimensions: "frontend.name", label: "by App" },
+  ],
+  "dt.frontend.web.page.cumulative_layout_shift": [
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+    { dimensions: "frontend.name", label: "by App" },
+  ],
+  "dt.frontend.error.count": [
+    { dimensions: "frontend.name", label: "by App" },
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+  ],
+  "dt.frontend.user_action.count": [
+    { dimensions: "frontend.name", label: "by App" },
+    { dimensions: "frontend.name, page.name", label: "by App & Page" },
+  ],
+  
+  // Host metrics
+  "dt.host.cpu.usage": [
+    { dimensions: "entityName(dt.entity.host)", label: "by Host" },
+    { dimensions: "entityName(dt.entity.host), host.os", label: "by Host & OS" },
+  ],
+  "dt.host.memory.usage": [
+    { dimensions: "entityName(dt.entity.host)", label: "by Host" },
+    { dimensions: "entityName(dt.entity.host), host.os", label: "by Host & OS" },
+  ],
+  
+  // Network metrics
+  "dt.process.network.bytes_tx": [
+    { dimensions: "entityName(dt.entity.host)", label: "by Host" },
+    { dimensions: "process.name, entityName(dt.entity.host)", label: "by Process & Host" },
+  ],
+  "dt.process.network.bytes_rx": [
+    { dimensions: "entityName(dt.entity.host)", label: "by Host" },
+    { dimensions: "process.name, entityName(dt.entity.host)", label: "by Process & Host" },
+  ],
+  
+  // Kubernetes metrics
+  "dt.kubernetes.container.cpu_usage": [
+    { dimensions: "k8s.cluster.name, k8s.namespace.name", label: "by Cluster & Namespace" },
+    { dimensions: "k8s.cluster.name, k8s.namespace.name, k8s.pod.name", label: "by Cluster & Namespace & Pod" },
+  ],
+  "dt.kubernetes.container.memory_working_set": [
+    { dimensions: "k8s.cluster.name, k8s.namespace.name", label: "by Cluster & Namespace" },
+    { dimensions: "k8s.cluster.name, k8s.namespace.name, k8s.pod.name", label: "by Cluster & Namespace & Pod" },
   ],
 };
 

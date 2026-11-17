@@ -1,3 +1,4 @@
+import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState } from "react";
 import type { PersonaDef, HeatMetricConfig } from "../types";
 
@@ -209,7 +210,7 @@ export function AutomateModal({ persona, heatMetrics, onClose }: Props) {
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
-      <div
+      <PopupWindow
         style={{ background: "linear-gradient(135deg,rgba(9,12,22,0.99) 0%,rgba(14,18,34,0.99) 100%)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 14, padding: 28, width: 460, maxWidth: "calc(100vw - 40px)", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -219,7 +220,7 @@ export function AutomateModal({ persona, heatMetrics, onClose }: Props) {
             <GridIcon size={14} />
           </span>
           <span style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>Automate Weekly Report</span>
-          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: "2px 6px" }}>✕</button>
+          <PopupCloseButton onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: "2px 6px" }}>✕</PopupCloseButton>
         </div>
 
         {/* Workflow summary card */}
@@ -303,7 +304,7 @@ export function AutomateModal({ persona, heatMetrics, onClose }: Props) {
             {status === "success" ? "↓ Download Again" : "↓ Download Workflow JSON"}
           </button>
         </div>
-      </div>
+      </PopupWindow>
     </div>
   );
 }
