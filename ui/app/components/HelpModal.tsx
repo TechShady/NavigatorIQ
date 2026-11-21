@@ -66,7 +66,7 @@ const SECTIONS: HelpSection[] = [
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          NavigatorIQ Launcher is a persona-driven operational intelligence dashboard for Dynatrace. It gives each persona (Developer, DBA, Network Admin, Security, etc.) a focused heat-based view of the metrics that matter most to them — and then gets out of the way, launching you directly into the right Dynatrace app to investigate.
+          NavigatorIQ Launcher is a persona-driven operational intelligence dashboard for Dynatrace. It gives each persona (Developer, DBA, Network Admin, Mobile Experience, etc.) a focused heat-based view of the metrics that matter most to them, with contextual links to investigate in Dynatrace.
         </p>
         <p style={P}>
           The core idea: <strong style={{ color: "#fff" }}>follow the red.</strong> The heat strip and assessment drive you to what's anomalous right now. The <strong style={{ color: "#7ab4ff" }}>NavigatorIQ Launcher Intelligence</strong> narrative then tells you what it found in plain language, word by word, like a response from an AI assistant.
@@ -77,6 +77,7 @@ const SECTIONS: HelpSection[] = [
         <p style={P}>
           <strong style={{ color: "#fff" }}>Activity &amp; Spikes</strong> is expanded by default for investigating unusual intervals. Expand <strong style={{ color: "#fff" }}>Timeframe Assessment</strong> for the narrative and metric status; its critical and warning counts remain visible when collapsed. The sections can be opened or closed independently.
         </p>
+        <p style={P}>Use the maximize control beside a popup's close button to fill the app viewport; restore it to return to its previous size and position. Content remains scrollable.</p>
       </div>
     ),
   },
@@ -91,14 +92,16 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ul style={UL}>
           <li><strong style={{ color: "#fff" }}>Developer</strong> — services, error rate, response time, request volume</li>
-          <li><strong style={{ color: "#fff" }}>SRE / Platform</strong> — host CPU, memory, disk I/O, network, process metrics</li>
+          <li><strong style={{ color: "#fff" }}>SRE</strong> — service errors, traffic, latency, CPU and memory saturation</li>
+          <li><strong style={{ color: "#fff" }}>Platform Engineer</strong> — host CPU, memory, disk I/O, network, process metrics</li>
           <li><strong style={{ color: "#fff" }}>DBA</strong> — database query volume, avg/P99 latency, slow queries, DB errors</li>
           <li><strong style={{ color: "#fff" }}>Network Admin</strong> — bytes sent/received, packets, retransmissions</li>
           <li><strong style={{ color: "#fff" }}>DevOps / CI/CD</strong> — services, infra, log errors, deployments</li>
-          <li><strong style={{ color: "#fff" }}>Security</strong> — vulnerability severity, attack events</li>
-          <li><strong style={{ color: "#fff" }}>Digital Experience</strong> — RUM LCP, sessions, Apdex, synthetic failures</li>
+          <li><strong style={{ color: "#fff" }}>Digital Experience</strong> — web vitals, action duration, errors and requests</li>
+          <li><strong style={{ color: "#fff" }}>Mobile Experience</strong> — sessions, errors, error rate, crashes and crash rate</li>
           <li><strong style={{ color: "#fff" }}>K8s</strong> — container CPU/memory, OOMKills, pod scheduling</li>
         </ul>
+        <p style={P}>Mobile Experience includes per-app drill-downs and defaults its row links to Mobile Navigation, which must be installed and accessible. Existing personal overrides remain; use Reset to defaults for that persona to restore the built-in metrics and links. Set thresholds for your environment.</p>
         <p style={P}>Custom personas can be added in <strong style={{ color: "#fff" }}>Settings → All Users → Personas</strong> (shared with everyone in the tenant).</p>
       </div>
     ),
@@ -147,7 +150,7 @@ const SECTIONS: HelpSection[] = [
           <li><span style={{ color: "#10B981" }}>● Green dot</span> in the marker zone above a bar — a deployment event occurred in that interval</li>
           <li><span style={{ color: "#FF073A", fontWeight: 700 }}>Red number</span> in the marker zone — how many Davis Problems <em>opened</em> in that interval. In dense views (Today / 7d), shows as a size-scaled red dot instead of a number to avoid overlap</li>
           <li><strong style={{ color: "#fff" }}>Click a bar</strong> — opens Bucket Diagnosis for that specific window</li>
-          <li><strong style={{ color: "#fff" }}>Click and drag across multiple bars</strong> — highlights a range with a blue outline; releasing <em>zooms the entire app</em> into that custom time window (all queries reload). A blue banner shows the zoom range; click <strong style={{ color: "#fff" }}>✕ Exit zoom</strong> to return to the full tab window.</li>
+          <li><strong style={{ color: "#fff" }}>Click and drag across multiple bars</strong> — selects a range; click <strong style={{ color: "#fff" }}>Zoom in</strong> in the selection popup to reload the app for that window. Use <strong style={{ color: "#fff" }}>✕ Exit zoom</strong> to return to the full tab window.</li>
           <li><strong style={{ color: "#fff" }}>🔥 Hotness Assist</strong> — deep-dive analysis panel for the full timeline</li>
           <li><strong style={{ color: "#fff" }}>📅 Calendar</strong> — day × hour heatmap showing when your environment runs hot across an extended window</li>
           <li><strong style={{ color: "#fff" }}>📈 Forecast</strong> — projects metric trends using multiple forecasting models</li>
@@ -187,7 +190,7 @@ const SECTIONS: HelpSection[] = [
         <ul style={UL}>
           <li>Each metric row shows the Z-score, raw value, and a color band matching its heat level</li>
           <li>Click <strong style={{ color: "#fff" }}>Follow the Red ↗</strong> on an eligible metric row to open its drill-down panel</li>
-          <li>Click <strong style={{ color: "#fff" }}>Why is this hot?</strong> for a narrative explanation of what drove the anomaly in that bucket</li>
+          <li>The <strong style={{ color: "#fff" }}>Why is this hot?</strong> popup identifies a primary driver and, when present, concurrent elevated signals</li>
         </ul>
       </div>
     ),
@@ -195,20 +198,17 @@ const SECTIONS: HelpSection[] = [
   {
     id: "explore",
     icon: "↗",
-    title: "Explore",
+    title: "Follow the Red",
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          The <strong style={{ color: "#fff" }}>Explore</strong> panel opens when you click a metric in the Bucket Diagnosis popup or from Hotness Assist. It gives a deeper look at a single metric over the full timeframe.
+          Click <strong style={{ color: "#fff" }}>Follow the Red</strong> on an eligible Bucket Diagnosis row to see contributors for that metric in the selected timeframe.
         </p>
         <ul style={UL}>
-          <li>Sparkline with the metric's full time-series at bucket granularity</li>
-          <li>Entity-level breakdown — for supported metrics, shows a ranked list of the top contributing entities (services, hosts, etc.)</li>
-          <li>Diagnosis scenarios: a list of checks for that metric with CRITICAL / REVIEW / OK status and a recommended action</li>
-          <li>Direct link to the relevant Dynatrace app for deeper investigation</li>
-          <li>For Digital Experience metrics, a <strong style={{ color: "#fff" }}>Dimension</strong> button opens a geo + browser breakdown with pie charts</li>
+          <li>Supported metrics show entity or configured dimension rows; custom DQL can supply its own breakdown.</li>
+          <li>Available row pills include Forecast, Diagnose, Baseline, Cost Impact, Heatmap, Dimension, Impact and Anomaly. Availability and detail depend on the metric and data.</li>
+          <li>Use <strong style={{ color: "#fff" }}>Open in Dynatrace</strong> where available to continue investigating. Digital Experience can show geographic and browser dimensions; Mobile Experience supports country and OS breakdowns.</li>
         </ul>
-        <p style={P}>The Explore panel is draggable and resizable.</p>
       </div>
     ),
   },
@@ -223,10 +223,10 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ul style={UL}>
           <li><strong style={{ color: "#fff" }}>KPI Tiles</strong> — hot bucket count, critical spike count, worst and best Z-scores</li>
-          <li><strong style={{ color: "#fff" }}>Analysis Summary</strong> — animated narrative: summary of what happened, then root-cause with leading indicators</li>
+          <li><strong style={{ color: "#fff" }}>Analysis Summary</strong> — animated summary and possible leading indicators to investigate</li>
           <li><strong style={{ color: "#fff" }}>Hotness Timeline</strong> — sparkline with W1/W2 (worst) and B1/B2 (best) bucket markers labeled directly on the chart</li>
           <li><strong style={{ color: "#fff" }}>Pattern Analysis</strong> — Stable, Transient, Sustained, or Chronic; plus Spike Behavior stats (episode count, longest run, avg recovery)</li>
-          <li><strong style={{ color: "#fff" }}>Cross-Metric Correlation</strong> — which metric pairs co-spiked. <em>Co-hot</em> = buckets both elevated; <em>Rate</em> = % of Metric A's hot buckets where B was also hot. High Rate = strong directional link.</li>
+          <li><strong style={{ color: "#fff" }}>Cross-Metric Correlation</strong> — which metric pairs co-spiked. <em>Co-hot</em> = buckets both elevated; <em>Rate</em> = % of Metric A's hot buckets where B was also hot. Co-occurrence is a lead, not proof of causation.</li>
           <li><strong style={{ color: "#fff" }}>What's Different — W1 vs B1</strong> — side-by-side breakdown of worst vs best bucket, plus Gap Table showing how much each metric improved</li>
           <li><strong style={{ color: "#fff" }}>Common Bad Signals — W1 vs W2</strong> — metrics elevated in <em>both</em> worst windows; persistent signals are your strongest leads</li>
           <li><strong style={{ color: "#fff" }}>Common Good Signals — B1 vs B2</strong> — metrics healthy in <em>both</em> best windows; your true baseline and SLO reference</li>
@@ -235,6 +235,7 @@ const SECTIONS: HelpSection[] = [
           <li><strong style={{ color: "#fff" }}>Next Steps</strong> — Investigate buttons for every metric exceeding its threshold</li>
           <li><strong style={{ color: "#fff" }}>Active Davis Problems</strong> — open Problems during the timeframe, listed at bottom as contextual reference</li>
         </ul>
+        <p style={P}>Assist excludes missing or invalid buckets, all-zero buckets, and the final potentially incomplete bucket from its analysis. Individual zero values remain valid when another metric has data. If no eligible buckets remain, Assist reports no data rather than a healthy baseline.</p>
       </div>
     ),
   },
@@ -248,13 +249,12 @@ const SECTIONS: HelpSection[] = [
           Click the <strong style={{ color: "#fff" }}>📅</strong> button beside Hotness Assist to open the <strong style={{ color: "#fff" }}>Hotness Calendar</strong> — a day-of-week × hour-of-day heatmap that shows when your environment typically runs hot.
         </p>
         <p style={P}>
-          Each cell represents one hour slot aggregated across multiple days of history. The color reflects the worst Z-score seen during that hour, using the same scale as the heat strip. This makes it easy to spot recurring patterns: weekly peak times, overnight batch jobs, Monday morning spikes.
+          Each cell represents a day and hour, colored by its average Z-score in the loaded history. The calendar requests seven days of history; patterns are leads to investigate, not proof that a spike is expected or harmless.
         </p>
         <ul style={UL}>
-          <li>Select <strong style={{ color: "#fff" }}>7 days</strong>, <strong style={{ color: "#fff" }}>14 days</strong>, or <strong style={{ color: "#fff" }}>30 days</strong> of history to aggregate</li>
           <li>Hover any cell in either window size to see its day, hour, average Z-score, and level; empty cells show no data.</li>
           <li>Maximize the window to spread the grid across the available width.</li>
-          <li>Use it to distinguish "this is always hot on Monday at 9am" from "something unusual is happening right now"</li>
+          <li>Use Analyze cards to highlight hours or days, click a legend level to filter the grid, or export a printable PDF.</li>
         </ul>
         <p style={P}>The calendar panel is draggable.</p>
       </div>
@@ -267,7 +267,7 @@ const SECTIONS: HelpSection[] = [
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          Each metric in the assessment can show its own <strong style={{ color: "#fff" }}>KPI Heatmap</strong> — a day × hour calendar scoped to that single metric rather than the aggregated heat score.
+          Open <strong style={{ color: "#fff" }}>Heatmap</strong> on an eligible Follow the Red row for a day × hour calendar scoped to that metric and entity or group, rather than the combined hotness score.
         </p>
         <p style={P}>
           This lets you see exactly which hours and days a specific metric (e.g. Error Rate, or CPU Usage) runs worst — independently of whether other metrics are elevated at the same time. Useful for targeted SLO analysis or capacity planning.
@@ -275,7 +275,7 @@ const SECTIONS: HelpSection[] = [
         <ul style={UL}>
           <li>Values are shown in the metric's native unit (ms, %, count) on hover</li>
           <li>Color scale uses relative Z-scoring within the metric's own history</li>
-          <li>Best / worst hour and best / worst day are highlighted with a ring</li>
+          <li>Click Analyze cards to highlight the corresponding hours or days, and use the legend to filter heat levels</li>
         </ul>
       </div>
     ),
@@ -287,7 +287,7 @@ const SECTIONS: HelpSection[] = [
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          Click <strong style={{ color: "#fff" }}>📈 Forecast</strong> from the assessment to project a metric's trend forward. The panel is draggable.
+          Click <strong style={{ color: "#fff" }}>📈 Forecast</strong> above the heat strip to project combined hotness, or use the Forecast pill on an eligible Follow the Red row for a metric or group.
         </p>
         <p style={P}>Six forecasting models are available — select the one that fits the metric's behavior:</p>
         <ul style={UL}>
@@ -298,8 +298,8 @@ const SECTIONS: HelpSection[] = [
           <li><strong style={{ color: "#fff" }}>ARIMA</strong> — auto-regressive integrated moving average. Good general-purpose model for stationary time series.</li>
           <li><strong style={{ color: "#fff" }}>SARIMA</strong> — seasonal ARIMA. Best when the metric has strong, consistent seasonality.</li>
         </ul>
-        <p style={P}>A confidence band (shaded area) is shown around the forecast to indicate uncertainty — wider = less confident. The history period shown matches the current timeframe tab.</p>
-        <p style={P}>The heat-strip Hotness Forecast has a <strong style={{ color: "#fff" }}>PDF</strong> button for a printable report with the current chart and model settings. Apply pending period changes first.</p>
+        <p style={P}>Hotness Forecast also offers <strong style={{ color: "#fff" }}>Seasonal</strong> (the default), based on historical hourly averages. Choose 7, 14, 30, 60 or 90 days to analyze and a 7, 14 or 30 day forecast, then click Apply. Forecasts are estimates, not guarantees.</p>
+        <p style={P}>The Hotness Forecast <strong style={{ color: "#fff" }}>PDF</strong> button opens a printable report with the chart and applied model settings. Apply pending period changes first; export requires sufficient data and is unavailable while loading or on error.</p>
       </div>
     ),
   },
@@ -333,8 +333,10 @@ const SECTIONS: HelpSection[] = [
           </li>
         </ul>
         <p style={P}>
-          For each metric: set <strong style={{ color: "#fff" }}>Warning</strong> and <strong style={{ color: "#fff" }}>Critical</strong> thresholds. The colored square toggles the metric between Traffic (blue — high values are expected/normal) and Performance (orange — high values indicate a problem).
+          For each metric: set <strong style={{ color: "#fff" }}>Warning</strong> and <strong style={{ color: "#fff" }}>Critical</strong> thresholds. The colored square toggles the metric between Traffic (blue) and Performance (orange). Traffic metrics provide context but can still contribute to heat.
         </p>
+        <p style={P}>Under <strong style={{ color: "#fff" }}>Follow the Red — Dimension Split</strong>, configure dimensions and an optional label. An optional <strong style={{ color: "#fff" }}>FTR Link Template</strong> overrides only row-level Open in Dynatrace: use an app-relative path with <code style={CODE}>{"${row}"}</code> for the URL-encoded displayed row name. The current tenant is used; Explore App Path is separate and no timeframe is automatically appended.</p>
+        <p style={P}>DQL metrics can also define drill-down, per-row history, and per-row dimension queries. Return the requested fields shown in Settings; the User Guide describes the result shapes and placeholders. Mobile drill details depend on available session data and configured queries.</p>
 
         <p style={{ ...H3, marginTop: 12 }}>⚙️ General</p>
         <p style={P}>Set your default persona and auto-refresh interval. Set to 0 for manual refresh only; set to 300000 (5 min) for hands-free incident watch.</p>
@@ -416,7 +418,7 @@ const SECTIONS: HelpSection[] = [
           <strong style={{ color: "#fff" }}>Key DQL field names for NavigatorIQ:</strong> Use <code style={CODE}>fetch dt.davis.problems</code> (not <code style={CODE}>fetch events</code>) for Davis problems. Status is <code style={CODE}>event.status == "ACTIVE"</code>. Problem name is <code style={CODE}>event.name</code>. Log errors use <code style={CODE}>status == "ERROR"</code> (not <code style={CODE}>log.level</code>).
         </p>
         <p style={P}>
-          <strong style={{ color: "#fff" }}>now() in DQL:</strong> <code style={CODE}>now()</code> only works in <code style={CODE}>from:</code> / <code style={CODE}>to:</code> parameters on the fetch line. It is not valid inside a pipeline stage. Use the <code style={CODE}>{"${from}"}</code> / <code style={CODE}>{"${to}"}</code> placeholders instead — NavigatorIQ substitutes the correct absolute timestamps automatically.
+          Use <code style={CODE}>{"${from}"}</code>, <code style={CODE}>{"${to}"}</code>, and <code style={CODE}>{"${interval}"}</code> in supported query fields so NavigatorIQ can substitute the active window and interval.
         </p>
       </div>
     ),
@@ -429,19 +431,19 @@ const SECTIONS: HelpSection[] = [
       <div style={SECTION_STYLE}>
         <ul style={UL}>
           <li>Use <strong style={{ color: "#fff" }}>Last 2 Hours</strong> (5-min buckets) to pinpoint exactly when an incident started</li>
-          <li><strong style={{ color: "#fff" }}>Red numbers / dots</strong> above bars mark Davis Problems that <em>opened</em> in that interval — correlate with heat spikes to confirm causality</li>
+          <li><strong style={{ color: "#fff" }}>Red numbers / dots</strong> above bars mark Davis Problems that <em>opened</em> in that interval — use them as investigation leads, not proof of causality</li>
           <li><strong style={{ color: "#fff" }}>Green dots</strong> mark deployment events — a red bar right after a green dot is worth investigating immediately</li>
-          <li>Click a bar to see all metric values for <em>that specific window</em>, or <strong style={{ color: "#fff" }}>drag across several bars</strong> to select a range — the hottest bucket in the range opens automatically</li>
+          <li>Click a bar to see its metric values, or drag across several bars and click <strong style={{ color: "#fff" }}>Zoom in</strong> to investigate the selected range</li>
           <li>The <strong style={{ color: "#fff" }}>Cross-Metric Correlation</strong> table in Hotness Assist tells you which metrics move together — a Rate near 100% means one metric almost always spikes with the other</li>
-          <li>Open the <strong style={{ color: "#fff" }}>Hotness Calendar</strong> to separate recurring patterns (Monday peaks, overnight batch) from genuine anomalies</li>
-          <li>Drag Hotness Assist, Forecast, and Explore panels anywhere on screen to keep them visible while you investigate in other panels</li>
+          <li>Open the <strong style={{ color: "#fff" }}>Hotness Calendar</strong> to compare a spike with recent day-and-hour patterns</li>
+          <li>Drag Hotness Assist and Forecast panels to reposition them, or maximize popups for more space</li>
           <li>The <strong style={{ color: "#fff" }}>⟳ refresh button</strong> re-runs all queries without changing the timeframe</li>
           <li>Auto-refresh (Settings → General → 300000 ms) is ideal for incident watch rooms — the heat strip stays live without manual intervention</li>
           <li>Per-user settings mean teammates can have completely different metric configs and thresholds without affecting each other</li>
           <li>Custom personas from Settings → All Users appear for everyone in the tenant — useful for specialized teams or cross-functional squads</li>
           <li>The <strong style={{ color: "#fff" }}>NavigatorIQ Launcher Intelligence</strong> narrative is the fastest way to brief someone mid-incident — it reads like a summary from an analyst, not a raw metric dump</li>
           <li>The <strong style={{ color: "#fff" }}>Automate</strong> button (grid icon) generates a Dynatrace Workflow JSON for a weekly email report — enter an email, download the JSON, upload it to Workflows, and get a Monday 8 AM briefing automatically</li>
-          <li><strong style={{ color: "#fff" }}>Drag-to-zoom</strong> on the heat strip: drag across several bars to reload all data for that specific window at a finer bucket size (down to 1-minute buckets for short windows). Use this when 7-day view shows a suspicious cluster of red bars.</li>
+          <li><strong style={{ color: "#fff" }}>Drag-to-zoom</strong> can reload a selected range at a finer bucket size (down to 1 minute for short windows) after you click Zoom in.</li>
         </ul>
       </div>
     ),

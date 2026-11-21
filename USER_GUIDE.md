@@ -13,7 +13,7 @@
 5. [NavigatorIQ Launcher Intelligence](#5-navigatoriq-launcher-intelligence)
 6. [Assessment Panel](#6-assessment-panel)
 7. [Bucket Diagnosis — Why Is This Hot?](#7-bucket-diagnosis--why-is-this-hot)
-8. [Explore — Metric Drill-Down](#8-explore--metric-drill-down)
+8. [Follow the Red — Metric Drill-Down](#8-follow-the-red--metric-drill-down)
 9. [Hotness Assist](#9-hotness-assist)
 10. [Hotness Calendar](#10-hotness-calendar)
 11. [KPI Heatmap](#11-kpi-heatmap)
@@ -31,12 +31,12 @@
 
 ## 1. What Is NavigatorIQ Launcher?
 
-NavigatorIQ Launcher is a **persona-driven operational intelligence dashboard** built on the Dynatrace App Platform. It aggregates the metrics that matter most to a specific role — Developer, SRE, DBA, Security, Network Admin, Digital Experience, K8s, or DevOps — into a single color-coded heat view, and then gets out of the way by launching you directly into the right Dynatrace app to investigate.
+NavigatorIQ Launcher is a **persona-driven operational intelligence dashboard** built on the Dynatrace App Platform. It aggregates metrics for roles including Developer, SRE, Platform Engineer, DBA, Network Admin, Digital Experience, Mobile Experience, Kubernetes, and DevOps into a color-coded heat view, with contextual links for further investigation.
 
 ### Core philosophy
 
 - **Follow the red.** The heat strip and assessment guide you to what is anomalous right now. You should not need to hunt for problems — NavigatorIQ surfaces them.
-- **One click to investigate.** Every metric and every assessment item links directly into the relevant Dynatrace app at the right scope.
+- **Contextual investigation.** Follow the Red and available app links help you investigate the relevant metric or assessment.
 - **Your view, your metrics.** Per-user settings mean each person in the team can configure their own thresholds and heat metrics without affecting anyone else.
 
 ### What NavigatorIQ is NOT
@@ -103,12 +103,12 @@ NavigatorIQ ships with nine built-in personas. Switch between them using the per
 | Persona | Primary Focus |
 |---------|--------------|
 | **Developer** | Service error rate, response time, request volume |
-| **SRE / Platform** | Host CPU, memory, disk I/O, network, process metrics |
+| **SRE** | Service errors, traffic, latency, CPU and memory saturation |
+| **Platform Engineer** | Host CPU, memory, disk I/O, network, process metrics |
 | **DBA** | DB query volume, avg/P99 latency, slow queries, DB errors |
 | **Network Admin** | Bytes sent/received, packets, retransmissions |
 | **DevOps / CI/CD** | Services, infra, log errors, deployments |
-| **Security** | Vulnerability severity, attack events |
-| **Digital Experience** | RUM LCP, sessions, Apdex, synthetic failures |
+| **Digital Experience** | Web vitals, action duration, errors and requests |
 | **Mobile Experience** | Mobile sessions, errors, error-session rate, crash sessions, crash-session rate |
 | **K8s** | Container CPU/memory, OOMKills, pod scheduling |
 
@@ -167,18 +167,18 @@ These markers let you instantly correlate "something spiked" with "we deployed" 
 | Action | Result |
 |--------|--------|
 | Click a bar | Opens **Bucket Diagnosis** for that specific window |
-| **Click and drag** across several bars | Highlights the range with a blue outline; releasing **zooms the entire app** into that time window |
+| **Click and drag** across several bars | Selects a range; click **Zoom in** in the popup to apply it |
 | Click **🔥 Hotness Assist** | Opens full timeline analysis panel |
 | Click **📅** | Opens **Hotness Calendar** (day × hour heatmap) |
-| Click **📈 Forecast** on an assessment item | Opens **Forecast** panel for that metric |
+| Click **📈 Forecast** above the heat strip | Opens **Hotness Forecast** for the combined score |
 
 ### Drag-to-zoom
 
-When you release a drag-select, NavigatorIQ sets a **custom zoom window** covering the selected bars. A blue banner appears below the header showing the zoomed time range (e.g. `10/7 14:30 → 10/7 16:00`) and the effective bucket size. All queries — heat strip, assessment, narrative, and every panel — reload against this custom window.
+After releasing a drag-select, click **Zoom in** in the selection popup to set a **custom zoom window** covering the selected bars. A blue banner shows the zoomed range and effective bucket size. The heat strip, assessment and narrative reload for that window; individual analysis panels may use their own history periods.
 
 Click **✕ Exit zoom** in the banner to return to the full timeframe tab.
 
-> **When to use zoom:** If you see three consecutive red bars in a 7-day view, drag across them to instantly reload all data for that specific window at a finer granularity. Zoom picks the tightest bucket size that fits (down to 1-minute buckets for windows under 30 minutes).
+> **When to use zoom:** If you see a cluster of red bars in a 7-day view, drag across them and click **Zoom in** to investigate that window at a finer granularity. Zoom picks a bucket size based on the range (down to 1 minute for windows of 30 minutes or less).
 
 ---
 
@@ -219,11 +219,7 @@ The assessment panel lists every monitored metric for the current persona with a
 
 ### Assessment actions
 
-Each assessment item has contextual action buttons:
-
-- **↗ Explore** — opens the Explore drill-down panel for that metric
-- **📈 Forecast** — opens the Forecast panel projecting that metric forward
-- **🗓️ Heatmap** — opens the KPI Heatmap for that metric (day × hour calendar)
+Expand an assessment item to see its details, recommendation, and any available built-in or custom app links. Some items offer inline threshold editing. For metric drill-downs, click a heat-strip bucket and use **Follow the Red** on an eligible row.
 
 ---
 
@@ -234,42 +230,27 @@ Click any bar in the heat strip to open **Bucket Diagnosis** — a draggable, sc
 ### What you see
 
 - Each metric row shows the raw value, Z-score, and heat color band
-- Metrics are sorted by Z-score descending — the worst offenders appear first
-- The bucket's start/end time is shown at the top so you can cross-reference in other apps
+- The summary identifies a primary driver when available; concurrent elevated signals are shown when present
+- The header identifies the bucket number and bucket size
 
 ### Drilling deeper
 
 | Button | Action |
 |--------|--------|
-| **Follow the Red ↗** on an eligible row | Opens the drill-down panel for that metric within that time window |
-| **Why is this hot?** | Narrative explanation of what drove the anomaly in this specific bucket |
+| **Follow the Red ↗** on an eligible row | Opens contributors for that metric in the selected timeframe |
+| **↗** beside a metric | Opens its configured Explore app, when available |
 
 > **Best practice:** Use Bucket Diagnosis to narrow from "something spiked at 2pm" to "error rate and response time both spiked — let's look at error rate." Then click Follow the Red on that metric.
 
 ---
 
-## 8. Explore — Metric Drill-Down
+## 8. Follow the Red — Metric Drill-Down
 
-The **Explore** panel opens from an assessment item or from a row in Bucket Diagnosis. It provides a single-metric deep dive.
+Select a heat-strip bucket, then click **Follow the Red** on an eligible metric row. The panel lists contributors for that metric over the selected timeframe, which can differ from the clicked bucket. Standard metrics can show entities or configured dimensions; DQL metrics need a supported automatic breakdown or a configured drill-down query.
 
-### Contents
+Available row actions include **Open in Dynatrace**, **Forecast**, **Diagnose**, **Baseline**, **Cost Impact**, **Heatmap**, **Dimension**, **Impact**, and **Anomaly**. Availability and detail depend on the metric, configured queries and data. Digital Experience can show geographic and browser dimensions; Mobile Experience supports country and operating-system breakdowns. Mobile session drill results are limited by reported telemetry and ingestion delay; see section 15 for details.
 
-- **Sparkline** — the metric's full time-series at the current bucket granularity with color-coded bands
-- **Entity breakdown** — for supported metrics, a ranked list of the top contributing entities (services, hosts, databases)
-- **Diagnosis scenarios** — a set of checks for that metric with CRITICAL / REVIEW / OK status and a recommended action for each
-- **Launch button** — opens the relevant Dynatrace app directly (Services, Logs, Infra, etc.) with the current timeframe pre-applied so you land at exactly the right time window
-
-### Digital Experience extras
-
-For Digital Experience metrics, an additional **Dimension** button opens a geo + browser breakdown:
-- Pie chart of sessions by country
-- Pie chart of sessions by browser
-- Export to HTML for sharing in incident reports
-
-### Usability
-
-- The Explore panel is **draggable and resizable** — drag the title bar to reposition, drag the edges/corners to resize
-- Multiple Explore panels can be open simultaneously if you open them from different metrics
+Row links may use an optional FTR Link Template. This is separate from the metric's Explore App Path, and custom templates do not automatically append a timeframe.
 
 ---
 
@@ -292,7 +273,7 @@ The timeline omits no-data bars while retaining original bucket positions and nu
 
 ### Analysis sections
 
-**Hotness Assist Analysis** — animated narrative that describes what happened and when, rendered word-by-word. The first paragraph is a data summary; the second is a root-cause narrative identifying leading indicators and cascade sequences.
+**Hotness Assist Analysis** — animated narrative that summarizes the data and suggests possible leading indicators and cascade sequences for investigation.
 
 **Hotness Timeline** — mini sparkline of the Z-score across the full window. Four bucket markers are labeled directly on the chart:
 
@@ -319,7 +300,7 @@ The timeline omits no-data bars while retaining original bucket positions and nu
 | Co-hot | Number of buckets where both metrics were elevated (Z ≥ 0.75) at the same time |
 | Rate | % of Metric A's elevated buckets where Metric B was also elevated |
 
-A **Rate near 100%** means Metric B almost always spikes when Metric A does — strong directional link. Use this to find cascading effects (e.g., Error Rate spikes → Response Time also spikes in 95% of cases).
+A **Rate near 100%** means Metric B is elevated in nearly all buckets where Metric A is elevated. This suggests a relationship worth investigating, but does not establish a direction of causation.
 
 **What's Different — Worst #1 vs Best #1** — side-by-side metric breakdown comparing W1 (peak degradation) against B1 (optimal conditions), followed by a **Gap Table** showing how much each metric improved between those two buckets. Large gaps indicate high-impact metrics worth investigating.
 
@@ -351,22 +332,22 @@ Click the **📅** button beside Hotness Assist to open the **Hotness Calendar**
 - Rows = hours of the day (12am → 11pm)
 - Columns = days of the week (Sunday → Saturday)
 - Each cell = the average Z-score for that hour and day over the loaded history
-- Colors use the same scale as the heat strip
+- Colors use the calendar's heat levels based on the average Z-score
 - Hover a cell for its day, hour, average Z-score, and level; empty cells report no data. This works in both the regular and maximized views. Maximize the window to expand the grid across the available width.
 
 ### History window
 
-Select **7 days**, **14 days**, or **30 days** of history. The calendar re-queries at each selection.
+The calendar requests **7 days** of history when opened.
 
 ### Use cases
 
 | Scenario | What you see | Action |
 |----------|-------------|--------|
-| Monday 9am is always red | Recurring peak — expected | Adjust thresholds or add capacity at that time |
-| An unusual red cell at 3am on a Wednesday | Genuinely anomalous | Investigate that specific hour |
+| Monday 9am is red | A peak in the loaded history | Compare with additional history and investigate capacity |
+| A red cell at 3am on a Wednesday | An elevated period | Investigate that hour and its context |
 | Overnight batch jobs | Red strip from 2–4am every night | Exclude from SLO calculations or separate persona |
 
-> **Key insight:** The Calendar separates *recurring patterns* from *genuine anomalies*. If Monday at 9am is always red, a red bar at 9am on Monday is not an incident. The Calendar tells you this instantly.
+Use **Analyze** cards to highlight hours or days and click a legend level to filter the grid. **PDF** opens a printable report. Seven days alone cannot establish a recurring pattern or rule out an incident.
 
 The panel is draggable.
 
@@ -374,20 +355,19 @@ The panel is draggable.
 
 ## 11. KPI Heatmap
 
-Each assessment item has a **🗓️** button that opens a **KPI Heatmap** — a day × hour calendar scoped to that single metric, showing its raw value (not Z-score) in each cell.
+Use **Heatmap** on an eligible Follow the Red row to open a **KPI Heatmap** — a day × hour calendar scoped to that metric and entity or group.
 
 ### Difference from Hotness Calendar
 
 | | Hotness Calendar | KPI Heatmap |
 |-|-----------------|-------------|
-| Scope | All metrics combined (Z-score) | One metric (raw value) |
-| Scale | Relative Z-score | Metric's native unit (ms, %, count) |
+| Scope | Combined hotness (Z-score) | One metric and entity or group |
+| Scale | Average Z-score | Relative color, with raw values in the metric's unit on hover |
 | Use | When does the environment get hot overall? | When does *this specific metric* spike? |
 
 ### Features
 
 - Hover any cell to see the exact raw value and hour range
-- Best and worst hour/day are highlighted with a ring indicator
 - Color scale uses relative Z-scoring within the metric's own history, so low-variance metrics still show variation
 - **Clickable insight cards** — the Analyze section shows insight cards (Hot Zone, Worst Hour, Worst Day, Best Hour, Best Day). Click a card to highlight the corresponding rows or columns in the heatmap grid. Click the card again (or the legend's Clear button) to remove the highlight.
 - **Legend filter** — click any color band in the legend to dim cells outside that heat level, isolating only the cells you care about
@@ -402,12 +382,13 @@ Each assessment item has a **🗓️** button that opens a **KPI Heatmap** — a
 
 ## 12. Forecast
 
-Open the **Forecast** panel from an assessment item's **📈** button. It projects a metric's trend forward using statistical models.
+Click **Forecast** above the heat strip for **Hotness Forecast**, or click **Forecast** on an eligible Follow the Red row for a metric or group forecast. Both project trends using statistical models.
 
 ### Available models
 
 | Model | Best For |
 |-------|---------|
+| **Seasonal** | Historical hourly averages for combined hotness (Hotness Forecast only; default) |
 | **Linear** | Steadily trending metrics (memory leak, disk fill rate) |
 | **Holt-Winters** | Metrics that accelerate or decelerate (adapts level + trend) |
 | **Triple Exponential** | Metrics with repeating daily/weekly patterns |
@@ -417,17 +398,17 @@ Open the **Forecast** panel from an assessment item's **📈** button. It projec
 
 ### Reading the chart
 
-- **Solid line** — historical data (current timeframe window)
+- **Solid line** — historical data for the applied analysis period
 - **Dashed line** — forecast projected forward
 - **Shaded band** — confidence interval (wider = less certain)
 
 ### Selecting a model
 
-Try multiple models and pick the one whose historical fit (how well it tracks the solid line) is best. A model that tracks history well is more likely to forecast accurately.
+Compare models and validate projections against observed outcomes. A good fit to history does not guarantee an accurate forecast.
 
-The panel is draggable. Extend the forecast horizon using the control at the top of the panel.
+Hotness Forecast offers analysis periods of **7, 14, 30, 60, or 90 days** and forecast horizons of **7, 14, or 30 days**. Click **Apply** after changing periods. Its **PDF** button opens a printable report with the chart, applied model and periods, confidence, and forecast peak. Export is unavailable with pending changes, while loading, on error, or without sufficient data. Allow pop-ups and use the print dialog to save as PDF.
 
-The **Forecast** button above the activity heat strip opens Hotness Forecast for the combined hotness score. Its **PDF** button opens a printable report with the chart, applied model and periods, confidence, and forecast peak. Apply any pending period changes before exporting.
+The per-row metric Forecast has its own analysis-period, datapoint-interval, and horizon controls, six models, and a printable PDF. Apply changed settings before interpreting the result.
 
 ---
 
@@ -588,7 +569,7 @@ fetch user.sessions, from:${from}, to:${to}
 
 The custom query defines its own grouping; the Dimensions field does not modify it. Results cover the selected timeframe, not just the clicked heat bucket. A session involving multiple frontends is counted for each frontend.
 
-The automatic mobile session breakdown includes drill pills for each frontend. Baseline, Anomaly, and Heatmap use seven days of hourly session starts ending at or before the selected timeframe end; Forecast offers selectable analysis periods, intervals, horizons, and methods. The latest two hours are excluded to allow for session ingestion delay. Heatmap colors compare volume to the series average, not health. Diagnose and Impact show session-level crash and error counts, and Dimension shows country and OS counts for the selected timeframe. Session-level errors can include other frontends involved in the same session. Cost Impact is unavailable without business data. Open in Dynatrace opens Digital Experience without selecting the frontend.
+The automatic mobile session breakdown includes drill pills for each frontend. Baseline, Anomaly, and Heatmap use seven days of hourly session starts ending at or before the selected timeframe end; Forecast offers selectable analysis periods, intervals, horizons, and methods. The latest two hours are excluded to allow for session ingestion delay. Heatmap colors compare volume to the series average, not health. Diagnose and Impact show session-level crash and error counts, and Dimension shows country and OS counts for the selected timeframe. Session-level errors can include other frontends involved in the same session. Cost Impact is unavailable without business data. With no FTR Link Template, the automatic mobile session breakdown opens Digital Experience without selecting the frontend; the built-in Mobile Experience metrics instead default to the Mobile Navigation template described above.
 
 The following mobile error metric and its matching drill-down query also support pills for each error type:
 
@@ -749,7 +730,7 @@ fetch spans, from:${from}, to:${to}
 | `${to}` | End of the selected timeframe (e.g., `now()`) |
 | `${interval}` | Bucket size for the current tab (e.g., `5m`, `10m`, `1h`) |
 
-> **Important:** `now()` is only valid in `from:` and `to:` parameters on the `fetch` line. It is **not** valid inside a pipeline stage. Always use `${from}` and `${to}` placeholders — NavigatorIQ substitutes them with absolute timestamps automatically.
+> **Tip:** Use `${from}`, `${to}`, and `${interval}` in supported query fields to let NavigatorIQ substitute the active window and interval.
 
 ### Validated DQL patterns
 
@@ -800,18 +781,18 @@ fetch user.events, from:${from}, to:${to}
 
 - **Use Last 2 Hours** for active incident investigation. Five-minute buckets give you the granularity to pinpoint exactly when things went wrong.
 - **Use Last 7 Days** to identify slow-moving degradation — memory leaks, disk fill rates, gradual latency increases that are invisible at 2-hour scale.
-- **Use Yesterday + Today** side by side (switch tabs) to compare today's pattern against the prior day. A spike that also happened yesterday at the same time is likely a scheduled job, not an incident.
+- **Use Yesterday + Today** (switch tabs) to compare today's pattern against the prior day. A similar spike may suggest a scheduled job, but still warrants investigation.
 
 ### Heat strip interpretation
 
-- A single red bar does not always mean an incident. Check whether the same bar appears red in the Hotness Calendar — if Monday at 9am is always red, it is an expected peak.
-- **Green dot + red bar** immediately following: strongly suggests a deployment caused the spike. Click the red bar to open Bucket Diagnosis, then click Explore on the worst metric to see which services are affected.
+- A single red bar does not always mean an incident. Use the Hotness Calendar for recent context, and check additional history before drawing conclusions about recurrence.
+- **Green dot + red bar** immediately following: investigate whether a deployment contributed. Click the red bar and use Follow the Red on an eligible metric to inspect contributors.
 - **Red marker + red bar**: Davis opened one or more problems during that interval. In sparse views the count shows as a number; in dense views it shows as a size-scaled red dot. A high count alongside a spike is a strong signal that something systemic broke. NavigatorIQ shows you *when* it started and how it correlates with metrics — open the Problems app for full detail.
 
 ### Assessment thresholds
 
 - Start with the defaults and adjust after running the app for a week in your environment. You will quickly learn whether your default error rate sits at 0.5% (lower the critical threshold) or 8% (raise it).
-- Use **Traffic** type for metrics where high values are expected during busy periods (request volume, DB query count). NavigatorIQ will not penalize heat scores for high traffic metrics.
+- Use **Traffic** type for volume metrics such as request volume or DB query count. Traffic metrics provide context and can still contribute to the heat score.
 - Set thresholds conservatively for critical production environments and more liberally for staging or dev environments — consider creating separate custom personas for each.
 
 ### Hotness Assist workflow
@@ -820,7 +801,7 @@ fetch user.events, from:${from}, to:${to}
 2. Check **Pattern Analysis** first — Transient vs Sustained tells you whether the incident is ongoing.
 3. Look at **What's Different — W1 vs B1** to see which metrics were worst at peak.
 4. If W2 exists, check **Common Bad Signals** — metrics elevated in both worst windows are your strongest leads.
-5. Use the **Cross-Metric Correlation** table to find cascading effects. If Error Rate drives Response Time (Rate = 95%), fixing errors will likely fix latency too.
+5. Use **Cross-Metric Correlation** to find co-elevated signals, then investigate whether any causal relationship exists.
 6. Use **Next Steps** to launch directly into the right Dynatrace app.
 
 ### Custom personas for teams
@@ -858,10 +839,10 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 
 ### Step 4 — Drill down
 
-11. Click **Explore** on the primary suspect metric
-12. Review the entity breakdown — which services/hosts are driving the value?
-13. Review diagnosis scenarios — what specific conditions are flagged?
-14. Click the **Launch** button to open the full Dynatrace app at the right scope
+11. Click the relevant heat-strip bucket and choose **Follow the Red** on the primary suspect metric, if available
+12. Review the entity or dimension breakdown — which groups contribute to the value?
+13. Use available row pills such as **Diagnose** for further context
+14. Use **Open in Dynatrace** or an available contextual app link to continue the investigation
 
 ### Step 5 — Validate the fix
 
@@ -873,7 +854,7 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 ### Step 6 — Post-incident review
 
 19. Switch to **Last 7 Days** to see the spike in weekly context
-20. Open **Hotness Calendar** — was this hour/day pattern normal or truly anomalous?
+20. Open **Hotness Calendar** for recent day-and-hour context, then compare additional history.
 21. Review thresholds — was the alert threshold appropriate, or does it need tuning?
 
 ---
@@ -906,7 +887,7 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 
 ### The app is very slow to load
 
-- NavigatorIQ runs a large number of DQL queries in parallel at startup. On the first load of each timeframe tab, expect 5–15 seconds for all queries to complete.
+- Loading time depends on data volume and query complexity. Developer may show a partial assessment while remaining queries are still running; wait for completion and review any metric-query errors before drawing conclusions.
 - If you have many custom DQL metrics with complex queries, startup will be slower. Consider simplifying heavy queries or reducing the number of metrics per persona.
 - Auto-refresh at a very short interval (e.g., 60 seconds) with many metrics can cause continuous loading. Use 300000ms (5 min) or longer.
 
@@ -921,14 +902,15 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 
 | Persona | Default Heat Metrics |
 |---------|---------------------|
-| Developer | Request Volume, Error Rate, Response Time |
-| SRE / Platform | CPU, Memory, Disk Usage/I/O, Network |
-| DBA | DB Query Volume, Avg Latency, P99 Latency, Slow Queries, DB Errors |
+| Developer | Error Count, Response Time, Request Volume, Error Rate, N+1 Queries, Chatty APIs, Circular Deps, Slow Consumers |
+| SRE | Errors, Traffic, Latency, CPU Saturation, Memory Saturation |
+| Platform Engineer | CPU, Memory, Disk Usage/I/O, Network Bytes, Process CPU and Memory |
+| DBA | DB Query Volume, Avg/P99 Query Time, Slow Queries, DB Errors, N+1 Queries |
 | Network Admin | Bytes Sent/Received, Packets Sent/Received, Retransmissions |
-| DevOps / CI/CD | Request Volume, Error Rate, CPU, Memory, Log Errors |
-| Security | Vulnerability Severity, Attack Events |
-| Digital Experience | RUM LCP, Sessions, Apdex, Synthetic Failures |
-| K8s | Container CPU, Container Memory, OOMKills |
+| DevOps / CI/CD | Error Count, Response Time, Request Volume, Error Rate, CPU, Memory, Log Errors |
+| Digital Experience | LCP, Duration, TTFB, INP, CLS, Errors, Requests |
+| Mobile Experience | Sessions, Errors, Error Rate, Crashes, Crash Rate |
+| K8s | Container CPU and Memory metrics, requests, limits, allocatable capacity, OOMKills |
 
 ---
 
