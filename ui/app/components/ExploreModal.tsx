@@ -3,10 +3,18 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { queryExecutionClient } from "@dynatrace-sdk/client-query";
+import { useDql } from "@dynatrace-sdk/react-hooks";
+import type { HeatMetricConfig } from "../types";
+import { buildEntityBreakdownQuery, getMobileErrorDrilldownFrontend, isMobileSessionDrilldown, makeMetricFmt, parseDqlDrilldownRecords } from "../queries";
+import { executeDetailQuery } from "./DqlDrillData";
 import { ForecastModal } from "./ForecastModal";
 import { KpiHeatmapPanel } from "./KpiHeatmapPanel";
 import { DimensionModal } from "./DimensionModal";
 import type { DimSlice } from "./DimensionModal";
+import { MobileSessionDrillPanel } from "./MobileSessionDrillPanel";
+import type { MobileSessionDrill } from "./MobileSessionDrillPanel";
+import { DqlSharedPanel } from "./DqlSharedPanel";
+import { resolveFtrLink } from "../ftrLinks";
 
 // ─── Entity config ───────────────────────────────────────────────────────────
 
@@ -30,7 +38,7 @@ function detectEntityConfig(metricKey: string, metricLabel: string): EntityConfi
       entityField: "dt.entity.service",
       appLabel: "Services",
       valueMultiplier: metricKey.includes("response_time") ? 1 / 1000000 : undefined,
-      valueUnit: metricKey.includes("response_time") ? "ms" : undefined,
+      valueUnit: metricKey.includes("response_time") ? "ms" : metricKey === "dt.service.request.failure_rate" ? "%" : undefined,
       entityUrl: (e, id) => `${e}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=${SORT}&detailsId=${id}&sidebarOpen=false`,
       appUrl: (e) => `${e}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=${SORT}`,
     };
@@ -221,20 +229,7 @@ function buildExploreQuery(metricKey: string, metricLabel: string, cfg: EntityCo
     return lines.join("\n");
   }
 
-  const scale = cfg.valueMultiplier ?? 1;
-  const scaleExpr = scale !== 1 ? `arrayAvg(val)*${scale}` : `arrayAvg(val)`;
-  
-  // Use custom dimension config if provided, otherwise use the default entity field
-  const dimClause = dimensionConfig?.dimensions ?? cfg.entityField;
-  const displayNameExpr = dimensionConfig?.dimensions ?? `coalesce(entityName(${cfg.entityField}), toString(${cfg.entityField}))`;
-  
-  return (
-    `timeseries val=avg(${metricKey}), from:${from}, to:${to}, by:{${dimClause}}\n` +
-    `| fieldsAdd entityId=toString(${dimClause}), avg=${scaleExpr}, displayName=coalesce(${displayNameExpr})\n` +
-    `| sort avg desc\n` +
-    `| limit 10\n` +
-    `| fields entityId, displayName, avg`
-  );
+  return buildEntityBreakdownQuery(metricKey, cfg.entityField, from, to, cfg.valueMultiplier ?? 1, dimensionConfig?.dimensions);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -407,10 +402,16 @@ function buildEntitySparklineQuery(
 
   // For timeseries metrics (services, hosts, k8s, etc.) — timeseries command returns val as an array
   const scale = cfg.valueMultiplier ?? 1;
+  const isServiceRate = metricKey === "dt.service.request.failure_rate";
+  const aggregation = isServiceRate
+    ? "failures=sum(dt.service.request.failure_count, default:0), requests=sum(dt.service.request.count)"
+    : ["dt.service.request.count", "dt.service.request.failure_count"].includes(metricKey)
+      ? `val=sum(${metricKey})` : `val=avg(${metricKey})`;
   return {
     query: [
-      `timeseries val=avg(${metricKey}), from:${fromStr}, to:now(), interval:${intervalStr}, by:{${cfg.entityField}}`,
-      `| filter toString(${cfg.entityField}) == "${entityId}"`,
+      `timeseries ${aggregation}, from:${fromStr}, to:now(), interval:${intervalStr}, by:{${cfg.entityField}}`,
+      `| filter toString(${cfg.entityField}) == ${JSON.stringify(entityId)}`,
+      ...(isServiceRate ? ["| fieldsAdd val=if(requests[] > 0, failures[] * 100.0 / requests[])"] : []),
       `| fields val`,
     ].join("\n"),
     valueField: "val",
@@ -420,9 +421,7 @@ function buildEntitySparklineQuery(
 }
 
 async function fetchEntitySparkline(query: string, valueField: string, scale: number, isArray: boolean): Promise<number[]> {
-  const res = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 30000 } });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const records: any[] = (res.result as any)?.records ?? [];
+  const records = await executeDetailQuery(query);
   if (records.length === 0) return [];
   if (isArray) {
     // timeseries command: single row, val is an array of bucket values
@@ -1150,9 +1149,96 @@ interface ExploreModalProps {
   to: string;
   onClose: () => void;
   dimensionConfig?: { dimensions: string; label?: string };
+  drilldownLinkTemplate?: string;
 }
 
-export function ExploreModal({ metricKey, metricLabel, from, to, onClose, dimensionConfig }: ExploreModalProps) {
+function FtrLinkButton({ template, row }: { template: string; row: string }) {
+  const link = resolveFtrLink(template, row, getEnvironmentUrl());
+  if (!link) return null;
+  if ("error" in link) return <span role="alert" style={{ fontSize: 11, color: "#F87171" }}>FTR link: {link.error}</span>;
+  return <button
+    onClick={(event) => { event.stopPropagation(); window.open(link.url, "_blank", "noopener,noreferrer"); }}
+    title={`Open ${row} in the configured app`}
+    style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 5, color: "#7ab4ff", fontSize: 10, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
+  >Open in Dynatrace</button>;
+}
+
+export function DqlExploreModal({ query, metric, from, to, onClose }: { query: string; metric: HeatMetricConfig; from: string; to: string; onClose: () => void }) {
+  const result = useDql<Record<string, unknown>>({ query });
+  const [activeDrill, setActiveDrill] = useState<{ type: MobileSessionDrill; frontend: string; label: string; errorType?: string | null } | null>(null);
+  const records = result.data?.records;
+  const rows = records ? parseDqlDrilldownRecords(records) : undefined;
+  const mobileSession = isMobileSessionDrilldown(metric);
+  const errorFrontend = getMobileErrorDrilldownFrontend(metric);
+  const mobile = mobileSession || !!errorFrontend;
+  const linkTemplate = metric.drilldownLinkTemplate?.trim();
+  const drills: { type: MobileSessionDrill; label: string; color: string; rgb: string; opacity: string }[] = [
+    { type: "forecast", label: "Forecast", color: "#a5b4fc", rgb: "99,102,241", opacity: "0.12" },
+    { type: "diagnose", label: "Diagnose", color: "#6ee7b7", rgb: "16,185,129", opacity: "0.1" },
+    { type: "baseline", label: "Baseline", color: "#FFC800", rgb: "255,200,0", opacity: "0.08" },
+    { type: "cost", label: "Cost Impact", color: "#FFC800", rgb: "255,200,0", opacity: "0.08" },
+    { type: "heatmap", label: "Heatmap", color: "#FF3D9A", rgb: "255,61,154", opacity: "0.08" },
+    { type: "dimension", label: "Dimension", color: "#23A5D0", rgb: "35,165,208", opacity: "0.08" },
+    { type: "impact", label: "Impact", color: "#a78bfa", rgb: "139,92,246", opacity: "0.08" },
+    { type: "anomaly", label: "Anomaly", color: "#f87171", rgb: "239,68,68", opacity: "0.08" },
+  ];
+  const fmt = makeMetricFmt(metric.displayUnit);
+  const formatValue = (value: number) => metric.displaySuffix?.trim()
+    ? `${Number.isInteger(value) ? value : parseFloat(value.toFixed(2))}${metric.displaySuffix.trim()}`
+    : fmt(value);
+
+  return <>
+    {createPortal(
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <PopupWindow style={{ background: "#1A1D23", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, width: 1150, maxWidth: "94vw", maxHeight: "72vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}>
+        <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#E0E6F0" }}>Follow the Red — {metric.label}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{metric.dimensionConfig?.label || "Dimension breakdown"} · selected timeframe</div>
+          </div>
+          <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 18, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>✕</PopupCloseButton>
+        </div>
+        <div style={{ overflowY: "auto", padding: "12px 16px" }}>
+          {result.isLoading && <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Querying dimension breakdown…</div>}
+          {result.isError && <div role="alert" style={{ color: "#F87171", fontSize: 12 }}>Query failed: {result.error.message}</div>}
+          {result.isSuccess && rows === null && <div role="alert" style={{ color: "#F87171", fontSize: 12 }}>Drill-down query must return a text displayName and numeric value for each row.</div>}
+          {result.isSuccess && rows?.length === 0 && <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>No data returned for this metric in the selected timeframe.</div>}
+          {result.isSuccess && rows?.map((row, i) => {
+            const errorRow = !!errorFrontend && row.frontend === errorFrontend && row.errorType !== undefined;
+            const canDrill = !errorFrontend || errorRow;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", gap: 8, padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <span style={{ fontSize: 13, color: "#C9D8F0", overflowWrap: "anywhere" }}>{row.displayName}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: i === 0 ? "#FF3D9A" : i < 3 ? "#FFF04D" : "#10B981" }}>{formatValue(row.value)}</span>
+                {(canDrill || linkTemplate) && <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {linkTemplate ? <FtrLinkButton template={linkTemplate} row={row.displayName} /> : mobile && canDrill && <button
+                    onClick={() => window.open(appendTfToUrl(`${getEnvironmentUrl()}/ui/apps/${errorRow ? "dynatrace.error.inspector/all" : "dynatrace.experience.vitals"}`, buildTfParam(from, to)), "_blank", "noopener,noreferrer")}
+                    title={`Open ${errorRow ? "Errors" : "Digital Experience"} in Dynatrace (frontend is not preselected)`}
+                    style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 5, color: "#7ab4ff", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                  >Open in Dynatrace</button>}
+                  {canDrill && drills.map(drill => <button key={drill.type} onClick={() => setActiveDrill({ type: drill.type, frontend: errorRow ? row.frontend! : row.displayName, label: row.displayName, errorType: errorRow ? row.errorType : undefined })}
+                    style={{ background: `rgba(${drill.rgb},${drill.opacity})`, border: `1px solid rgba(${drill.rgb},${drill.type === "forecast" || drill.type === "diagnose" ? "0.3" : "0.25"})`, borderRadius: 5, color: drill.color, fontSize: 10, padding: "2px 7px", cursor: "pointer" }}
+                  >{drill.label}</button>)}
+                </div>}
+              </div>
+            );
+          })}
+          {!!errorFrontend && result.isSuccess && rows?.some(row => row.frontend !== errorFrontend || row.errorType === undefined) && <div role="alert" style={{ fontSize: 11, color: "#F87171", marginTop: 10 }}>Drill pills are unavailable for rows without a valid frontend and error type.</div>}
+        </div>
+      </PopupWindow>
+    </div>,
+    document.body
+    )}
+    {activeDrill && (activeDrill.type === "forecast" || activeDrill.type === "heatmap" || activeDrill.type === "dimension"
+      ? <DqlSharedPanel key={`${activeDrill.type}:${activeDrill.label}`} type={activeDrill.type} label={activeDrill.label} context={{ metric, row: activeDrill.frontend, mobileSession, errorFrontend, errorType: activeDrill.errorType, from, to }} onClose={() => setActiveDrill(null)} />
+      : <MobileSessionDrillPanel key={`${activeDrill.type}:${activeDrill.label}`} type={activeDrill.type} frontend={activeDrill.frontend} errorType={activeDrill.errorType} from={from} to={to} context={{ metric, row: activeDrill.frontend, mobileSession, errorFrontend, errorType: activeDrill.errorType, from, to }} onClose={() => setActiveDrill(null)} />)}
+  </>;
+}
+
+export function ExploreModal({ metricKey, metricLabel, from, to, onClose, dimensionConfig, drilldownLinkTemplate }: ExploreModalProps) {
   const [rows, setRows] = useState<EntityRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cfg = detectEntityConfig(metricKey, metricLabel);
@@ -1273,35 +1359,26 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose, dimens
     setRows(null);
     setError(null);
 
-    const currQ = buildExploreQuery(metricKey, metricLabel, cfg, from, to, dimensionConfig);
-    // Previous period: same window length, shifted back — e.g. now()-4h → now()-2h
-    const prevFrom = doubleFrom(from);
-    const canTrend = prevFrom !== from;
-    const prevQ = canTrend ? buildExploreQuery(metricKey, metricLabel, cfg, prevFrom, from, dimensionConfig) : null;
+    let active = true;
+    async function loadRows(config: EntityConfig) {
+        const currQ = buildExploreQuery(metricKey, metricLabel, config, from, to, dimensionConfig);
+        const prevFrom = doubleFrom(from);
+        const prevQ = prevFrom !== from ? buildExploreQuery(metricKey, metricLabel, config, prevFrom, from, dimensionConfig) : null;
+        const [currRecords, prevRecords] = await Promise.all([
+          executeDetailQuery(currQ),
+          prevQ ? executeDetailQuery(prevQ) : Promise.resolve([]),
+        ]);
 
-    const currPromise = queryExecutionClient.queryExecute({ body: { query: currQ, requestTimeoutMilliseconds: 30000 } });
-    const prevPromise = prevQ
-      ? queryExecutionClient.queryExecute({ body: { query: prevQ, requestTimeoutMilliseconds: 30000 } })
-      : Promise.resolve(null);
-
-    Promise.all([currPromise, prevPromise])
-      .then(([currRes, prevRes]) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const currRecords: any[] = (currRes.result as any)?.records ?? [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const prevRecords: any[] = prevRes ? ((prevRes.result as any)?.records ?? []) : [];
-
-        // Index previous period by displayName|sub for delta lookup
+        const rowKey = (rec: Record<string, unknown>) => JSON.stringify([rec["entityId"] || rec["displayName"], rec["displayName"], rec["sub"]]);
         const prevMap = new Map<string, number>();
         prevRecords.forEach((rec) => {
-          const key = `${rec["displayName"]}|${rec["sub"] ?? ""}`;
-          prevMap.set(key, Number(rec["avg"] ?? 0));
+          prevMap.set(rowKey(rec), Number(rec["avg"] ?? rec["avgValue"]));
         });
 
         const parsed: EntityRow[] = currRecords.map((rec) => {
-          const key = `${rec["displayName"]}|${rec["sub"] ?? ""}`;
+          const key = rowKey(rec);
           return {
-            entityId: String(rec["entityId"] ?? rec[cfg.entityField] ?? ""),
+            entityId: String(rec["entityId"] ?? rec[config.entityField] ?? ""),
             appEntityId: rec["appEntityId"] ? String(rec["appEntityId"]) : undefined,
             displayName: String(rec["displayName"] ?? rec["entityId"] ?? "Unknown"),
             sub: rec["sub"] ? String(rec["sub"]) : undefined,
@@ -1311,11 +1388,12 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose, dimens
           };
         }).filter((r) => r.entityId || r.displayName !== "Unknown");
 
-        setRows(parsed);
-      })
-      .catch((e) => setError(String(e)));
+        if (active) setRows(parsed);
+    }
+    loadRows(cfg).catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { active = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metricKey, from, to]);
+  }, [metricKey, metricLabel, from, to, dimensionConfig?.dimensions]);
 
   let envUrl = "";
   try { envUrl = getEnvironmentUrl(); } catch { /* noop */ }
@@ -1378,11 +1456,11 @@ export function ExploreModal({ metricKey, metricLabel, from, to, onClose, dimens
                 </div>
                 {/* Action chips */}
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  <button
+                  {drilldownLinkTemplate?.trim() ? <FtrLinkButton template={drilldownLinkTemplate} row={row.displayName} /> : <button
                     onClick={(e) => { e.stopPropagation(); openEntity(envUrl, row.entityId, cfg, row.displayName, row.appEntityId, row.sub, buildTfParam(from, to)); }}
                     style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 5, color: "#7ab4ff", fontSize: 10, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
                     title="Open in Dynatrace"
-                  >Open in Dynatrace</button>
+                  >Open in Dynatrace</button>}
                   <button
                     onClick={(e) => { e.stopPropagation(); openChip("forecast", row); }}
                     style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 5, color: "#a5b4fc", fontSize: 10, padding: "2px 7px", cursor: "pointer" }}

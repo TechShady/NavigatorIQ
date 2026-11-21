@@ -5,6 +5,7 @@ import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { useUserAppState, useSetUserAppState } from "@dynatrace-sdk/react-hooks";
 import type { HeatBucketDetail, HeatBucketMetric, PersonaId, HeatMetricConfig } from "../types";
 import type { DavisProblemsResult } from "../queries";
+import { prepareHotnessData, hotnessTrend, hotnessEpisodes } from "../hotnessData";
 
 const INSTALLED_APPS_KEY = "iq-installed-apps-v1";
 
@@ -55,9 +56,13 @@ export function analyzeHotness(
   bucketLabel: string,
   intervalMinutes?: number,
 ): HotnessAnalysis {
-  if (heatScores.length === 0) {
+  const data = prepareHotnessData(heatScores, bucketDetails);
+  const usable = data.scores;
+  const usableDetails = data.details;
+  const usableCount = data.ranked.length;
+  if (usableCount === 0) {
     return {
-      summary: "No hotness data available for this timeframe.",
+      summary: "No complete buckets with data are available for Hotness Assist in this timeframe.",
       worstIdx: 0, worstZ: 0, worst2Idx: 0, worst2Z: 0,
       bestIdx: 0, bestZ: 0, best2Idx: 0, best2Z: 0,
       hotBuckets: 0, criticalBuckets: 0, maxConsecutiveHot: 0,
@@ -72,12 +77,8 @@ export function analyzeHotness(
     };
   }
 
-  // Drop the last bucket — it may be a partial/incomplete interval
-  const usable = heatScores.length > 1 ? heatScores.slice(0, -1) : heatScores;
-  const usableDetails = bucketDetails.length > 1 ? bucketDetails.slice(0, -1) : bucketDetails;
-
   // Find top-2 worst (highest z) and top-2 best (lowest z)
-  const ranked = usable.map((z, i) => ({ z, i })).sort((a, b) => b.z - a.z);
+  const ranked = data.ranked;
   const worstIdx = ranked[0]?.i ?? 0;
   const worst2Idx = ranked.length > 1 ? (ranked[1]?.i ?? worstIdx) : worstIdx;
   const bestIdx = ranked[ranked.length - 1]?.i ?? 0;
@@ -103,15 +104,12 @@ export function analyzeHotness(
 
   let hotBuckets = 0, criticalBuckets = 0;
   for (const z of usable) {
+    if (z === null) continue;
     if (z >= 0.75) hotBuckets++;
     if (z >= 2.5) criticalBuckets++;
   }
 
-  let maxRun = 0, currentRun = 0;
-  for (const z of usable) {
-    if (z >= 0.75) { currentRun++; maxRun = Math.max(maxRun, currentRun); }
-    else currentRun = 0;
-  }
+  const { episodes: episodeList, maxRun, avgRecoveryBuckets } = hotnessEpisodes(usable);
   const burstType: HotnessAnalysis["burstType"] =
     maxRun === 0 ? "stable" : maxRun <= 2 ? "transient" : maxRun <= 5 ? "sustained" : "chronic";
 
@@ -125,7 +123,7 @@ export function analyzeHotness(
   } else if (worstZ >= 0.75) {
     insights.push({ severity: "info", icon: "📈", text: `Peak at bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}) remained in tolerable range.` });
   } else {
-    insights.push({ severity: "good", icon: "✅", text: `All ${usable.length} analyzed buckets within normal operating range — no elevated activity detected.` });
+    insights.push({ severity: "good", icon: "✅", text: `All ${usableCount} analyzed buckets within normal operating range — no elevated activity detected.` });
   }
 
   if (bestZ < 0.5 && worstZ >= 1.0) {
@@ -146,7 +144,7 @@ export function analyzeHotness(
   } else if (burstType === "sustained") {
     insights.push({ severity: "warning", icon: "⏱️", text: `Sustained degradation: ${maxRun} consecutive elevated buckets. Monitor for recurrence.` });
   } else if (burstType === "transient") {
-    insights.push({ severity: "info", icon: "⚡", text: `Transient spike — ${maxRun} consecutive hot bucket${maxRun !== 1 ? "s" : ""}, self-resolved.` });
+    insights.push({ severity: "info", icon: "⚡", text: `Transient spike — ${maxRun} consecutive observed hot bucket${maxRun !== 1 ? "s" : ""}.` });
   }
 
   if (criticalBuckets > 0) {
@@ -160,7 +158,8 @@ export function analyzeHotness(
   const burstDesc = burstType !== "stable" ? ` (${burstType} pattern, max ${maxRun} consecutive)` : "";
   const w2note = worst2Idx !== worstIdx ? ` 2nd worst: bucket ${worst2Idx + 1} (Z=${worst2Z.toFixed(1)}).` : "";
   const b2note = best2Idx !== bestIdx ? ` 2nd best: bucket ${best2Idx + 1} (Z=${best2Z.toFixed(2)}).` : "";
-  const summary = `Analyzed ${usable.length} ${bucketLabel} bucket${usable.length !== 1 ? "s" : ""} (last excluded as potentially incomplete). ${spikeSummary.charAt(0).toUpperCase() + spikeSummary.slice(1)}${burstDesc}. Worst: bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}, driver: ${worstDriver}).${w2note} Best: bucket ${bestIdx + 1} (Z=${bestZ.toFixed(2)}).${b2note}`;
+  const exclusions = [heatScores.length > 1 ? "last excluded as potentially incomplete" : "", data.excludedCount ? `${data.excludedCount} no-data bucket${data.excludedCount !== 1 ? "s" : ""} excluded` : ""].filter(Boolean).join("; ");
+  const summary = `Analyzed ${usableCount} ${bucketLabel} bucket${usableCount !== 1 ? "s" : ""}${exclusions ? ` (${exclusions})` : ""}. ${spikeSummary.charAt(0).toUpperCase() + spikeSummary.slice(1)}${burstDesc}. Worst: bucket ${worstIdx + 1} (Z=${worstZ.toFixed(1)}, driver: ${worstDriver}).${w2note} Best: bucket ${bestIdx + 1} (Z=${bestZ.toFixed(2)}).${b2note}`;
 
   // Compute alertPattern
   const trafficMetric = worstMetrics.find(m => m.isTraffic);
@@ -189,38 +188,11 @@ export function analyzeHotness(
 
   // Spike episodes
   const HOT_THRESH = 0.75;
-  const episodeList: { startIdx: number; endIdx: number; bucketCount: number }[] = [];
-  let inEp = false, epStart = 0;
-  for (let i = 0; i < usable.length; i++) {
-    if (usable[i] >= HOT_THRESH) {
-      if (!inEp) { inEp = true; epStart = i; }
-    } else if (inEp) {
-      episodeList.push({ startIdx: epStart, endIdx: i - 1, bucketCount: i - epStart });
-      inEp = false;
-    }
-  }
-  if (inEp) episodeList.push({ startIdx: epStart, endIdx: usable.length - 1, bucketCount: usable.length - epStart });
   const episodeCount = episodeList.length;
-  const longestEpisodeBuckets = episodeList.reduce((m, ep) => Math.max(m, ep.bucketCount), 0);
-
-  // Recovery speed
-  const recoveryList = episodeList.map(ep => {
-    for (let i = ep.endIdx + 1; i < usable.length; i++) {
-      if (usable[i] < 0.3 || usable[i] >= HOT_THRESH) return i - ep.endIdx;
-    }
-    return usable.length - ep.endIdx;
-  });
-  const avgRecoveryBuckets = recoveryList.length > 0
-    ? Math.round(recoveryList.reduce((s, v) => s + v, 0) / recoveryList.length)
-    : 0;
+  const longestEpisodeBuckets = maxRun;
 
   // Drift trend (linear regression)
-  const dn = usable.length;
-  const dSumX = (dn * (dn - 1)) / 2;
-  const dSumX2 = (dn * (dn - 1) * (2 * dn - 1)) / 6;
-  const dSumY = usable.reduce((s, v) => s + v, 0);
-  const dSumXY = usable.reduce((s, v, i) => s + i * v, 0);
-  const driftSlope = dn > 1 ? (dn * dSumXY - dSumX * dSumY) / (dn * dSumX2 - dSumX * dSumX) : 0;
+  const driftSlope = hotnessTrend(usable);
   const driftLabel: "worsening" | "stable" | "improving" = driftSlope > 0.02 ? "worsening" : driftSlope < -0.02 ? "improving" : "stable";
 
   // Root-cause narrative — second analysis paragraph derived from existing data
@@ -322,7 +294,7 @@ export function analyzeHotness(
     }
   }
 
-  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount: usable.length, alertPattern, recommendations, insights, episodeCount, longestEpisodeBuckets, avgRecoveryBuckets, driftSlope, driftLabel, rootCauseNarrative, sloBreachMinutes, cascades, trafficEfficiencySignal };
+  return { summary, worstIdx, worstZ, worst2Idx, worst2Z, bestIdx, bestZ, best2Idx, best2Z, hotBuckets, criticalBuckets, maxConsecutiveHot: maxRun, burstType, worstDriver, worstMetrics, worst2Metrics, bestMetrics, best2Metrics, usableCount, alertPattern, recommendations, insights, episodeCount, longestEpisodeBuckets, avgRecoveryBuckets, driftSlope, driftLabel, rootCauseNarrative, sloBreachMinutes, cascades, trafficEfficiencySignal };
 }
 
 // ─── Button ────────────────────────────────────────────────────────────────
@@ -413,9 +385,9 @@ function AnimatedAnalysisSection({ summary, narrative }: { summary: string; narr
 
 // ─── Mini hotness chart ────────────────────────────────────────────────────
 
-function MiniHotnessChart({ scores, worstIdx, worst2Idx, bestIdx, best2Idx }: { scores: number[]; worstIdx: number; worst2Idx: number; bestIdx: number; best2Idx: number }) {
-  if (scores.length < 2) return null;
-  const W = 640, maxZ = Math.max(...scores, 1);
+function MiniHotnessChart({ scores, worstIdx, worst2Idx, bestIdx, best2Idx }: { scores: (number | null)[]; worstIdx: number; worst2Idx: number; bestIdx: number; best2Idx: number }) {
+  if (!scores.some(score => score !== null)) return <div style={{ fontSize: 12, opacity: 0.6 }}>No complete buckets with data to display.</div>;
+  const W = 640, maxZ = Math.max(...scores.map(score => score ?? 0), 1);
   const barW = Math.max(2, W / scores.length - 1);
   const color = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const xOf = (i: number) => (i / Math.max(scores.length - 1, 1)) * (W - barW);
@@ -442,7 +414,7 @@ function MiniHotnessChart({ scores, worstIdx, worst2Idx, bestIdx, best2Idx }: { 
 
   return (
     <svg width={W} height={H + linesStartY} style={{ display: "block", borderRadius: 6, background: "rgba(255,255,255,0.03)" }}>
-      {scores.map((z, i) => (
+      {scores.map((z, i) => z === null ? null : (
         <rect key={i} x={xOf(i)} y={linesStartY + H - bH(z)} width={barW} height={bH(z)} fill={color(z)} opacity={0.85} rx={1} />
       ))}
       {rawLabels.map(({ label, color: c, lineW, lineOp, cx }) => {
@@ -753,6 +725,8 @@ function useAppDeploymentStatuses(appIds: string[]): Record<string, boolean> {
 }
 
 export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, persona: _persona, heatMetrics, problems, intervalMinutes = 5, pos, onDragStart, onClose }: HotnessAssistPanelProps) {
+  const data = useMemo(() => prepareHotnessData(heatScores, bucketDetails), [heatScores, bucketDetails]);
+  const analyzedDetails = data.validDetails;
   const analysis = analyzeHotness(heatScores, bucketDetails, bucketLabel, intervalMinutes);
   const hasTwoWorst = analysis.worst2Idx !== analysis.worstIdx;
   const hasTwoBest  = analysis.best2Idx  !== analysis.bestIdx;
@@ -779,10 +753,10 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
     const ts = new Date().toLocaleString();
 
     // Build SVG timeline with greedy staggered labels (same logic as panel chart)
-    const pdfScores = heatScores.slice(0, -1);
+    const pdfScores = data.scores;
     const pdfSvg = (() => {
-      if (pdfScores.length < 2) return "";
-      const W = 640, maxZ = Math.max(...pdfScores, 1);
+      if (!data.ranked.length) return "<p>No complete buckets with data to display.</p>";
+      const W = 640, maxZ = Math.max(...pdfScores.map(score => score ?? 0), 1);
       const barW = Math.max(2, W / pdfScores.length - 1);
       const colorFn = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
       const xOf = (i: number) => (i / Math.max(pdfScores.length - 1, 1)) * (W - barW);
@@ -802,7 +776,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
       const linesStartY = rowMaxX.length * labelRowH + 2;
       const H = 72;
       const bH = (z: number) => Math.max(3, (z / maxZ) * H);
-      const bars = pdfScores.map((z, i) => `<rect x="${xOf(i)}" y="${linesStartY + H - bH(z)}" width="${barW}" height="${bH(z)}" fill="${colorFn(z)}" opacity="0.85" rx="1"/>`).join("");
+      const bars = pdfScores.map((z, i) => z === null ? "" : `<rect x="${xOf(i)}" y="${linesStartY + H - bH(z)}" width="${barW}" height="${bH(z)}" fill="${colorFn(z)}" opacity="0.85" rx="1"/>`).join("");
       const markers = rawLabels.map(({ idx, label, color: c, lineW, lineOp, cx }) => {
         const row = labelRowMap[label] ?? 0;
         return `<line x1="${cx}" y1="${linesStartY}" x2="${cx}" y2="${linesStartY + H}" stroke="${c}" stroke-width="${lineW}" stroke-dasharray="3,2" opacity="${lineOp}"/><rect x="${cx - 9}" y="${row * labelRowH + 1}" width="18" height="13" rx="2" fill="rgba(15,20,40,0.88)"/><text x="${cx}" y="${row * labelRowH + 11}" font-size="8" fill="${c}" font-weight="700" font-family="Segoe UI,system-ui,sans-serif" text-anchor="middle">${label}</text>`;
@@ -841,7 +815,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
     const patternSub = analysis.alertPattern === "deployment" ? "Code / config change most likely" : analysis.alertPattern === "load-induced" ? "Infrastructure capacity limit hit" : analysis.alertPattern === "infrastructure" ? "CDN, network, or origin saturation" : "Insufficient signal for classification";
     const burstColor = analysis.burstType === "chronic" ? "#FF073A" : analysis.burstType === "sustained" ? "#FF3D9A" : analysis.burstType === "transient" ? "#FFF04D" : "#10B981";
     const burstLabel = analysis.burstType === "chronic" ? `Chronic (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "sustained" ? `Sustained (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "transient" ? `Transient (${analysis.maxConsecutiveHot} consecutive)` : "Stable";
-    const burstSub = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Appears self-resolved" : "No elevated buckets";
+    const burstSub = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Short elevated runs" : "No elevated buckets";
 
     const insHtml = analysis.insights.map(ins =>
       `<div style="margin-bottom:7px;padding:8px 12px;border-radius:8px;border-left:3px solid ${INSIGHT_COLORS[ins.severity]};background:rgba(255,255,255,0.03)">${ins.icon} <span style="font-size:11px;font-weight:700;opacity:0.55;margin-right:6px">${ins.severity.toUpperCase()}</span>${ins.text}</div>`
@@ -853,13 +827,13 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
     }).join("");
 
     const epColor = analysis.episodeCount === 0 ? "#10B981" : analysis.episodeCount === 1 ? "#FFF04D" : analysis.episodeCount <= 3 ? "#FF3D9A" : "#E00000";
-    const recLabel = analysis.episodeCount === 0 ? "N/A" : analysis.avgRecoveryBuckets <= 1 ? "Rapid" : analysis.avgRecoveryBuckets <= 3 ? "Fast" : analysis.avgRecoveryBuckets <= 6 ? "Moderate" : "Slow";
-    const recColor = analysis.episodeCount === 0 ? "#888" : analysis.avgRecoveryBuckets <= 1 ? "#10B981" : analysis.avgRecoveryBuckets <= 3 ? "#10B981" : analysis.avgRecoveryBuckets <= 6 ? "#FFF04D" : "#E00000";
+    const recLabel = analysis.avgRecoveryBuckets === 0 ? "N/A" : analysis.avgRecoveryBuckets <= 1 ? "Rapid" : analysis.avgRecoveryBuckets <= 3 ? "Fast" : analysis.avgRecoveryBuckets <= 6 ? "Moderate" : "Slow";
+    const recColor = analysis.avgRecoveryBuckets === 0 ? "#888" : analysis.avgRecoveryBuckets <= 1 ? "#10B981" : analysis.avgRecoveryBuckets <= 3 ? "#10B981" : analysis.avgRecoveryBuckets <= 6 ? "#FFF04D" : "#E00000";
     const driftColor = analysis.driftLabel === "worsening" ? "#E00000" : analysis.driftLabel === "improving" ? "#10B981" : "#888";
     const corrPairsForPdf = (() => {
-      if (bucketDetails.length < 3) return [];
+      if (analyzedDetails.length < 3) return [];
       const lset = new Set<string>();
-      for (const bd of bucketDetails) { for (const m of bd.metrics) { if (!m.isTraffic) lset.add(m.label); } }
+      for (const bd of analyzedDetails) { for (const m of bd.metrics) { if (!m.isTraffic) lset.add(m.label); } }
       const lbls = [...lset];
       if (lbls.length < 2) return [];
       type PP = { a: string; b: string; coCount: number; aCount: number; rate: number };
@@ -867,7 +841,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
       for (let ci = 0; ci < lbls.length; ci++) {
         for (let cj = ci + 1; cj < lbls.length; cj++) {
           const ca = lbls[ci], cb = lbls[cj]; let coCount = 0, aCount = 0;
-          for (const bd of bucketDetails) {
+          for (const bd of analyzedDetails) {
             const za = bd.metrics.find(m => m.label === ca)?.zScore ?? 0;
             const zb = bd.metrics.find(m => m.label === cb)?.zScore ?? 0;
             if (za >= 0.75) { aCount++; if (zb >= 0.75) coCount++; }
@@ -906,12 +880,12 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
 <div class="kg">
   <div class="kt"><div style="font-size:22px;font-weight:800;color:${analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981"}">${analysis.hotBuckets}/${analysis.usableCount}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Hot Buckets</div></div>
   <div class="kt"><div style="font-size:22px;font-weight:800;color:${analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981"}">${analysis.criticalBuckets}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Critical Spikes</div></div>
-  <div class="kt"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.worstZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
-  <div class="kt"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.bestZ.toFixed(2)}\u03C3</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
+  <div class="kt"><div style="font-size:22px;font-weight:800;color:#FF073A">${analysis.usableCount ? analysis.worstZ.toFixed(2) + "\u03C3" : "N/A"}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Worst Z-score</div></div>
+  <div class="kt"><div style="font-size:22px;font-weight:800;color:#10B981">${analysis.usableCount ? analysis.bestZ.toFixed(2) + "\u03C3" : "N/A"}</div><div style="font-size:10px;opacity:0.5;margin-top:4px">Best Z-score</div></div>
 </div>
 
 <div class="sc">
-  <div class="sh">📊 Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)</div>
+  <div class="sh">📊 Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (incomplete/no-data excluded)</div>
   ${pdfSvg}
 </div>
 
@@ -919,7 +893,7 @@ export function HotnessAssistPanel({ heatScores, bucketDetails, bucketLabel, per
   <div class="sh">⚡ Spike Behavior</div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
     <div style="background:${epColor}0d;border:1px solid ${epColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Spike Episodes</div><div style="font-size:18px;font-weight:800;color:${epColor}">${analysis.episodeCount}</div><div style="font-size:10px;opacity:0.6">${analysis.episodeCount === 0 ? "No hot buckets" : `Longest: ${analysis.longestEpisodeBuckets} bucket${analysis.longestEpisodeBuckets !== 1 ? "s" : ""}`}</div></div>
-    <div style="background:${recColor}0d;border:1px solid ${recColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Recovery Speed</div><div style="font-size:18px;font-weight:800;color:${recColor}">${recLabel}</div><div style="font-size:10px;opacity:0.6">${analysis.episodeCount === 0 ? "—" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div></div>
+    <div style="background:${recColor}0d;border:1px solid ${recColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Recovery Speed</div><div style="font-size:18px;font-weight:800;color:${recColor}">${recLabel}</div><div style="font-size:10px;opacity:0.6">${analysis.avgRecoveryBuckets === 0 ? "No observed recovery" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div></div>
     <div style="background:${driftColor}0d;border:1px solid ${driftColor}30;border-radius:8px;padding:10px 12px"><div style="font-size:9px;font-weight:700;opacity:0.5;text-transform:uppercase">Drift Trend</div><div style="font-size:18px;font-weight:800;color:${driftColor}">${analysis.driftLabel.charAt(0).toUpperCase() + analysis.driftLabel.slice(1)}</div><div style="font-size:10px;opacity:0.6">${analysis.driftSlope >= 0 ? "+" : ""}${analysis.driftSlope.toFixed(3)}Z/bucket</div></div>
   </div>
 </div>
@@ -997,7 +971,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
 </body></html>`;
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 400); }
-  }, [analysis, hasTwoWorst, hasTwoBest, heatScores, bucketDetails, bucketLabel, problems]);
+  }, [analysis, hasTwoWorst, hasTwoBest, data, analyzedDetails, bucketLabel, problems]);
 
   // Per-user "installed apps" list — overrides probe results for reliable hiding of GitHub links
   const installedAppsState = useUserAppState({ key: INSTALLED_APPS_KEY });
@@ -1015,9 +989,9 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
 
   // Compute steps here so the probe hook can be called at component level
   const steps = useMemo(
-    () => heatMetrics && heatMetrics.length > 0 ? buildNextSteps(heatMetrics, bucketDetails, intervalMinutes) : [],
+    () => heatMetrics && heatMetrics.length > 0 ? buildNextSteps(heatMetrics, analyzedDetails, intervalMinutes) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [heatMetrics, bucketDetails, intervalMinutes],
+    [heatMetrics, analyzedDetails, intervalMinutes],
   );
   const customAppIds = useMemo(
     () => [...new Set(steps.filter(s => s.repoUrl).map(s => s.appPath))],
@@ -1083,8 +1057,8 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
           {[
             { label: "Hot Buckets", value: `${analysis.hotBuckets}/${analysis.usableCount}`, color: analysis.hotBuckets > 0 ? "#FFF04D" : "#10B981" },
             { label: "Critical Spikes", value: String(analysis.criticalBuckets), color: analysis.criticalBuckets > 0 ? "#FF073A" : "#10B981" },
-            { label: "Worst Z-score", value: analysis.worstZ.toFixed(2) + "\u03C3", color: analysis.worstZ >= 2.5 ? "#FF073A" : analysis.worstZ >= 1.5 ? "#FF3D9A" : analysis.worstZ >= 0.75 ? "#FFF04D" : "#4589FF" },
-            { label: "Best Z-score", value: analysis.bestZ.toFixed(2) + "\u03C3", color: "#10B981" },
+            { label: "Worst Z-score", value: analysis.usableCount ? analysis.worstZ.toFixed(2) + "\u03C3" : "N/A", color: analysis.worstZ >= 2.5 ? "#FF073A" : analysis.worstZ >= 1.5 ? "#FF3D9A" : analysis.worstZ >= 0.75 ? "#FFF04D" : "#4589FF" },
+            { label: "Best Z-score", value: analysis.usableCount ? analysis.bestZ.toFixed(2) + "\u03C3" : "N/A", color: "#10B981" },
           ].map((kpi) => (
             <div key={kpi.label} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${kpi.color}25`, borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: kpi.color, lineHeight: 1.1 }}>{kpi.value}</div>
@@ -1101,8 +1075,8 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
 
         {/* Mini chart */}
         <Section>
-          <SectionHeader icon="📊" label={`Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (last excluded)`} />
-          <MiniHotnessChart scores={heatScores.slice(0, -1)} worstIdx={analysis.worstIdx} worst2Idx={analysis.worst2Idx} bestIdx={analysis.bestIdx} best2Idx={analysis.best2Idx} />
+          <SectionHeader icon="📊" label={`Hotness Timeline · ${analysis.usableCount} ${bucketLabel} buckets (incomplete/no-data excluded)`} />
+          <MiniHotnessChart scores={data.scores} worstIdx={analysis.worstIdx} worst2Idx={analysis.worst2Idx} bestIdx={analysis.bestIdx} best2Idx={analysis.best2Idx} />
         </Section>
 
         {/* Pattern Analysis + Spike Duration */}
@@ -1112,7 +1086,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
           const patternSubLabel = analysis.alertPattern === "deployment" ? "Code / config change most likely" : analysis.alertPattern === "load-induced" ? "Infrastructure capacity limit hit" : analysis.alertPattern === "infrastructure" ? "CDN, network, or origin saturation" : "Insufficient signal for classification";
           const burstColor = analysis.burstType === "chronic" ? "#FF073A" : analysis.burstType === "sustained" ? "#FF3D9A" : analysis.burstType === "transient" ? "#FFF04D" : "#10B981";
           const burstLabel = analysis.burstType === "chronic" ? `Chronic (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "sustained" ? `Sustained (${analysis.maxConsecutiveHot} consecutive)` : analysis.burstType === "transient" ? `Transient (${analysis.maxConsecutiveHot} consecutive)` : "Stable";
-          const burstSubLabel = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Appears self-resolved" : "No elevated buckets";
+          const burstSubLabel = analysis.burstType === "chronic" ? "Needs active remediation" : analysis.burstType === "sustained" ? "Likely needed intervention" : analysis.burstType === "transient" ? "Short elevated runs" : "No elevated buckets";
           return (
             <Section>
               <SectionHeader icon="🔍" label="Pattern Analysis" />
@@ -1135,8 +1109,8 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
         {/* Spike Episodes + Recovery + Drift */}
         {(() => {
           const epColor = analysis.episodeCount === 0 ? "#10B981" : analysis.episodeCount === 1 ? "#FFF04D" : analysis.episodeCount <= 3 ? "#FF3D9A" : "#E00000";
-          const recLabel = analysis.episodeCount === 0 ? "N/A" : analysis.avgRecoveryBuckets <= 1 ? "Rapid" : analysis.avgRecoveryBuckets <= 3 ? "Fast" : analysis.avgRecoveryBuckets <= 6 ? "Moderate" : "Slow";
-          const recColor = analysis.episodeCount === 0 ? "#888" : analysis.avgRecoveryBuckets <= 1 ? "#10B981" : analysis.avgRecoveryBuckets <= 3 ? "#10B981" : analysis.avgRecoveryBuckets <= 6 ? "#FFF04D" : "#E00000";
+          const recLabel = analysis.avgRecoveryBuckets === 0 ? "N/A" : analysis.avgRecoveryBuckets <= 1 ? "Rapid" : analysis.avgRecoveryBuckets <= 3 ? "Fast" : analysis.avgRecoveryBuckets <= 6 ? "Moderate" : "Slow";
+          const recColor = analysis.avgRecoveryBuckets === 0 ? "#888" : analysis.avgRecoveryBuckets <= 1 ? "#10B981" : analysis.avgRecoveryBuckets <= 3 ? "#10B981" : analysis.avgRecoveryBuckets <= 6 ? "#FFF04D" : "#E00000";
           const driftColor = analysis.driftLabel === "worsening" ? "#E00000" : analysis.driftLabel === "improving" ? "#10B981" : "#888";
           const cs: React.CSSProperties = { flex: 1, borderRadius: 8, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 2 };
           return (
@@ -1151,7 +1125,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
                 <div style={{ ...cs, background: `${recColor}0d`, border: `1px solid ${recColor}30` }}>
                   <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Recovery Speed</div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: recColor }}>{recLabel}</div>
-                  <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.episodeCount === 0 ? "—" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div>
+                  <div style={{ fontSize: 10, opacity: 0.6 }}>{analysis.avgRecoveryBuckets === 0 ? "No observed recovery" : `Avg ${analysis.avgRecoveryBuckets} bucket${analysis.avgRecoveryBuckets !== 1 ? "s" : ""} to baseline`}</div>
                 </div>
                 <div style={{ ...cs, background: `${driftColor}0d`, border: `1px solid ${driftColor}30` }}>
                   <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.5, textTransform: "uppercase" as const, letterSpacing: 0.8 }}>Drift Trend</div>
@@ -1165,9 +1139,9 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
 
         {/* Cross-metric correlation */}
         {(() => {
-          if (bucketDetails.length < 3) return null;
+          if (analyzedDetails.length < 3) return null;
           const labelSet = new Set<string>();
-          for (const bd of bucketDetails) {
+          for (const bd of analyzedDetails) {
             for (const m of bd.metrics) { if (!m.isTraffic) labelSet.add(m.label); }
           }
           const labels = [...labelSet];
@@ -1179,7 +1153,7 @@ ${problems && problems.count > 0 ? `<div class="sc" style="border-color:rgba(255
             for (let j = i + 1; j < labels.length; j++) {
               const a = labels[i], b = labels[j];
               let coCount = 0, aCount = 0;
-              for (const bd of bucketDetails) {
+              for (const bd of analyzedDetails) {
                 const za = bd.metrics.find(m => m.label === a)?.zScore ?? 0;
                 const zb = bd.metrics.find(m => m.label === b)?.zScore ?? 0;
                 if (za >= 0.75) { aCount++; if (zb >= 0.75) coCount++; }

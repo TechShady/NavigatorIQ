@@ -1,8 +1,9 @@
 import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { escapeHtml } from "./escapeHtml";
 
-export interface DimSlice { name: string; value: number; avg?: number; unit?: string; }
+export interface DimSlice { name: string; value: number; avg?: number; unit?: string; numerator?: number; denominator?: number; }
 
 export interface DimensionModalProps {
   label: string;
@@ -10,6 +11,10 @@ export interface DimensionModalProps {
   onClose: () => void;
   fetchGeo?: (pct: string) => Promise<DimSlice[]>;
   fetchBrowser?: (pct: string) => Promise<DimSlice[]>;
+  strictData?: boolean;
+  description?: string;
+  firstTitle?: string;
+  secondTitle?: string;
 }
 
 const GEO_COLORS     = ["#4589FF", "#23A5D0", "#3FA66C", "#A66C3F", "#8B5CF6", "#64748B", "#F59E0B", "#EC4899"];
@@ -37,6 +42,7 @@ function PieChart({ data, title, colors, pct }: { data: DimSlice[]; title: strin
   let startAngle = -Math.PI / 2;
 
   const hasAvg = data.some(d => d.avg != null);
+  const isRate = data.some(d => d.denominator != null);
 
   const slices = data.map((d, i) => {
     const angle = (d.value / total) * Math.PI * 2;
@@ -64,7 +70,7 @@ function PieChart({ data, title, colors, pct }: { data: DimSlice[]; title: strin
           {slices.map((s, i) => (
             <path
               key={i}
-              d={s.path}
+              d={data.length === 1 ? `M ${cx} ${cy - R} A ${R} ${R} 0 1 1 ${cx} ${cy + R} A ${R} ${R} 0 1 1 ${cx} ${cy - R} Z` : s.path}
               fill={s.color}
               stroke="#151829"
               strokeWidth={hovered === i ? 2 : 1.5}
@@ -92,12 +98,13 @@ function PieChart({ data, title, colors, pct }: { data: DimSlice[]; title: strin
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, paddingTop: 4, flex: 1, minWidth: 0 }}>
           {hasAvg && (
             <div style={{ fontSize: 9, opacity: 0.4, marginBottom: 2, fontWeight: 600, letterSpacing: "0.04em" }}>
-              {pct} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; SHARE
+              {isRate ? "RATE" : pct} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {isRate ? "SESSION SHARE" : "SHARE"}
             </div>
           )}
           {slices.map((s, i) => (
             <div
               key={i}
+              title={s.slice.denominator != null ? `${s.slice.numerator} affected / ${s.slice.denominator} sessions; rate ${formatAvg(s.slice.avg ?? 0, "%")}; session share ${s.pct.toFixed(1)}%` : undefined}
               style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", opacity: hovered !== null && hovered !== i ? 0.35 : 1, transition: "opacity 0.12s" }}
               onMouseEnter={() => setHovered(i)}
               onMouseLeave={() => setHovered(null)}
@@ -112,6 +119,7 @@ function PieChart({ data, title, colors, pct }: { data: DimSlice[]; title: strin
           ))}
         </div>
       </div>
+      {isRate && <div style={{ fontSize: 10, opacity: 0.55, marginTop: 10 }}>Rate = affected / total sessions. Donut size and share show total sessions, not rate.</div>}
     </div>
   );
 }
@@ -138,12 +146,16 @@ const DEFAULT_BROWSER: DimSlice[] = [
 
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 
-function exportDimensionPdf(label: string, geoData: DimSlice[], browserData: DimSlice[]) {
+function exportDimensionPdf(label: string, geoData: DimSlice[], browserData: DimSlice[], strictData = false, firstTitle = "Geo (Country)", secondTitle = "Browser") {
   const w = window.open("", "_blank");
   if (!w) return;
-  const fmtRow = (d: DimSlice) => `<tr><td>${d.name}</td><td style="text-align:right">${d.value}</td>${d.avg != null ? `<td style="text-align:right">${formatAvg(d.avg, d.unit)}</td>` : ""}</tr>`;
-  const table = (title: string, rows: DimSlice[]) => `<h2>${title}</h2><table border="1" cellpadding="6" style="border-collapse:collapse;width:100%"><thead><tr><th>Name</th><th>Sessions</th>${rows.some(r => r.avg != null) ? "<th>Avg</th>" : ""}</tr></thead><tbody>${rows.map(fmtRow).join("")}</tbody></table>`;
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Dimension — ${label}</title><style>body{font-family:'Segoe UI',system-ui,sans-serif;padding:24px;background:#0f1221;color:#e8eaf0}h1{margin-bottom:4px}h2{margin-top:20px}table{border-color:rgba(255,255,255,0.15)}th,td{color:#e8eaf0;background:#1a1e36}@media print{body{background:#fff;color:#111}th,td{color:#111;background:#fff}}</style></head><body><h1>🌍 Dimension Breakdown — ${label}</h1><p style="opacity:0.5;font-size:11px">Generated ${new Date().toLocaleString()}</p>${table("Geo (Country)", geoData)}${table("Browser", browserData)}</body></html>`;
+  const fmtRow = (d: DimSlice) => `<tr><td>${escapeHtml(d.name)}</td><td style="text-align:right">${d.value}</td>${d.denominator != null ? `<td style="text-align:right">${d.numerator}</td>` : ""}${d.avg != null ? `<td style="text-align:right">${formatAvg(d.avg, d.unit)}</td>` : ""}</tr>`;
+  const table = (title: string, rows: DimSlice[]) => {
+    const isRate = rows.some(r => r.denominator != null);
+    return `<h2>${title}</h2><table border="1" cellpadding="6" style="border-collapse:collapse;width:100%"><thead><tr><th>Name</th><th>${isRate ? "Total sessions" : strictData ? "Value" : "Sessions"}</th>${isRate ? "<th>Affected sessions</th>" : ""}${rows.some(r => r.avg != null) ? `<th>${isRate ? "Rate" : "Avg"}</th>` : ""}</tr></thead><tbody>${rows.map(fmtRow).join("")}</tbody></table>`;
+  };
+  const safeLabel = escapeHtml(label);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Dimension — ${safeLabel}</title><style>body{font-family:'Segoe UI',system-ui,sans-serif;padding:24px;background:#0f1221;color:#e8eaf0}h1{margin-bottom:4px}h2{margin-top:20px}table{border-color:rgba(255,255,255,0.15)}th,td{color:#e8eaf0;background:#1a1e36}@media print{body{background:#fff;color:#111}th,td{color:#111;background:#fff}}</style></head><body><h1>🌍 Dimension Breakdown — ${safeLabel}</h1><p style="opacity:0.5;font-size:11px">Generated ${new Date().toLocaleString()}</p>${table(escapeHtml(firstTitle), geoData)}${table(escapeHtml(secondTitle), browserData)}</body></html>`;
   w.document.write(html);
   w.document.close();
   setTimeout(() => w.print(), 400);
@@ -151,10 +163,11 @@ function exportDimensionPdf(label: string, geoData: DimSlice[], browserData: Dim
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }: DimensionModalProps) {
+export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser, strictData = false, description, firstTitle = "GEO breakdown (country)", secondTitle = "Browser breakdown" }: DimensionModalProps) {
   const [geoData, setGeoData]         = useState<DimSlice[]>([]);
   const [browserData, setBrowserData] = useState<DimSlice[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
   const [selectedPct, setSelectedPct] = useState<PctOption>("P50");
 
   const [dmPos, setDmPos] = useState(() => ({ x: Math.max(20, window.innerWidth / 2 - 410), y: Math.max(20, window.innerHeight / 2 - 220) }));
@@ -182,19 +195,20 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setError(null);
     Promise.all([
-      fetchGeoRef.current     ? fetchGeoRef.current(selectedPct)     : Promise.resolve(DEFAULT_GEO),
-      fetchBrowserRef.current ? fetchBrowserRef.current(selectedPct) : Promise.resolve(DEFAULT_BROWSER),
+      fetchGeoRef.current     ? fetchGeoRef.current(selectedPct)     : Promise.resolve(strictData ? [] : DEFAULT_GEO),
+      fetchBrowserRef.current ? fetchBrowserRef.current(selectedPct) : Promise.resolve(strictData ? [] : DEFAULT_BROWSER),
     ])
       .then(([geo, browser]) => {
         if (!active) return;
-        setGeoData(geo.length     ? geo     : DEFAULT_GEO);
-        setBrowserData(browser.length ? browser : DEFAULT_BROWSER);
+        setGeoData(geo.length || strictData ? geo : DEFAULT_GEO);
+        setBrowserData(browser.length || strictData ? browser : DEFAULT_BROWSER);
       })
-      .catch(() => { if (active) { setGeoData(DEFAULT_GEO); setBrowserData(DEFAULT_BROWSER); } })
+      .catch((err: unknown) => { if (active) { if (strictData) setError(err instanceof Error ? err.message : String(err)); else { setGeoData(DEFAULT_GEO); setBrowserData(DEFAULT_BROWSER); } } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [selectedPct]);
+  }, [selectedPct, strictData]);
 
   return createPortal(
     <PopupWindow ref={dmContRef} style={{
@@ -213,12 +227,12 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
           </div>
           <div style={{ fontSize: 11, opacity: 0.4, marginTop: 3 }}>
             <span style={{ color: color ?? "#4589FF", fontWeight: 700 }}>{label}</span>
-            &ensp;&middot;&ensp;Geographic &amp; Browser distribution &middot; last 7 days
+            &ensp;&middot;&ensp;{description ?? (strictData ? "Country & operating system · selected timeframe" : "Geographic & Browser distribution · last 7 days")}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {/* Percentile selector */}
-          <div style={{ display: "flex", gap: 3, background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: 3 }}>
+          {!strictData && <div style={{ display: "flex", gap: 3, background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: 3 }}>
             {PCT_OPTIONS.map(p => (
               <button
                 key={p}
@@ -230,8 +244,8 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
                 }}
               >{p}</button>
             ))}
-          </div>
-          <button onClick={() => exportDimensionPdf(label, geoData, browserData)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
+          </div>}
+          <button disabled={loading || !!error} onClick={() => exportDimensionPdf(label, geoData, browserData, strictData, firstTitle, secondTitle)} style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#4589FF", padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>📄 PDF</button>
           <PopupCloseButton onClick={onClose} style={{ background: "none", border: "none", color: "inherit", fontSize: 18, cursor: "pointer", opacity: 0.35, padding: "4px 8px", lineHeight: 1 }}>&#x2715;</PopupCloseButton>
         </div>
       </div>
@@ -239,11 +253,13 @@ export function DimensionModal({ label, color, onClose, fetchGeo, fetchBrowser }
       <div style={{ ...(dmSizeH > 0 ? { flex: 1, overflowY: "auto" } : {}) }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: "48px 0", opacity: 0.45, fontSize: 13 }}>Loading dimension data&hellip;</div>
+        ) : error ? (
+          <div role="alert" style={{ color: "#F87171", fontSize: 12 }}>{error}</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1px 1fr", gap: 28, alignItems: "start" }}>
-            <PieChart data={geoData} title="GEO breakdown (country)" colors={GEO_COLORS} pct={selectedPct} />
+            <PieChart data={geoData} title={firstTitle} colors={GEO_COLORS} pct={selectedPct} />
             <div style={{ background: "rgba(255,255,255,0.07)", height: "100%", minHeight: 200 }} />
-            <PieChart data={browserData} title="Browser breakdown" colors={BROWSER_COLORS} pct={selectedPct} />
+            <PieChart data={browserData} title={secondTitle} colors={BROWSER_COLORS} pct={selectedPct} />
           </div>
         )}
         <div style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 10, opacity: 0.3, textAlign: "right" }}>

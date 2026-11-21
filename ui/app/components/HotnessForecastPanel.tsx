@@ -173,6 +173,7 @@ export function HotnessForecastPanel({
   const [isLoading, setIsLoading]             = React.useState(false);
   const [loadError, setLoadError]             = React.useState<string | null>(null);
   const [hoverIdx, setHoverIdx]               = React.useState<number | null>(null);
+  const chartRef = React.useRef<SVGSVGElement>(null);
 
   const isDirty = pendingLookback !== appliedLookback || pendingForecast !== appliedForecast;
 
@@ -189,7 +190,10 @@ export function HotnessForecastPanel({
     setIsLoading(true);
     setLoadError(null);
     getRequeryData(pendingLookback)
-      .then((data) => { applyHistData(data, pendingLookback); })
+      .then((data) => {
+        if (data.length > 0) applyHistData(data, pendingLookback);
+        else setLoadError("No data returned for this period");
+      })
       .catch(() => setLoadError("Failed to load historical data"))
       .finally(() => setIsLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -266,6 +270,53 @@ export function HotnessForecastPanel({
 
   const confColor = confidence >= 80 ? "#3EC96A" : confidence >= 65 ? "#FFF04D" : "#FF8C42";
 
+  const exportPdf = () => {
+    if (!chartRef.current) {
+      window.alert("The forecast chart is not available for export.");
+      return;
+    }
+    const w = window.open("", "_blank");
+    if (!w) {
+      window.alert("Unable to open the PDF report. Please allow pop-ups and try again.");
+      return;
+    }
+    const model = MODEL_OPTIONS.find(option => option.value === method)!.label;
+    const peak = peakIdx >= 0
+      ? `${peakZ.toFixed(2)}σ at +${peakIdx + 1} bucket(s)${peakZ > maxY ? ` (chart capped at ${maxY.toFixed(1)}σ)` : ""}`
+      : "Not available";
+    const warning = forecastDiverges
+      ? `<p class="warning">Forecast diverges significantly from history (peak ${peakZ.toFixed(1)}σ; historical maximum ${histMax.toFixed(1)}σ). Interpret extrapolations cautiously.</p>`
+      : "";
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Hotness Forecast</title>
+      <style>
+        body{font:13px 'Segoe UI',system-ui,sans-serif;color:#172033;margin:28px}
+        h1{font-size:22px;margin:0 0 4px}p{margin:8px 0}.meta{color:#4b5563}
+        .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}
+        .summary div{border:1px solid #d5dce7;border-radius:6px;padding:8px}
+        .summary span{display:block;color:#4b5563;margin-bottom:3px}
+        .chart{background:#0e1224;padding:8px;border-radius:6px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+        .chart svg{display:block;width:100%;height:auto}.chart [data-forecast-hover]{display:none}
+        .legend{font-size:11px;color:#374151;margin-top:8px}.warning{color:#a34800}
+        @page{size:landscape;margin:1cm}@media print{body{margin:0}.chart{break-inside:avoid}}
+      </style></head><body>
+      <h1>Hotness Forecast</h1><p class="meta">Generated ${new Date().toLocaleString()}</p>
+      <div class="summary">
+        <div><span>Model</span><strong>${model}</strong></div>
+        <div><span>Analysis period</span><strong>${appliedLookback} days</strong></div>
+        <div><span>Forecast horizon</span><strong>${appliedForecast} days</strong></div>
+        <div><span>Model confidence</span><strong>${confidence}%</strong></div>
+        <div><span>Historical points</span><strong>${histLen}</strong></div>
+        <div><span>Forecast peak</span><strong>${peak}</strong></div>
+      </div>
+      <div class="chart">${chartRef.current.outerHTML}</div>
+      <p class="legend">Blue: normal · Yellow: elevated · Pink: warm · Red: spike · Dashed line: forecast trend · Shaded area: confidence band</p>
+      ${warning}
+      </body></html>`;
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  };
+
   return createPortal(
     <PopupWindow style={{
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: "min(1200px, calc(100vw - 40px))",
@@ -286,10 +337,18 @@ export function HotnessForecastPanel({
           <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: 0.4 }}>Hotness Forecast</span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>drag to move</span>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button type="button" onMouseDown={event => event.stopPropagation()} onClick={exportPdf}
+          disabled={isLoading || !!loadError || isDirty || trainingData.length < 2 || forecastData.length === 0}
+          title={isDirty ? "Apply your changes before exporting" : "Export printable PDF report"}
+          style={{ background: "rgba(69,137,255,0.15)", color: "#7ab4ff", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+          PDF
+        </button>
         <PopupCloseButton onClick={onClose} style={{
           background: "none", border: "none", color: "rgba(255,255,255,0.45)",
           fontSize: 24, cursor: "pointer", padding: "0 4px", lineHeight: 1,
         }}>×</PopupCloseButton>
+        </div>
       </div>
 
       {/* Controls */}
@@ -330,7 +389,7 @@ export function HotnessForecastPanel({
 
       {/* Chart */}
       <div style={{ padding: "8px 20px 0" }}>
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", overflow: "visible" }}
+        <svg ref={chartRef} width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", overflow: "visible" }}
           onMouseLeave={() => setHoverIdx(null)}>
 
           {/* Top-of-scale label */}
@@ -417,7 +476,7 @@ export function HotnessForecastPanel({
               <>
                 <circle cx={cx} cy={cy} r={6} fill={hotnessColor(peakZ)} stroke="white" strokeWidth={2} />
                 <text x={cx} y={cy - 11} textAnchor="middle" fill={hotnessColor(peakZ)} fontSize={12} fontWeight="bold">
-                  ↑ {peakZ.toFixed(1)}{"\\u03C3"}
+                  ↑ {peakZ.toFixed(1)}σ
                 </text>
               </>
             );
@@ -433,12 +492,12 @@ export function HotnessForecastPanel({
               : mL + xHist(hoverIdx) + histBarW / 2;
             const cy = mT + yOf(v) - 14;
             return (
-              <g>
+              <g data-forecast-hover="">
                 <line x1={cx} y1={mT} x2={cx} y2={mT + cH} stroke="rgba(255,255,255,0.12)" strokeWidth={1.2} />
                 <rect x={cx - 52} y={cy - 20} width={104} height={22} rx={5}
                   fill="rgba(14,18,36,0.94)" stroke="rgba(255,255,255,0.18)" strokeWidth={0.9} />
                 <text x={cx} y={cy - 4} textAnchor="middle" fill="white" fontSize={12} fontWeight="bold">
-                  {isForecast ? "~" : ""}{v.toFixed(2)}{"\\u03C3"}{isForecast ? " (fcst)" : ""}
+                  {isForecast ? "~" : ""}{v.toFixed(2)}σ{isForecast ? " (fcst)" : ""}
                 </text>
               </g>
             );
@@ -454,7 +513,7 @@ export function HotnessForecastPanel({
             <text x={mL + halfW} y={mT + cH + 18} textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize={12}>Now</text>
           )}
           <text x={mL + cW} y={mT + cH + 18} textAnchor="end" fill="rgba(255,255,255,0.38)" fontSize={12}>+{appliedForecast}d</text>
-          <text x={mL} y={mT + cH + 38} textAnchor="start" fill="rgba(255,255,255,0.22)" fontSize={11} fontStyle="italic">Hotness Z-score ({"\\u03C3"})</text>
+          <text x={mL} y={mT + cH + 38} textAnchor="start" fill="rgba(255,255,255,0.22)" fontSize={11} fontStyle="italic">Hotness Z-score (σ)</text>
         </svg>
       </div>
 
@@ -465,7 +524,7 @@ export function HotnessForecastPanel({
       }}>
         <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", display: "flex", flexDirection: "column", gap: 4 }}>
           {peakZ >= 0.75
-            ? <span>Forecast peak: <span style={{ color: hotnessColor(peakZ), fontWeight: 700 }}>z={peakZ.toFixed(2)}</span> at +{peakIdx + 1} bucket(s) into forecast window{peakZ > maxY ? <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}> (off-scale — bars capped at {maxY.toFixed(1)}{"\\u03C3"})</span> : null}</span>
+            ? <span>Forecast peak: <span style={{ color: hotnessColor(peakZ), fontWeight: 700 }}>z={peakZ.toFixed(2)}</span> at +{peakIdx + 1} bucket(s) into forecast window{peakZ > maxY ? <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}> (off-scale — bars capped at {maxY.toFixed(1)}σ)</span> : null}</span>
             : <span style={{ color: "#3EC96A" }}>No significant hotness spikes projected in forecast window</span>
           }
           {method === "seasonal" && (

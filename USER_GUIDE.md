@@ -1,6 +1,6 @@
 # NavigatorIQ Launcher — User Guide
 
-> **Version:** 0.4.102 | **Platform:** Dynatrace App Platform | **Type:** Community App (unofficial)
+> **Version:** 0.4.122 | **Platform:** Dynatrace App Platform | **Type:** Community App (unofficial)
 
 ---
 
@@ -18,7 +18,7 @@
 10. [Hotness Calendar](#10-hotness-calendar)
 11. [KPI Heatmap](#11-kpi-heatmap)
 12. [Forecast](#12-forecast)
-13. [App Links Panel](#13-app-links-panel)
+13. [Investigation Links](#13-investigation-links)
 14. [Automate — Weekly Report Workflow](#14-automate--weekly-report-workflow)
 15. [Settings — Personal](#15-settings--personal)
 16. [Settings — All Users (Shared)](#16-settings--all-users-shared)
@@ -37,7 +37,7 @@ NavigatorIQ Launcher is a **persona-driven operational intelligence dashboard** 
 
 - **Follow the red.** The heat strip and assessment guide you to what is anomalous right now. You should not need to hunt for problems — NavigatorIQ surfaces them.
 - **One click to investigate.** Every metric and every assessment item links directly into the relevant Dynatrace app at the right scope.
-- **Your view, your metrics.** Per-user settings mean each person in the team can configure their own thresholds, heat metrics, and app links without affecting anyone else.
+- **Your view, your metrics.** Per-user settings mean each person in the team can configure their own thresholds and heat metrics without affecting anyone else.
 
 ### What NavigatorIQ is NOT
 
@@ -54,6 +54,8 @@ When you open NavigatorIQ for the first time you will see two things:
 1. **Disclaimer modal** — confirms this is an unofficial community app. Check *Don't show this again* and click **Continue** if you accept.
 2. **Persona Picker** — select the persona that matches your role. You can change this at any time from the header.
 
+The Persona Picker / What's New popup fits within the available viewport and scrolls vertically when its content is taller than the window. Scroll inside the popup to reach all personas and the Continue button; maximizing is optional.
+
 ### Maximizing popup windows
 
 Every popup has a **Maximize window** icon beside its close control. Maximizing fills the app viewport in the same tab and enlarges small body text to 16px, with larger headings. Long content remains scrollable. Click **Restore window** to return to the previous size, position, and text sizes without losing selections or edits. Nested popups can be maximized independently. The Disclaimer and Persona Picker have the same maximize control and retain their existing Continue buttons.
@@ -65,14 +67,15 @@ PDF export is unchanged and remains available separately in popups that support 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Header: Persona chip │ Timeframe tabs │ Refresh │ Settings │ ? │
-├──────────────────────────────────────────┬──────────────────────┤
-│                                          │                      │
-│  Activity Heat Strip                     │  App Links Panel     │
-│  Intelligence Narrative                  │  (quick-launch       │
-│  Assessment Items (Red / Yellow / Green) │   sidebar)           │
-│                                          │                      │
-└──────────────────────────────────────────┴──────────────────────┘
+├─────────────────────────────────────────────────────────────────┤
+│  Activity & Spikes (expanded by default)                         │
+│    Health summary and Activity Heat Strip                       │
+│  Timeframe Assessment (collapsed by default; counts visible)    │
+│    Intelligence Narrative and Assessment Items                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+Use either blue section header to expand or collapse that section independently. Critical, warning, healthy, and total assessment counts remain visible in the Timeframe Assessment header even when it is collapsed.
 
 ### Timeframe tabs
 
@@ -95,7 +98,7 @@ Click the **⟳** button in the header to re-run all queries without changing th
 
 ## 3. Choosing Your Persona
 
-NavigatorIQ ships with eight built-in personas. Switch between them using the persona chip in the header.
+NavigatorIQ ships with nine built-in personas. Switch between them using the persona chip in the header.
 
 | Persona | Primary Focus |
 |---------|--------------|
@@ -106,13 +109,28 @@ NavigatorIQ ships with eight built-in personas. Switch between them using the pe
 | **DevOps / CI/CD** | Services, infra, log errors, deployments |
 | **Security** | Vulnerability severity, attack events |
 | **Digital Experience** | RUM LCP, sessions, Apdex, synthetic failures |
+| **Mobile Experience** | Mobile sessions, errors, error-session rate, crash sessions, crash-session rate |
 | **K8s** | Container CPU/memory, OOMKills, pod scheduling |
 
-Switching personas instantly updates the heat strip, assessment items, intelligence narrative, and app links sidebar — everything reconfigures for that role.
+Switching personas instantly updates the heat strip, assessment items, and intelligence narrative for that role.
+
+### Mobile Experience
+
+The built-in **Mobile Experience** persona is available without creating a custom persona. It includes five DQL metrics over mobile `user.sessions`: **Sessions**, **Errors**, **Error Rate**, **Crashes**, and **Crash Rate**. All five include per-app Follow the Red queries, per-row history, and country/operating-system dimension queries.
+
+All five metrics default to **Mobile Navigation**. In Follow the Red, **Open in Dynatrace** passes the selected app name using `my.mobile.navigation.app/?app=${row}`. Mobile Navigation must be installed and accessible in the current tenant. **Error Rate** and **Crash Rate** default to a `%` unit suffix. Existing per-user overrides are kept; users can use the persona's metric reset to restore the built-in defaults.
+
+- **Errors** sums session error counts; **Crashes** counts sessions containing a crash, not individual crash events.
+- **Error Rate** and **Crash Rate** are affected-session percentages on a 0-100 scale. Empty time buckets display 0% as a no-traffic convention, not proof of healthy traffic.
+- Rate dimensions aggregate affected and total session counts before calculating percentages. Donut size represents session share, separately from the displayed rate.
+- Sessions involving multiple frontends contribute to each frontend; session-level errors/crashes are not attributed exclusively to that frontend. Recent data may be incomplete due to session ingestion delay.
+- Thresholds are intentionally unset: configure warning and critical levels for your environment under **Settings → Heat Metrics → Mobile Experience**. Sessions is a traffic metric.
+
+Existing custom personas, including any named Mobile Experience, and their saved settings are preserved separately. The built-in persona does not automatically copy or replace them.
 
 ### Custom personas
 
-Admins can create custom personas in **Settings → All Users → Custom Personas**. Custom personas are visible to everyone in the tenant and can be configured with their own heat metrics and app links per-user, just like built-in personas.
+Admins can create custom personas in **Settings → All Users → Custom Personas**. Custom personas are visible to everyone in the tenant and can be configured with their own heat metrics per-user, just like built-in personas.
 
 ---
 
@@ -166,7 +184,7 @@ Click **✕ Exit zoom** in the banner to return to the full timeframe tab.
 
 ## 5. NavigatorIQ Launcher Intelligence
 
-Below the heat strip, the **NavigatorIQ Launcher Intelligence** section generates a plain-language narrative of the current assessment. The text prints word by word — like a response from an AI assistant — so you can read it as it builds rather than waiting for a wall of text.
+Expand **Timeframe Assessment** below the heat strip for the **NavigatorIQ Launcher Intelligence** narrative, a plain-language summary of the current assessment.
 
 ### What the narrative includes
 
@@ -223,10 +241,10 @@ Click any bar in the heat strip to open **Bucket Diagnosis** — a draggable, sc
 
 | Button | Action |
 |--------|--------|
-| **↗ Explore** on a row | Opens the Explore panel for that metric within that time window |
+| **Follow the Red ↗** on an eligible row | Opens the drill-down panel for that metric within that time window |
 | **Why is this hot?** | Narrative explanation of what drove the anomaly in this specific bucket |
 
-> **Best practice:** Use Bucket Diagnosis to narrow from "something spiked at 2pm" to "error rate and response time both spiked — let's look at error rate." Then click Explore on that metric.
+> **Best practice:** Use Bucket Diagnosis to narrow from "something spiked at 2pm" to "error rate and response time both spiked — let's look at error rate." Then click Follow the Red on that metric.
 
 ---
 
@@ -256,6 +274,10 @@ For Digital Experience metrics, an additional **Dimension** button opens a geo +
 ---
 
 ## 9. Hotness Assist
+
+Hotness Assist excludes missing or invalid buckets and buckets where every metric value is zero (for example, zero sessions and zero errors/crashes), regardless of whether a metric is marked as traffic. These buckets cannot become W1/W2 or B1/B2 and do not contribute to comparisons, correlations, trends, next steps, or PDF analysis. Individual zero values remain valid when another metric in the bucket has data; a zero hotness Z-score alone does not exclude a bucket. This is an analysis-only rule; the main heat strip is unchanged. The existing final potentially incomplete bucket is still excluded.
+
+The timeline omits no-data bars while retaining original bucket positions and numbers, so gaps do not shift W1/B1 labels or merge separate spike episodes. A data gap is not treated as recovery. If no eligible buckets remain, the panel reports no data instead of a healthy baseline.
 
 **Hotness Assist** is the deepest analysis view in NavigatorIQ. Open it by clicking **🔥 Hotness Assist** in the heat strip header. The panel is draggable.
 
@@ -328,8 +350,9 @@ Click the **📅** button beside Hotness Assist to open the **Hotness Calendar**
 
 - Rows = hours of the day (12am → 11pm)
 - Columns = days of the week (Sunday → Saturday)
-- Each cell = the worst Z-score seen during that hour slot, aggregated across the selected history window
+- Each cell = the average Z-score for that hour and day over the loaded history
 - Colors use the same scale as the heat strip
+- Hover a cell for its day, hour, average Z-score, and level; empty cells report no data. This works in both the regular and maximized views. Maximize the window to expand the grid across the available width.
 
 ### History window
 
@@ -404,20 +427,13 @@ Try multiple models and pick the one whose historical fit (how well it tracks th
 
 The panel is draggable. Extend the forecast horizon using the control at the top of the panel.
 
+The **Forecast** button above the activity heat strip opens Hotness Forecast for the combined hotness score. Its **PDF** button opens a printable report with the chart, applied model and periods, confidence, and forecast peak. Apply any pending period changes before exporting.
+
 ---
 
-## 13. App Links Panel
+## 13. Investigation Links
 
-The right-hand sidebar shows quick-launch buttons for Dynatrace apps relevant to the current persona.
-
-| Element | Meaning |
-|---------|---------|
-| 🟢 Green dot | App is marked as installed |
-| ⚫ Grey dot | App not yet installed (still clickable — goes to app catalog) |
-| App name button | Opens the app in Dynatrace |
-| **Docs** link | Opens the app's documentation |
-
-Configure which apps appear and in what order in **Settings → Personal → App Links**.
+Select a heat bucket and use **Follow the Red** on an eligible metric to investigate its contributors. The adjacent app arrow opens the metric's configured Explore app. Expand an assessment item to see its recommendations and available links to relevant Dynatrace apps.
 
 ---
 
@@ -455,14 +471,6 @@ The generated workflow runs **every Monday at 8:00 AM** and:
 ## 15. Settings — Personal
 
 Personal settings are saved to your Dynatrace user state. They are private to you and do not affect other users. Open with the **⚙️** button in the header.
-
-### App Links
-
-Configure the apps that appear in the sidebar for each persona:
-- **Label** — display name shown in the sidebar
-- **App Path** — the Dynatrace app identifier (e.g., `dynatrace.services`, `dynatrace.infraops`)
-- **Docs URL** — optional documentation link
-- **Visibility toggle** — colored dot toggles the app on/off without deleting it
 
 ### Assessment Thresholds
 
@@ -503,7 +511,7 @@ For each metric, configure:
 
 ### Follow the Red — Dimension Split
 
-When you click the **"Follow the Red"** button (↗) next to a metric in the Assessment Panel, NavigatorIQ opens a drill-down view showing which entities (services, hosts, frontend apps, etc.) are driving the metric anomaly. The **Dimension Split** configuration controls how the data is grouped in that drill-down.
+Select a heat bucket, then click **Follow the Red ↗** next to an eligible metric in Bucket Diagnosis. NavigatorIQ opens a drill-down view showing which entities (services, hosts, frontend apps, etc.) are driving the metric anomaly. The **Dimension Split** configuration controls how the data is grouped in that drill-down.
 
 #### Configuring dimensions
 
@@ -541,6 +549,138 @@ For common metrics, NavigatorIQ includes pre-configured dimension splits. When y
 - **Top entities** are sorted by the metric value, so you see the most impactful groups first
 - Clicking a row may open additional diagnostic panels depending on the metric type
 
+#### Dynamic FTR app links
+
+Each metric has an optional **FTR Link Template** under **Settings → Heat Metrics → Follow the Red — Dimension Split**. This changes only the **Open in Dynatrace** button on Follow the Red rows, for both standard metric and DQL breakdowns. It does not change **Explore App Path** or Investigate/Next Steps navigation.
+
+For example:
+
+```text
+my.mobile.navigation.app/?app=${row}
+```
+
+For a row named `L1158_mobile`, this opens `/ui/apps/my.mobile.navigation.app/?app=L1158_mobile` in the current tenant and a new tab. `${row}` is the row's displayed name, URL-encoded automatically; it is not a DQL string literal and needs no surrounding quotes. Repeated `${row}` placeholders and subroutes are supported. A multi-dimension row passes its displayed name, not a separately inferred app name or entity ID.
+
+Use an app-relative path, without a hostname or leading slash. `${row}` is required and is the only supported placeholder. The link opens exactly the configured route and parameters; a timeframe is not appended automatically. Invalid templates and missing row names show an error instead of opening a fallback destination. The receiving app must support the supplied parameter (for example, `app`).
+
+Leave the template blank to preserve existing FTR link behavior. Generic custom DQL rows that previously had no Open in Dynatrace button gain one when a template is configured.
+
+#### Custom DQL drill-downs
+
+The mobile session-count query shown below supports an automatic breakdown when Dimensions is set to `frontend.name`:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| makeTimeseries value=count(), interval:${interval}, time:start_time
+```
+
+For other custom DQL metrics, enter a **Drill-down DQL** query that returns one row per group with a text `displayName` and numeric `value`. The `${from}`, `${to}`, and `${interval}` placeholders use the selected timeframe and bucket interval. For example:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter isNotNull(frontend.name)
+| summarize value=count(), by:{displayName=frontend.name}
+| sort value desc
+```
+
+The custom query defines its own grouping; the Dimensions field does not modify it. Results cover the selected timeframe, not just the clicked heat bucket. A session involving multiple frontends is counted for each frontend.
+
+The automatic mobile session breakdown includes drill pills for each frontend. Baseline, Anomaly, and Heatmap use seven days of hourly session starts ending at or before the selected timeframe end; Forecast offers selectable analysis periods, intervals, horizons, and methods. The latest two hours are excluded to allow for session ingestion delay. Heatmap colors compare volume to the series average, not health. Diagnose and Impact show session-level crash and error counts, and Dimension shows country and OS counts for the selected timeframe. Session-level errors can include other frontends involved in the same session. Cost Impact is unavailable without business data. Open in Dynatrace opens Digital Experience without selecting the frontend.
+
+The following mobile error metric and its matching drill-down query also support pills for each error type:
+
+```dql
+timeseries value = sum(dt.frontend.error.count),
+  filter: frontend.name == "YOUR_MOBILE_FRONTEND",
+  from: ${from},
+  to: ${to},
+  interval: ${interval}
+```
+
+```dql
+timeseries value = sum(dt.frontend.error.count, scalar: true),
+  by: {frontend.name, error.type},
+  filter: frontend.name == "YOUR_MOBILE_FRONTEND",
+  from: ${from},
+  to: ${to}
+| fields displayName = concat(frontend.name, " / ", coalesce(error.type, "Unknown")), value
+| sort value desc
+```
+
+Replace `YOUR_MOBILE_FRONTEND` with the same frontend name in both queries. Forecast, Baseline, Anomaly, and Heatmap use metric counts for the selected error type. Diagnose, Impact, and Dimension use error events for that frontend and type, so their counts can differ from metric counts; distinct session and instance counts are estimates. Open in Dynatrace opens Errors without selecting the frontend. Cost Impact remains unavailable without business data.
+
+Other custom DQL breakdowns also show drill pills. To enable their history-based panels, configure **Per-row history DQL** with all four placeholders `${row}`, `${from}`, `${to}`, and `${interval}`. `${row}` is substituted as a quoted DQL string containing the selected `displayName`. Return exactly one timeseries record with a numeric `value` array and `timeframe`, covering the requested interval without missing or negative values; use an explicit zero default only when zero is correct. The history query must select the same group and measure as the drill-down row. For example, with the session breakdown above:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter frontend.name == ${row}
+| makeTimeseries value=count(default:0), interval:${interval}, time:start_time, from:toTimestamp(${from}), to:toTimestamp(${to})
+```
+
+For **Dimension**, optionally configure **Per-row dimension DQL** using `${row}`, `${from}`, and `${to}`. Return two dimension fields aliased as `country` and `os`, and a non-negative numeric `value` for each combination; values must be additive counts or weights, not averages or percentages. Set the two dimension labels if they are not country and operating system. For example:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter frontend.name == ${row}
+| summarize value=count(), by:{country=geo.country.name, os=os.name}
+```
+
+Without these queries, the corresponding panels explain what is missing. **Diagnose** combines hourly history with the leading segments in the selected timeframe when a dimension query is available. **Baseline** shows the prior hourly distribution and a three-standard-deviation review band. **Anomaly** compares the latest complete hour with that band; this is a statistical review signal, not a confirmed incident.
+
+For built-in Mobile Experience metrics, **Impact** shows recorded sessions with errors or crashes and the telemetry coverage for each count. These rates are calculated from sessions that report the relevant field and can differ from the metric rate. Generic DQL without affected-session telemetry does not estimate impact. Cost Impact is unavailable without business data. The app does not infer a Dynatrace destination for arbitrary DQL.
+
+##### Session error and crash percentages
+
+Session error rate is the percentage of sessions with `error.count > 0`; session crash rate is the percentage with `error.has_crash == true`. These are affected-session percentages, not error events per session or per minute.
+
+For percentage metrics, set Display Unit to Percent (`pct`), keep higher values as worse, and return values on the 0-100 scale. A main error-rate query can average a per-session 0/100 indicator:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| fieldsAdd sessionRate=if(coalesce(error.count, 0) > 0, 100.0, else:0.0)
+| makeTimeseries value=avg(sessionRate, default:0),
+    interval:${interval}, time:start_time,
+    from:toTimestamp(${from}), to:toTimestamp(${to}), nonempty:true
+```
+
+For crash rate, use `if(coalesce(error.has_crash, false), 100.0, else:0.0)` instead. The explicit `default:0` treats no-session buckets as 0% for display/history completeness, not as evidence of healthy traffic. Omit that convention if an undefined rate is required, but history panels reject missing buckets. Recent session data can be incomplete because of ingestion delay.
+
+The drill-down query must average the same indicator per frontend, not add percentages:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter isNotNull(frontend.name)
+| fieldsAdd sessionRate=if(coalesce(error.count, 0) > 0, 100.0, else:0.0)
+| summarize value=avg(sessionRate), by:{displayName=frontend.name}
+| sort value desc
+```
+
+For per-row history, add `expand frontend.name` and `filter frontend.name == ${row}` before `fieldsAdd` in the main query. For crash-rate drill-down/history, replace the indicator as described above.
+
+For **Per-row dimension DQL**, session percentage queries return `country`, `os`, `numerator` (affected sessions), and `denominator` (all sessions), instead of an already-divided `value`:
+
+```dql
+fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter frontend.name == ${row}
+| summarize numerator=countIf(error.count > 0), denominator=count(),
+    by:{country=geo.country.name, os=os.name}
+| fieldsAdd numerator=toDouble(numerator), denominator=toDouble(denominator)
+```
+
+For crashes, replace `countIf(error.count > 0)` with `countIf(error.has_crash == true)`. Counts must be numeric, non-negative, and satisfy `numerator <= denominator` in every record. Do not mix count-only and rate records. The app sums numerators and denominators separately for each country/OS, then calculates `100 * numerator / denominator`; it never sums or averages precomputed percentages. Zero-denominator groups are omitted. The legend shows **Rate** and **Session share** separately: donut sizes represent all-session share, not rate. Hover shows affected/total counts; PDF export includes counts and rate.
+
 ### General
 
 | Setting | Description |
@@ -561,7 +701,7 @@ Add a persona visible to all users:
 - **Label** — the persona name
 - **Description** — shown in the persona picker to explain who this persona is for
 
-Once created, each user can independently configure heat metrics, thresholds, app links, and **dimension splits** for a custom persona in their Personal settings.
+Once created, each user can independently configure heat metrics, thresholds, and **dimension splits** for a custom persona in their Personal settings.
 
 #### Setting up dimensions for custom personas
 
@@ -779,16 +919,16 @@ This is the recommended flow for using NavigatorIQ during an active incident.
 
 ## Appendix — Personas Quick Reference
 
-| Persona | Default Heat Metrics | Key App Links |
-|---------|---------------------|---------------|
-| Developer | Request Volume, Error Rate, Response Time | Services, Logs, Distributed Traces |
-| SRE / Platform | CPU, Memory, Disk Usage/I/O, Network | Infrastructure, Hosts, Processes |
-| DBA | DB Query Volume, Avg Latency, P99 Latency, Slow Queries, DB Errors | Database & Storage |
-| Network Admin | Bytes Sent/Received, Packets Sent/Received, Retransmissions | Infrastructure / Network |
-| DevOps / CI/CD | Request Volume, Error Rate, CPU, Memory, Log Errors | Services, Logs, Workflows |
-| Security | Vulnerability Severity, Attack Events | Security, Application Security |
-| Digital Experience | RUM LCP, Sessions, Apdex, Synthetic Failures | Digital Experience, Synthetic |
-| K8s | Container CPU, Container Memory, OOMKills | Kubernetes |
+| Persona | Default Heat Metrics |
+|---------|---------------------|
+| Developer | Request Volume, Error Rate, Response Time |
+| SRE / Platform | CPU, Memory, Disk Usage/I/O, Network |
+| DBA | DB Query Volume, Avg Latency, P99 Latency, Slow Queries, DB Errors |
+| Network Admin | Bytes Sent/Received, Packets Sent/Received, Retransmissions |
+| DevOps / CI/CD | Request Volume, Error Rate, CPU, Memory, Log Errors |
+| Security | Vulnerability Severity, Attack Events |
+| Digital Experience | RUM LCP, Sessions, Apdex, Synthetic Failures |
+| K8s | Container CPU, Container Memory, OOMKills |
 
 ---
 

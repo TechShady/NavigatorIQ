@@ -72,7 +72,10 @@ const SECTIONS: HelpSection[] = [
           The core idea: <strong style={{ color: "#fff" }}>follow the red.</strong> The heat strip and assessment drive you to what's anomalous right now. The <strong style={{ color: "#7ab4ff" }}>NavigatorIQ Launcher Intelligence</strong> narrative then tells you what it found in plain language, word by word, like a response from an AI assistant.
         </p>
         <p style={P}>
-          Everything is persona-scoped. Switch personas in the header and the entire view — metrics, app links, heat strip, assessment — updates instantly.
+          Everything is persona-scoped. Switch personas in the header and the entire view — metrics, heat strip, and assessment — updates instantly.
+        </p>
+        <p style={P}>
+          <strong style={{ color: "#fff" }}>Activity &amp; Spikes</strong> is expanded by default for investigating unusual intervals. Expand <strong style={{ color: "#fff" }}>Timeframe Assessment</strong> for the narrative and metric status; its critical and warning counts remain visible when collapsed. The sections can be opened or closed independently.
         </p>
       </div>
     ),
@@ -84,7 +87,7 @@ const SECTIONS: HelpSection[] = [
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          Each persona has its own heat metrics, app links, and assessment thresholds. Switch personas using the chip in the header. The Persona Picker also appears on first load so you can set your default.
+          Each persona has its own heat metrics and assessment thresholds. Switch personas using the chip in the header. The Persona Picker also appears on first load so you can set your default.
         </p>
         <ul style={UL}>
           <li><strong style={{ color: "#fff" }}>Developer</strong> — services, error rate, response time, request volume</li>
@@ -159,7 +162,7 @@ const SECTIONS: HelpSection[] = [
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          Below the heat strip, the <strong style={{ color: "#7ab4ff" }}>NavigatorIQ Launcher Intelligence</strong> section generates a plain-language narrative of the current assessment. It prints word by word — like a response from an AI assistant — so you can read it as it arrives rather than waiting for a wall of text.
+          Expand <strong style={{ color: "#fff" }}>Timeframe Assessment</strong> below the heat strip for the <strong style={{ color: "#7ab4ff" }}>NavigatorIQ Launcher Intelligence</strong> narrative, a plain-language summary of the current assessment.
         </p>
         <ul style={UL}>
           <li>Opens with a context sentence: how many critical issues were found and over what timeframe</li>
@@ -183,7 +186,7 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ul style={UL}>
           <li>Each metric row shows the Z-score, raw value, and a color band matching its heat level</li>
-          <li>Click the <strong style={{ color: "#fff" }}>↗ Explore</strong> button on any metric row to open the Explore panel for that metric</li>
+          <li>Click <strong style={{ color: "#fff" }}>Follow the Red ↗</strong> on an eligible metric row to open its drill-down panel</li>
           <li>Click <strong style={{ color: "#fff" }}>Why is this hot?</strong> for a narrative explanation of what drove the anomaly in that bucket</li>
         </ul>
       </div>
@@ -249,7 +252,8 @@ const SECTIONS: HelpSection[] = [
         </p>
         <ul style={UL}>
           <li>Select <strong style={{ color: "#fff" }}>7 days</strong>, <strong style={{ color: "#fff" }}>14 days</strong>, or <strong style={{ color: "#fff" }}>30 days</strong> of history to aggregate</li>
-          <li>Hover any cell to see the exact Z-score range and tooltip</li>
+          <li>Hover any cell in either window size to see its day, hour, average Z-score, and level; empty cells show no data.</li>
+          <li>Maximize the window to spread the grid across the available width.</li>
           <li>Use it to distinguish "this is always hot on Monday at 9am" from "something unusual is happening right now"</li>
         </ul>
         <p style={P}>The calendar panel is draggable.</p>
@@ -295,6 +299,7 @@ const SECTIONS: HelpSection[] = [
           <li><strong style={{ color: "#fff" }}>SARIMA</strong> — seasonal ARIMA. Best when the metric has strong, consistent seasonality.</li>
         </ul>
         <p style={P}>A confidence band (shaded area) is shown around the forecast to indicate uncertainty — wider = less confident. The history period shown matches the current timeframe tab.</p>
+        <p style={P}>The heat-strip Hotness Forecast has a <strong style={{ color: "#fff" }}>PDF</strong> button for a printable report with the current chart and model settings. Apply pending period changes first.</p>
       </div>
     ),
   },
@@ -305,11 +310,6 @@ const SECTIONS: HelpSection[] = [
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>Personal settings are saved per-user in Dynatrace user state. Each person in the tenant has their own independent configuration. Open Settings from the ⚙️ button in the header.</p>
-
-        <p style={{ ...H3, marginTop: 12 }}>🔗 App Links</p>
-        <p style={P}>
-          Configure which Dynatrace apps appear in the right-hand sidebar for each persona. Each link has a label, an app path (e.g. <code style={CODE}>dynatrace.classic.services</code>), and an optional docs URL. The colored dot toggles visibility on/off.
-        </p>
 
         <p style={{ ...H3, marginTop: 12 }}>🎯 Assessment Thresholds</p>
         <p style={P}>
@@ -351,25 +351,24 @@ const SECTIONS: HelpSection[] = [
 
         <p style={{ ...H3, marginTop: 12 }}>👤 Custom Personas</p>
         <p style={P}>
-          Add custom personas visible to all users. Each persona has an icon (emoji), label, and description. Built-in personas cannot be removed. Custom personas support their own heat metrics and app links, configurable per-user just like built-in ones.
+          Add custom personas visible to all users. Each persona has an icon (emoji), label, and description. Built-in personas cannot be removed. Custom personas support their own heat metrics, configurable per-user just like built-in ones.
         </p>
       </div>
     ),
   },
   {
-    id: "app-links",
+    id: "investigation-links",
     icon: "🔗",
-    title: "App Links Panel",
+    title: "Investigation Links",
     content: (
       <div style={SECTION_STYLE}>
         <p style={P}>
-          The right sidebar shows quick-launch buttons for the current persona's configured apps. Use it to jump from NavigatorIQ straight into the right Dynatrace app once you've identified an issue.
+          Investigation links appear alongside the metric or assessment item that prompted them.
         </p>
         <ul style={UL}>
-          <li>The <strong style={{ color: "#fff" }}>dot</strong> next to each app is green when marked installed, grey otherwise</li>
-          <li>Click the app name button to open it in the Dynatrace platform</li>
-          <li>Click <strong style={{ color: "#fff" }}>Docs</strong> to open its documentation URL</li>
-          <li>Assessment items with an <code style={CODE}>exploreAppPath</code> link directly into that app's relevant view</li>
+          <li>Select a heat bucket, then use <strong style={{ color: "#fff" }}>Follow the Red</strong> to investigate an eligible metric.</li>
+          <li>Use the adjacent app arrow to open a metric's configured Explore app.</li>
+          <li>Expand an assessment item for its available app links and recommendations.</li>
         </ul>
       </div>
     ),

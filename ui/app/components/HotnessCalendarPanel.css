@@ -1,0 +1,61 @@
+.iq-hotness-grid {
+  display: grid;
+  grid-template-columns: 42px repeat(7, minmax(28px, 1fr));
+  align-items: center;
+  gap: 2px;
+  min-width: 252px;
+}
+
+.iq-hotness-day,
+.iq-hotness-hour {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.iq-hotness-day {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 700;
+  text-align: center;
+}
+
+.iq-hotness-hour {
+  color: rgba(255, 255, 255, 0.45);
+  padding-right: 6px;
+  text-align: right;
+}
+
+.iq-hotness-cell {
+  height: 14px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  box-sizing: border-box;
+  transition: opacity 0.12s ease, border-color 0.1s;
+}
+
+.iq-popup-maximized .iq-hotness-grid {
+  grid-template-columns: 58px repeat(7, minmax(36px, 1fr));
+  gap: 4px;
+}
+
+.iq-popup-maximized .iq-hotness-day,
+.iq-popup-maximized .iq-hotness-hour {
+  font-size: 16px;
+}
+
+.iq-popup-maximized .iq-hotness-cell {
+  height: 22px;
+}
+
+.iq-hotness-tooltip {
+  position: fixed;
+  z-index: 11000;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 7px 10px;
+  border: 1px solid rgba(130, 170, 230, 0.45);
+  border-radius: 6px;
+  background: #20283a;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font: 12px/1.4 "Segoe UI", system-ui, sans-serif;
+  pointer-events: none;
+}

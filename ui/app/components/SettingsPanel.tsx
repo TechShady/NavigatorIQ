@@ -1,7 +1,8 @@
 import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { PersonaId, AppLink, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings, DimensionConfig } from "../types";
-import { PERSONAS, DEFAULT_APP_LINKS, DEFAULT_HEAT_METRICS, APP_VERSION, DIMENSION_PRESETS } from "../constants";
+import type { PersonaId, SavedSettings, HeatMetricConfig, MetricDisplayUnit, PersonaDef, PersonaSettings, DimensionConfig } from "../types";
+import { PERSONAS, DEFAULT_HEAT_METRICS, APP_VERSION, DIMENSION_PRESETS, resolvePersonaHeatMetrics } from "../constants";
+import { resolveFtrLink } from "../ftrLinks";
 
 interface SettingsPanelProps {
   settings: SavedSettings;
@@ -9,7 +10,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = "applinks" | "hotness" | "personas" | "general";
+type SettingsTab = "hotness" | "personas" | "general";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "rgba(255,255,255,0.06)",
@@ -28,30 +29,6 @@ const LABEL_STYLE: React.CSSProperties = {
   display: "block",
 };
 
-
-function AppLinkRow({ link, index, onChange, onRemove }: { link: AppLink; index: number; onChange: (i: number, link: AppLink) => void; onRemove: (i: number) => void }) {
-  return (
-    <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", padding: "10px 12px", marginBottom: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, background: link.enabled ? "#0D9C29" : "rgba(128,128,128,0.4)", cursor: "pointer", flexShrink: 0, transition: "background 0.15s" }} onClick={() => onChange(index, { ...link, enabled: !link.enabled })} title={link.enabled ? "Click to disable" : "Click to enable"} />
-          <input value={link.label} onChange={(e) => onChange(index, { ...link, label: e.target.value })} placeholder="App Label" style={{ ...INPUT_STYLE, fontWeight: 600, fontSize: 13 }} />
-        </div>
-        <button onClick={() => onRemove(index)} style={{ background: "rgba(194,25,48,0.15)", border: "1px solid rgba(194,25,48,0.3)", color: "#ff6b7a", borderRadius: 4, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>Remove</button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div>
-          <label style={LABEL_STYLE}>App Path (e.g. dynatrace.classic.services)</label>
-          <input value={link.appPath} onChange={(e) => onChange(index, { ...link, appPath: e.target.value })} placeholder="app.path.here" style={INPUT_STYLE} />
-        </div>
-        <div>
-          <label style={LABEL_STYLE}>Docs URL</label>
-          <input value={link.docsUrl} onChange={(e) => onChange(index, { ...link, docsUrl: e.target.value })} placeholder="https://docs.dynatrace.com/..." style={INPUT_STYLE} />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const AGG_OPTIONS: { value: "avg" | "sum"; label: string }[] = [
   { value: "avg", label: "avg" },
@@ -129,6 +106,8 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
   const setMode = (t: "single" | "ratio" | "dql") => onChange(index, { ...metric, type: t });
   const [showDqlHelp, setShowDqlHelp] = useState(false);
   const isHourly = (metric.thresholdBucketHours ?? 0) > 0;
+  const ftrLinkPreview = resolveFtrLink(metric.drilldownLinkTemplate, "Selected app", "https://example.invalid");
+  const ftrLinkError = ftrLinkPreview && "error" in ftrLinkPreview ? ftrLinkPreview.error : undefined;
 
   return (
     <div style={{ background: "rgba(255,120,30,0.04)", borderRadius: 8, border: "1px solid rgba(255,120,30,0.15)", padding: "10px 12px", marginBottom: 0 }}>
@@ -301,6 +280,23 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
       {/* ── Dimension Configuration for "Follow the Red" ── */}
       <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Follow the Red — Dimension Split</div>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor={`ftr-link-${index}`} style={LABEL_STYLE}>FTR Link Template (optional)</label>
+          <input
+            id={`ftr-link-${index}`}
+            value={metric.drilldownLinkTemplate ?? ""}
+            onChange={(e) => onChange(index, { ...metric, drilldownLinkTemplate: e.target.value })}
+            placeholder="my.mobile.navigation.app/?app=${row}"
+            aria-invalid={!!ftrLinkError}
+            aria-describedby={ftrLinkError ? `ftr-link-error-${index}` : undefined}
+            style={INPUT_STYLE}
+          />
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+            Overrides only the FTR row&apos;s Open in Dynatrace button. Use an app-relative path and {"${row}"} for the URL-encoded row name.
+            The current tenant is used automatically. Leave blank for existing behavior; Explore App Path is unchanged.
+          </div>
+          {ftrLinkError && <div id={`ftr-link-error-${index}`} role="alert" style={{ fontSize: 11, color: "#F87171", marginTop: 4 }}>{ftrLinkError}</div>}
+        </div>
         <div>
           <label style={LABEL_STYLE}>Dimensions (comma-separated)</label>
           <input
@@ -312,7 +308,7 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
                 label: metric.dimensionConfig?.label
               }
             })}
-            placeholder="e.g. entityName(dt.entity.service) or frontend.name, page.name"
+            placeholder="e.g. dt.entity.service or frontend.name, page.name"
             style={INPUT_STYLE}
           />
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>Splits data in drill-down view by these dimensions (e.g., service name, page name)</div>
@@ -361,13 +357,52 @@ function HeatMetricRow({ metric, index, onChange, onRemove }: { metric: HeatMetr
           />
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>Display name for this dimension split in the UI</div>
         </div>
+        {mode === "dql" && (
+          <div style={{ marginTop: 8 }}>
+            <label style={LABEL_STYLE}>Drill-down DQL (optional)</label>
+            <textarea
+              value={metric.drilldownQuery ?? ""}
+              onChange={(e) => onChange(index, { ...metric, drilldownQuery: e.target.value || undefined })}
+              placeholder="Return one row per group with displayName and value fields"
+              rows={4}
+              style={{ ...INPUT_STYLE, fontFamily: "monospace", fontSize: 11, resize: "vertical", lineHeight: 1.5 }}
+            />
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
+              Return a text <code>displayName</code> and numeric <code>value</code> for each group. Use ${"{from}"}, ${"{to}"}, and ${"{interval}"} for the selected timeframe.
+              Mobile session counts with the <code>frontend.name</code> dimension are supported automatically.
+            </div>
+            <label style={{ ...LABEL_STYLE, marginTop: 12 }}>Per-row history DQL (optional)</label>
+            <textarea value={metric.drilldownHistoryQuery ?? ""}
+              onChange={(e) => onChange(index, { ...metric, drilldownHistoryQuery: e.target.value || undefined })}
+              placeholder="Return one timeseries row with value and timeframe"
+              rows={4} style={{ ...INPUT_STYLE, fontFamily: "monospace", fontSize: 11, resize: "vertical", lineHeight: 1.5 }} />
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+              Use ${"{row}"} as a DQL string literal for the selected displayName, plus ${"{from}"}, ${"{to}"}, and ${"{interval}"}.
+              Return one complete, evenly spaced <code>value</code> array and its <code>timeframe</code>; specify explicit zero defaults if appropriate.
+            </div>
+            <label style={{ ...LABEL_STYLE, marginTop: 12 }}>Per-row dimension DQL (optional)</label>
+            <textarea value={metric.drilldownDimensionQuery ?? ""}
+              onChange={(e) => onChange(index, { ...metric, drilldownDimensionQuery: e.target.value || undefined })}
+              placeholder="Return country, os and value; or numerator and denominator for session rates"
+              rows={4} style={{ ...INPUT_STYLE, fontFamily: "monospace", fontSize: 11, resize: "vertical", lineHeight: 1.5 }} />
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+              Use ${"{row}"}, ${"{from}"}, and ${"{to}"}; return two dimensions aliased as country and os, and an additive non-negative numeric value.
+              For session percentages, return numeric numerator (affected sessions) and denominator (all sessions) instead of value.
+              Rates are calculated after grouping; the donut shows total-session share.
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <input value={metric.drilldownDimensionFirstLabel ?? ""} onChange={(e) => onChange(index, { ...metric, drilldownDimensionFirstLabel: e.target.value || undefined })} placeholder="First dimension label (Country)" style={INPUT_STYLE} />
+              <input value={metric.drilldownDimensionSecondLabel ?? ""} onChange={(e) => onChange(index, { ...metric, drilldownDimensionSecondLabel: e.target.value || undefined })} placeholder="Second dimension label (Operating system)" style={INPUT_STYLE} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("applinks");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("hotness");
   const [activePersona, setActivePersona] = useState<PersonaId>(PERSONAS[0].id);
   const [draft, setDraft] = useState<SavedSettings>(() => JSON.parse(JSON.stringify(settings)));
   const [hasChanges, setHasChanges] = useState(false);
@@ -412,58 +447,8 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
     markDirty();
   };
 
-  const getPersonaLinks = (personaId: PersonaId): AppLink[] =>
-    draft.personas[personaId]?.appLinks ?? DEFAULT_APP_LINKS[personaId] ?? [];
-
-  const updatePersonaLinks = (personaId: PersonaId, links: AppLink[]) => {
-    setDraft((prev) => ({
-      ...prev,
-      personas: {
-        ...prev.personas,
-        [personaId]: { ...prev.personas[personaId], appLinks: links } as PersonaSettings,
-      },
-    }));
-    markDirty();
-  };
-
-  const addLink = (personaId: PersonaId) => {
-    const links = [...getPersonaLinks(personaId), { label: "New App", appPath: "", docsUrl: "", enabled: true }];
-    updatePersonaLinks(personaId, links);
-  };
-
-  const resetPersonaLinks = (personaId: PersonaId) => {
-    updatePersonaLinks(personaId, [...(DEFAULT_APP_LINKS[personaId] ?? [])]);
-  };
-
-  const getPersonaHeatMetrics = (personaId: PersonaId): HeatMetricConfig[] => {
-    const saved = draft.personas[personaId]?.heatMetrics;
-    const defaults = DEFAULT_HEAT_METRICS[personaId] ?? [];
-    if (!saved) return defaults;
-    // Rebuild in defaults order so new default metrics appear at their natural position.
-    // Saved values override defaults; user-added custom metrics (not in defaults) go at end.
-    const savedByLabel = new Map(saved.map((m) => [m.label, m]));
-    const defaultLabels = new Set(defaults.map((m) => m.label));
-    const result = defaults.map((def) => {
-      const m = savedByLabel.get(def.label);
-      if (!m) return def;
-      return {
-        ...m,
-        metricKey: def.metricKey,
-        denominatorKey: def.denominatorKey,
-        type: def.type,
-        dqlQuery: def.dqlQuery,
-        aggregation: def.aggregation,
-        isTraffic: def.isTraffic,
-        displayUnit: def.displayUnit,
-        warningThreshold: m.warningThreshold ?? def.warningThreshold,
-        criticalThreshold: m.criticalThreshold ?? def.criticalThreshold,
-        exploreAppPath: m.exploreAppPath ?? def.exploreAppPath,
-        repoUrl: m.repoUrl ?? def.repoUrl,
-      };
-    });
-    const custom = saved.filter((m) => !defaultLabels.has(m.label));
-    return custom.length > 0 ? [...result, ...custom] : result;
-  };
+  const getPersonaHeatMetrics = (personaId: PersonaId): HeatMetricConfig[] =>
+    resolvePersonaHeatMetrics(personaId, draft.personas[personaId]?.heatMetrics);
 
   const updatePersonaHeatMetrics = (personaId: PersonaId, metrics: HeatMetricConfig[]) => {
     setDraft((prev) => ({
@@ -519,7 +504,6 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
     gap: 6,
   });
 
-  const links = getPersonaLinks(activePersona);
   const activePersonaDef = allPersonas.find((p) => p.id === activePersona) ?? PERSONAS[0];
 
   return (
@@ -529,7 +513,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         <div style={{ padding: "20px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff" }}>⚙️ NavigatorIQ Launcher Settings</h2>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Customize app links, metrics, and general preferences</p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Customize metrics and general preferences</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {hasChanges && (
@@ -547,7 +531,6 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
         <div style={{ padding: "12px 28px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 12, flexShrink: 0, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(69,137,255,0.6)", whiteSpace: "nowrap" }}>Personal</span>
-            <button style={tabStyle("applinks")} onClick={() => setActiveTab("applinks")}>🔗 App Links</button>
             <button style={tabStyle("hotness")} onClick={() => setActiveTab("hotness")}>📊 Metrics</button>
             <button style={tabStyle("general")} onClick={() => setActiveTab("general")}>⚙️ General</button>
           </div>
@@ -573,43 +556,6 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
           )}
 
           <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-            {activeTab === "applinks" && (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{activePersonaDef.icon} {activePersonaDef.label} — App Links</h3>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>These links appear in the NavigatorIQ Launcher App Links panel. Toggle the green dot to show/hide each app.</p>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => resetPersonaLinks(activePersona)} style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 6, color: "rgba(255,255,255,0.6)", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>Reset to defaults</button>
-                    <button onClick={() => addLink(activePersona)} style={{ background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, color: "#7ab4ff", fontSize: 12, padding: "5px 12px", cursor: "pointer" }}>+ Add App</button>
-                  </div>
-                </div>
-                {links.map((link, i) => (
-                  <AppLinkRow
-                    key={i}
-                    link={link}
-                    index={i}
-                    onChange={(idx, updated) => { const next = [...links]; next[idx] = updated; updatePersonaLinks(activePersona, next); }}
-                    onRemove={(idx) => { const next = links.filter((_, j) => j !== idx); updatePersonaLinks(activePersona, next); }}
-                  />
-                ))}
-                {links.length === 0 && (
-                  <div style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
-                    No app links configured. Click "+ Add App" to add one.
-                  </div>
-                )}
-                <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(69,137,255,0.06)", borderRadius: 8, border: "1px solid rgba(69,137,255,0.15)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(69,137,255,0.9)", marginBottom: 6 }}>How App Paths Work</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-                    App paths are Dynatrace app IDs. For built-in apps use e.g. <code style={{ color: "#7ab4ff" }}>dynatrace.classic.services</code>.<br />
-                    For your custom apps use their app.config.json ID, e.g. <code style={{ color: "#7ab4ff" }}>my.backend.overview.app</code>.<br />
-                    Tenant URL is automatically prepended at runtime.
-                  </div>
-                </div>
-              </div>
-            )}
-
             {activeTab === "hotness" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -688,7 +634,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
             {activeTab === "personas" && (
               <div>
                 <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: "#fff" }}>Manage Personas</h3>
-                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their App Links and Metrics in the other tabs.</p>
+                <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Create custom personas and configure their metrics in the Metrics tab.</p>
 
                 {/* Built-in */}
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Built-in Personas</div>
@@ -768,7 +714,7 @@ export function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps)
                     + Create Persona
                   </button>
                   <div style={{ marginTop: 10, fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.6 }}>
-                    After creating, switch to <strong style={{ color: "rgba(255,255,255,0.5)" }}>App Links</strong> or <strong style={{ color: "rgba(255,255,255,0.5)" }}>Metrics</strong> tabs to configure the new persona.
+                    After creating, switch to the <strong style={{ color: "rgba(255,255,255,0.5)" }}>Metrics</strong> tab to configure the new persona.
                   </div>
                 </div>
               </div>

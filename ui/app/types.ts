@@ -74,6 +74,12 @@ export interface HeatMetricConfig {
   displaySuffix?: string;
   denominatorKey?: string;
   dqlQuery?: string;
+  drilldownQuery?: string;
+  drilldownHistoryQuery?: string;
+  drilldownDimensionQuery?: string;
+  drilldownDimensionFirstLabel?: string;
+  drilldownDimensionSecondLabel?: string;
+  drilldownLinkTemplate?: string;
   warningThreshold?: number;
   criticalThreshold?: number;
   exploreAppPath?: string;

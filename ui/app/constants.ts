@@ -1,18 +1,23 @@
 import type { PersonaDef, PersonaId, AppLink, ThresholdConfig, TimeframeTab, TimeframeInfo, HeatMetricConfig, DimensionConfig } from "./types";
 
-export const APP_VERSION = "0.4.106";
+export const APP_VERSION = "0.4.122";
 export const REPO_URL = "https://github.com/TechShady/NavigatorIQ";
 export const STATE_PREFIX = "iq";
 
 export const NOOP_QUERY = "fetch logs | limit 0";
 
 export const IQ_WHATS_NEW: string[] = [
+  "Persona picker scrolls within the window without needing to maximize",
+  "Hotness Assist excludes all-zero buckets even when no metric is marked as traffic",
+  "Mobile Experience persona with sessions, errors, error rate, crashes, and crash rate, including per-app drill-downs",
+  "Session rate dimensions use weighted percentages and distinguish rate from session share",
+  "Hotness Assist excludes no-data buckets from comparisons, timelines, and analysis",
   "Drag to zoom: select a range on the heat strip and click Zoom in to narrow the timeframe",
   "Inline sparklines on assessment cards — see the shape of each metric at a glance",
   "📋 Share button — copy a Slack-ready assessment report with one click",
   "Cross-metric correlation in Hotness Assist — discover which metrics spike together",
   "Initial release of NavigatorIQ — persona-driven operational intelligence",
-  "8 personas with role-specific assessments and recommendations",
+  "9 personas with role-specific assessments and recommendations",
 ];
 
 export const PERSONAS: PersonaDef[] = [
@@ -64,6 +69,13 @@ export const PERSONAS: PersonaDef[] = [
     icon: "📊",
     description: "User experience & business KPIs",
     tabSummary: "Session error rates, Core Web Vitals (LCP, CLS, INP), Apdex, Synthetic failures. Recommendations link to Digital Experience, Session Replay, and User Journey apps.",
+  },
+  {
+    id: "mobile",
+    label: "Mobile Experience",
+    icon: "📱",
+    description: "Mobile sessions, errors & crashes",
+    tabSummary: "Mobile session counts, errors, session error rate, crash-session counts, and session crash rate. Includes per-app Follow the Red, history, and country/OS breakdowns.",
   },
   {
     id: "devops",
@@ -130,6 +142,12 @@ export const DEFAULT_APP_LINKS: Record<PersonaId, AppLink[]> = {
     { label: "Synthetic Monitoring", appPath: "dynatrace.synthetic", docsUrl: "https://docs.dynatrace.com/docs/observe/synthetic-monitoring", enabled: true },
     { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
     { label: "Business Analytics", appPath: "dynatrace.biz.explore", docsUrl: "https://docs.dynatrace.com/docs/observe/business-analytics", enabled: true },
+  ],
+  mobile: [
+    { label: "Digital Experience", appPath: "dynatrace.experience.vitals", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience", enabled: true },
+    { label: "Errors", appPath: "dynatrace.error.inspector", docsUrl: "https://docs.dynatrace.com/docs/observe/digital-experience", enabled: true },
+    { label: "Dashboards", appPath: "dynatrace.dashboards", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/dashboards-new", enabled: true },
+    { label: "Notebooks", appPath: "dynatrace.notebooks", docsUrl: "https://docs.dynatrace.com/docs/observe/dashboards-and-notebooks/notebooks", enabled: true },
   ],
   devops: [
     { label: "Workflows", appPath: "dynatrace.automations", docsUrl: "https://docs.dynatrace.com/docs/deliver/workflows", enabled: true },
@@ -202,6 +220,47 @@ const DB_ERRORS_DQL = `fetch spans, from:\${from}, to:\${to}
 | filter otel.status_code == "ERROR"
 | makeTimeseries value=count(), interval:\${interval}`;
 
+function mobileHeatMetric(label: string, seriesAggregation: string, summaryAggregation: string, ratePredicate?: string): HeatMetricConfig {
+  const exploreAppPath = "my.mobile.navigation.app";
+  const base = `fetch user.sessions, from:\${from}, to:\${to}
+| filter dt.rum.application.type == "mobile"`;
+  const row = `${base}
+| expand frontend.name
+| filter frontend.name == \${row}`;
+  const indicator = ratePredicate ? `\n| fieldsAdd sessionRate=if(${ratePredicate}, 100.0, else:0.0)` : "";
+  const series = `${indicator}
+| makeTimeseries value=${seriesAggregation},
+    interval:\${interval}, time:start_time,
+    from:toTimestamp(\${from}), to:toTimestamp(\${to}), nonempty:true
+| fieldsAdd value=toDouble(value[])`;
+  const dimensions = ratePredicate
+    ? `| summarize numerator=countIf(${ratePredicate}), denominator=count(),
+    by:{country=geo.country.name, os=os.name}
+| fieldsAdd numerator=toDouble(numerator), denominator=toDouble(denominator)`
+    : `| summarize value=${summaryAggregation}, by:{country=geo.country.name, os=os.name}
+| fieldsAdd value=toDouble(value)`;
+  return {
+    label, metricKey: "", aggregation: ratePredicate ? "avg" : "sum", type: "dql",
+    isTraffic: false, displayUnit: ratePredicate ? "pct" : "count",
+    displaySuffix: ratePredicate ? "%" : undefined,
+    dimensionConfig: { dimensions: "frontend.name", label: "by App" },
+    dqlQuery: base + series,
+    drilldownQuery: `${base}
+| expand frontend.name
+| filter isNotNull(frontend.name)${indicator}
+| summarize value=${summaryAggregation}, by:{displayName=frontend.name}
+| fieldsAdd value=toDouble(value)
+| sort value desc`,
+    drilldownHistoryQuery: row + series,
+    drilldownDimensionQuery: `${row}
+${dimensions}`,
+    drilldownDimensionFirstLabel: "Country",
+    drilldownDimensionSecondLabel: "Operating system",
+    exploreAppPath,
+    drilldownLinkTemplate: `${exploreAppPath}/?app=\${row}`,
+  };
+}
+
 export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   developer: [
     { label: "Error Count", metricKey: "dt.service.request.failure_count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.services", dimensionConfig: { dimensions: "entityName(dt.entity.service)", label: "by Service" } },
@@ -248,6 +307,13 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
     { label: "Errors", metricKey: "dt.frontend.error.count", aggregation: "sum", isTraffic: false, displayUnit: "count", warningThreshold: 50, criticalThreshold: 200, exploreAppPath: "dynatrace.error.inspector", dimensionConfig: { dimensions: "frontend.name", label: "by App" } },
     { label: "Requests", metricKey: "dt.frontend.user_action.count", aggregation: "sum", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.experience.vitals", dimensionConfig: { dimensions: "frontend.name", label: "by App" } },
   ],
+  mobile: [
+    { ...mobileHeatMetric("Sessions", "count(default:0)", "count()"), isTraffic: true },
+    mobileHeatMetric("Errors", "sum(coalesce(error.count, 0), default:0)", "sum(coalesce(error.count, 0))"),
+    mobileHeatMetric("Error Rate", "avg(sessionRate, default:0)", "avg(sessionRate)", "coalesce(error.count, 0) > 0"),
+    mobileHeatMetric("Crashes", "countIf(error.has_crash == true, default:0)", "countIf(error.has_crash == true)"),
+    mobileHeatMetric("Crash Rate", "avg(sessionRate, default:0)", "avg(sessionRate)", "coalesce(error.has_crash, false)"),
+  ],
   network: [
     { label: "Bytes Sent", metricKey: "dt.process.network.bytes_tx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.bytes_tx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
     { label: "Bytes Received", metricKey: "dt.process.network.bytes_rx", aggregation: "sum", type: "dql", dqlQuery: "timeseries value=sum(dt.process.network.bytes_rx), interval:${interval}, from:${from}, to:${to}", isTraffic: true, displayUnit: "count", exploreAppPath: "dynatrace.infraops/explorer/Network" },
@@ -279,20 +345,46 @@ export const DEFAULT_HEAT_METRICS: Record<PersonaId, HeatMetricConfig[]> = {
   ],
 };
 
+export function resolvePersonaHeatMetrics(persona: PersonaId, saved?: HeatMetricConfig[]): HeatMetricConfig[] {
+  const defaults = DEFAULT_HEAT_METRICS[persona] ?? [];
+  if (!saved) return defaults;
+  const savedByLabel = new Map(saved.map(metric => [metric.label, metric]));
+  const defaultLabels = new Set(defaults.map(metric => metric.label));
+  const builtIn = defaults.map(def => {
+    const metric = savedByLabel.get(def.label);
+    if (!metric) return def;
+    return {
+      ...metric,
+      metricKey: def.metricKey,
+      denominatorKey: def.denominatorKey,
+      type: def.type,
+      dqlQuery: def.dqlQuery,
+      aggregation: def.aggregation,
+      isTraffic: def.isTraffic,
+      displayUnit: def.displayUnit,
+      displaySuffix: metric.displaySuffix ?? def.displaySuffix,
+      warningThreshold: metric.warningThreshold ?? def.warningThreshold,
+      criticalThreshold: metric.criticalThreshold ?? def.criticalThreshold,
+      exploreAppPath: metric.exploreAppPath ?? def.exploreAppPath,
+      drilldownLinkTemplate: metric.drilldownLinkTemplate ?? def.drilldownLinkTemplate,
+      repoUrl: metric.repoUrl ?? def.repoUrl,
+      dimensionConfig: metric.dimensionConfig ?? def.dimensionConfig,
+    };
+  });
+  return [...builtIn, ...saved.filter(metric => !defaultLabels.has(metric.label))];
+}
+
 /** Dimension presets for different metric types */
 export const DIMENSION_PRESETS: Record<string, DimensionConfig[]> = {
   // Service metrics
   "dt.service.request.failure_count": [
     { dimensions: "entityName(dt.entity.service)", label: "by Service" },
-    { dimensions: "entityName(dt.entity.service), entityName(dt.entity.service).handler", label: "by Service & Handler" },
   ],
   "dt.service.request.response_time": [
     { dimensions: "entityName(dt.entity.service)", label: "by Service" },
-    { dimensions: "entityName(dt.entity.service), entityName(dt.entity.service).handler", label: "by Service & Handler" },
   ],
   "dt.service.request.count": [
     { dimensions: "entityName(dt.entity.service)", label: "by Service" },
-    { dimensions: "entityName(dt.entity.service), entityName(dt.entity.service).handler", label: "by Service & Handler" },
   ],
   
   // Frontend/RUM metrics

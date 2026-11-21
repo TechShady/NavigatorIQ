@@ -1,6 +1,7 @@
 import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React from "react";
 import { createPortal } from "react-dom";
+import { escapeHtml } from "./escapeHtml";
 
 // ─── Types & Constants ────────────────────────────────────────────────────────
 
@@ -10,7 +11,8 @@ export interface KpiHeatmapPanelProps {
   pos: { x: number; y: number };
   onDragStart: (event: React.MouseEvent<HTMLDivElement>) => void;
   onClose: () => void;
-  getRequeryData: (days: number) => Promise<{ values: number[]; bucketMs: number; unit?: string }>;
+  getRequeryData: (days: number) => Promise<{ values: number[]; bucketMs: number; unit?: string; startMs?: number }>;
+  neutralAnalysis?: boolean;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -34,7 +36,7 @@ function formatVal(val: number, unit?: string): string {
   if (unit === "ms") return val >= 1000 ? `${(val / 1000).toFixed(2)} s` : `${val.toFixed(0)} ms`;
   if (unit === "s") return val >= 1 ? `${val.toFixed(2)} s` : `${(val * 1000).toFixed(0)} ms`;
   if (unit === "%") return `${val.toFixed(1)}%`;
-  return val.toFixed(2);
+  return `${val.toFixed(2)}${unit ? ` ${unit}` : ""}`;
 }
 
 function getLevel(zVal: number | null): LevelKey {
@@ -52,10 +54,9 @@ function levelColor(key: LevelKey): string {
 
 // ─── Grid Builders ────────────────────────────────────────────────────────────
 
-function buildGrid(values: number[], bucketMs: number): (number | null)[][] {
+function buildGrid(values: number[], bucketMs: number, startMs = Date.now() - values.length * bucketMs): (number | null)[][] {
   const sums = Array.from({ length: 7 }, () => new Array(24).fill(0));
   const cnts = Array.from({ length: 7 }, () => new Array(24).fill(0));
-  const startMs = Date.now() - values.length * bucketMs;
   for (let i = 0; i < values.length; i++) {
     const d = new Date(startMs + i * bucketMs);
     sums[d.getDay()][d.getHours()] += values[i];
@@ -89,7 +90,7 @@ interface HeatAnalysis {
   recommendations: string[];
 }
 
-function analyzeGrid(grid: (number | null)[][], label: string, unit?: string): HeatAnalysis {
+function analyzeGrid(grid: (number | null)[][], label: string, unit?: string, neutral = false): HeatAnalysis {
   const zGrid = buildZGrid(grid);
 
   const hourRaw = HOURS.map(h => {
@@ -165,6 +166,13 @@ function analyzeGrid(grid: (number | null)[][], label: string, unit?: string): H
   }
   if (recs.length === 0) recs.push(`No significant action needed — ${label} looks healthy.`);
 
+  if (neutral) {
+    insights.length = 0;
+    recs.length = 0;
+    insights.push(`Highest average hour: ${fmtHour(worstHourIdx)} (${formatVal(peakRaw, unit)}). Colors show values relative to this series, not health.`);
+    insights.push(`${hotCellCount} elevated cells and ${spikeCellCount} spike cells relative to the overall mean.`);
+    recs.push("Compare these time windows with other evidence before drawing conclusions about cause or impact.");
+  }
   return {
     hotZoneText,
     worstDayText:  `${DAYS[worstDayIdx]} (avg ${formatVal(dayRaw[worstDayIdx], unit)})`,
@@ -176,8 +184,9 @@ function analyzeGrid(grid: (number | null)[][], label: string, unit?: string): H
 
 // ─── PDF Export ───────────────────────────────────────────────────────────────
 
-function exportKpiHeatmapPdf(grid: (number | null)[][], zGrid: (number | null)[][], analysis: HeatAnalysis, label: string, unit?: string) {
+function exportKpiHeatmapPdf(grid: (number | null)[][], zGrid: (number | null)[][], analysis: HeatAnalysis, label: string, unit?: string, neutral = false) {
   const ts = new Date().toLocaleString();
+  const safeLabel = escapeHtml(label);
   const cellTd = (dow: number, h: number) => {
     const col = levelColor(getLevel(zGrid[dow][h]));
     return `<td style="width:44px;height:17px;background:${col};border-radius:3px;border:1px solid rgba(255,255,255,0.04)"></td>`;
@@ -185,17 +194,17 @@ function exportKpiHeatmapPdf(grid: (number | null)[][], zGrid: (number | null)[]
   const legend = LEVELS.map(l =>
     `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${l.color};border:1px solid rgba(255,255,255,0.12)"></span><span style="font-size:10px;opacity:0.65">${l.label}</span></span>`
   ).join("");
-  const insHtml = analysis.insights.map(s => `<div style="margin-bottom:5px;padding:7px 11px;background:rgba(128,128,128,0.07);border-radius:6px;font-size:12px;line-height:1.5">&#x1F4A1; ${s}</div>`).join("");
-  const recHtml = analysis.recommendations.map(s => `<div style="margin-bottom:5px;padding:7px 11px;background:rgba(69,137,255,0.07);border:1px solid rgba(69,137,255,0.15);border-radius:6px;font-size:12px;line-height:1.5">&#x2192; ${s}</div>`).join("");
+  const insHtml = analysis.insights.map(s => `<div style="margin-bottom:5px;padding:7px 11px;background:rgba(128,128,128,0.07);border-radius:6px;font-size:12px;line-height:1.5">&#x1F4A1; ${escapeHtml(s)}</div>`).join("");
+  const recHtml = analysis.recommendations.map(s => `<div style="margin-bottom:5px;padding:7px 11px;background:rgba(69,137,255,0.07);border:1px solid rgba(69,137,255,0.15);border-radius:6px;font-size:12px;line-height:1.5">&#x2192; ${escapeHtml(s)}</div>`).join("");
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${label} Heatmap — NavigatorIQ</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeLabel} Heatmap — NavigatorIQ</title>
 <style>
   @media print{body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}@page{margin:.6in;size:A4}.pb{page-break-before:always}}
   body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1223;color:#e8eaf0;margin:0;padding:24px}
   h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:20px 0 10px}
   table{border-collapse:separate;border-spacing:2px}
 </style></head><body>
-<h1>&#x1F4C5; ${label} Heatmap — NavigatorIQ</h1>
+<h1>&#x1F4C5; ${safeLabel} Heatmap — NavigatorIQ</h1>
 <div style="font-size:11px;opacity:0.4;margin-bottom:18px">Generated ${ts} · 7-day view (Sun–Sat, 12am–11pm)</div>
 <table>
   <tr><td style="width:34px"></td>${DAYS.map(d => `<td style="text-align:center;font-size:10px;font-weight:700;padding-bottom:4px;opacity:0.55">${d}</td>`).join("")}</tr>
@@ -207,20 +216,20 @@ function exportKpiHeatmapPdf(grid: (number | null)[][], zGrid: (number | null)[]
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px">
   <div style="background:rgba(255,7,58,0.08);border:1px solid rgba(255,7,58,0.25);border-radius:8px;padding:10px 13px">
     <div style="font-size:9px;opacity:0.5;text-transform:uppercase;margin-bottom:3px">Hot Zone</div>
-    <div style="font-size:13px;font-weight:700;color:#FF3D9A">${analysis.hotZoneText}</div>
+    <div style="font-size:13px;font-weight:700;color:#FF3D9A">${escapeHtml(analysis.hotZoneText)}</div>
   </div>
   <div style="background:rgba(255,131,43,0.08);border:1px solid rgba(255,131,43,0.25);border-radius:8px;padding:10px 13px">
-    <div style="font-size:9px;opacity:0.5;text-transform:uppercase;margin-bottom:3px">Worst Hour</div>
-    <div style="font-size:13px;font-weight:700;color:#FF832B">${analysis.worstHourText}</div>
+    <div style="font-size:9px;opacity:0.5;text-transform:uppercase;margin-bottom:3px">${neutral ? "Highest Hour" : "Worst Hour"}</div>
+    <div style="font-size:13px;font-weight:700;color:#FF832B">${escapeHtml(analysis.worstHourText)}</div>
   </div>
   <div style="background:rgba(255,240,77,0.08);border:1px solid rgba(255,240,77,0.25);border-radius:8px;padding:10px 13px">
-    <div style="font-size:9px;opacity:0.5;text-transform:uppercase;margin-bottom:3px">Worst Day</div>
-    <div style="font-size:13px;font-weight:700;color:#FFF04D">${analysis.worstDayText}</div>
+    <div style="font-size:9px;opacity:0.5;text-transform:uppercase;margin-bottom:3px">${neutral ? "Highest Day" : "Worst Day"}</div>
+    <div style="font-size:13px;font-weight:700;color:#FFF04D">${escapeHtml(analysis.worstDayText)}</div>
   </div>
 </div>
 <h2>Insights</h2>${insHtml}
 <h2>Recommendations</h2>${recHtml}
-<div style="margin-top:28px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:10px;opacity:0.3">${label} Heatmap · NavigatorIQ</div>
+<div style="margin-top:28px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:10px;opacity:0.3">${safeLabel} Heatmap · NavigatorIQ</div>
 </body></html>`;
 
   const w = window.open("", "_blank");
@@ -232,11 +241,13 @@ function exportKpiHeatmapPdf(grid: (number | null)[][], zGrid: (number | null)[]
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, onClose, getRequeryData }: KpiHeatmapPanelProps) {
+export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, onClose, getRequeryData, neutralAnalysis = false }: KpiHeatmapPanelProps) {
   const [values, setValues]               = React.useState<number[]>([]);
   const [unit, setUnit]                   = React.useState<string | undefined>();
   const [activeBucketMs, setActiveBucketMs] = React.useState(3_600_000);
   const [loading, setLoading]             = React.useState(true);
+  const [error, setError]                 = React.useState<string | null>(null);
+  const [startMs, setStartMs]             = React.useState<number | undefined>();
   const [hover, setHover]                 = React.useState<{ dow: number; hour: number; val: number | null } | null>(null);
   const [filterLevel, setFilterLevel]     = React.useState<LevelKey | null>(null);
   const [showAnalysis, setShowAnalysis]   = React.useState(false);
@@ -255,9 +266,10 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
           setValues(result.values);
           setActiveBucketMs(result.bucketMs);
           setUnit(result.unit);
-        }
+          setStartMs(result.startMs);
+        } else setError("No history returned.");
       })
-      .catch(() => {})
+      .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -275,11 +287,11 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
-  const grid  = React.useMemo(() => buildGrid(values, activeBucketMs), [values, activeBucketMs]);
+  const grid  = React.useMemo(() => buildGrid(values, activeBucketMs, startMs), [values, activeBucketMs, startMs]);
   const zGrid = React.useMemo(() => buildZGrid(grid), [grid]);
   const analysis = React.useMemo(
-    () => (showAnalysis || highlightMode) ? analyzeGrid(grid, label, unit) : null,
-    [grid, showAnalysis, highlightMode, label, unit]
+    () => (showAnalysis || highlightMode) ? analyzeGrid(grid, label, unit, neutralAnalysis) : null,
+    [grid, showAnalysis, highlightMode, label, unit, neutralAnalysis]
   );
 
   const toggleFilter = (key: LevelKey) => setFilterLevel(prev => prev === key ? null : key);
@@ -331,12 +343,13 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
             <span style={{ color, marginRight: 5 }}>&#x25CF;</span>{label} Heatmap
           </div>
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
-            {loading ? "Loading 7-day window…" : "Hour-of-day × Day-of-week · 7-day view"}
+            {loading ? "Loading 7-day window…" : neutralAnalysis ? "Hour × day · relative values, not health" : "Hour-of-day × Day-of-week · 7-day view"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
           <button
-            onClick={() => exportKpiHeatmapPdf(grid, zGrid, analysis ?? analyzeGrid(grid, label, unit), label, unit)}
+            onClick={() => exportKpiHeatmapPdf(grid, zGrid, analysis ?? analyzeGrid(grid, label, unit, neutralAnalysis), label, unit, neutralAnalysis)}
+            disabled={loading || !!error}
             style={{ fontSize: 10, padding: "3px 9px", background: "rgba(69,137,255,0.1)", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 5, color: "#4589FF", cursor: "pointer", fontWeight: 600 }}
             title="Export as PDF"
           >PDF</button>
@@ -352,6 +365,8 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
       <div style={{ padding: "13px 14px 12px", overflowY: "auto", flex: 1 }}>
         {loading ? (
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", padding: 32, fontSize: 13 }}>Loading 7 days of data…</div>
+        ) : error ? (
+          <div role="alert" style={{ color: "#F87171", fontSize: 12 }}>{error}</div>
         ) : (
           <>
             {/* Day headers */}
@@ -397,14 +412,14 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
                     ? `${DAYS[hover.dow]} ${fmtHour(hover.hour)} — avg ${formatVal(hover.val, unit)}`
                     : `${DAYS[hover.dow]} ${fmtHour(hover.hour)} — no data`)
                 : highlightMode
-                  ? `Highlighted: ${highlightMode === "hotzone" ? "Hot Zone hours" : highlightMode === "worstHour" ? "Worst Hour row" : "Worst Day column"} — click card to clear`
+                  ? `Highlighted: ${highlightMode === "hotzone" ? "Hot Zone hours" : highlightMode === "worstHour" ? neutralAnalysis ? "Highest Hour row" : "Worst Hour row" : neutralAnalysis ? "Highest Day column" : "Worst Day column"} — click card to clear`
                   : "Hover a cell · click insight cards to highlight sections"}
             </div>
 
             {/* Legend */}
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center", marginTop: 6, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
               {LEVELS.map(({ key, label: lbl, color: lcol, tip }) => (
-                <div key={key} onClick={() => toggleFilter(key)} title={tip} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "3px 7px", borderRadius: 5, background: filterLevel === key ? "rgba(255,255,255,0.09)" : "transparent", border: filterLevel === key ? "1px solid rgba(255,255,255,0.18)" : "1px solid transparent", transition: "all 0.12s ease" }}>
+                <div key={key} onClick={() => toggleFilter(key)} title={neutralAnalysis && key === "spike" ? "Spike (> 2.5σ above average)" : tip} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "3px 7px", borderRadius: 5, background: filterLevel === key ? "rgba(255,255,255,0.09)" : "transparent", border: filterLevel === key ? "1px solid rgba(255,255,255,0.18)" : "1px solid transparent", transition: "all 0.12s ease" }}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: lcol, border: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }} />
                   <span style={{ fontSize: 9, opacity: filterLevel && filterLevel !== key ? 0.35 : 0.75, fontWeight: filterLevel === key ? 700 : 400 }}>{lbl}</span>
                 </div>
@@ -436,7 +451,7 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
                   {/* WORST HOUR */}
                   <div
                     onClick={() => handleCardClick("worstHour")}
-                    title="Click to highlight the Worst Hour row in the heatmap"
+                    title={`Click to highlight the ${neutralAnalysis ? "Highest" : "Worst"} Hour row in the heatmap`}
                     style={{
                       background: highlightMode === "worstHour" ? "rgba(255,131,43,0.18)" : "rgba(255,131,43,0.07)",
                       border: `1px solid ${highlightMode === "worstHour" ? "rgba(255,131,43,0.6)" : "rgba(255,131,43,0.2)"}`,
@@ -446,14 +461,14 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
                       boxShadow: highlightMode === "worstHour" ? "0 0 12px rgba(255,131,43,0.3)" : "none",
                     }}
                   >
-                    <div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase" as const, marginBottom: 2, letterSpacing: "0.04em" }}>Worst Hour</div>
+                    <div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase" as const, marginBottom: 2, letterSpacing: "0.04em" }}>{neutralAnalysis ? "Highest Hour" : "Worst Hour"}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#FF832B" }}>{analysis.worstHourText}</div>
                     {highlightMode === "worstHour" && <div style={{ fontSize: 8, color: "#FF832B", opacity: 0.65, marginTop: 3 }}>&#x25CF; highlighted</div>}
                   </div>
                   {/* WORST DAY */}
                   <div
                     onClick={() => handleCardClick("worstDay")}
-                    title="Click to highlight the Worst Day column in the heatmap"
+                    title={`Click to highlight the ${neutralAnalysis ? "Highest" : "Worst"} Day column in the heatmap`}
                     style={{
                       background: highlightMode === "worstDay" ? "rgba(255,240,77,0.18)" : "rgba(255,240,77,0.07)",
                       border: `1px solid ${highlightMode === "worstDay" ? "rgba(255,240,77,0.5)" : "rgba(255,240,77,0.2)"}`,
@@ -463,7 +478,7 @@ export function KpiHeatmapPanel({ label, color = "#4589FF", pos, onDragStart, on
                       boxShadow: highlightMode === "worstDay" ? "0 0 12px rgba(255,240,77,0.2)" : "none",
                     }}
                   >
-                    <div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase" as const, marginBottom: 2, letterSpacing: "0.04em" }}>Worst Day</div>
+                    <div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase" as const, marginBottom: 2, letterSpacing: "0.04em" }}>{neutralAnalysis ? "Highest Day" : "Worst Day"}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#FFF04D" }}>{analysis.worstDayText}</div>
                     {highlightMode === "worstDay" && <div style={{ fontSize: 8, color: "#FFF04D", opacity: 0.65, marginTop: 3 }}>&#x25CF; highlighted</div>}
                   </div>

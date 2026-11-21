@@ -9,7 +9,7 @@ import {
   APP_VERSION,
   IQ_WHATS_NEW,
   TIMEFRAME_TABS,
-  DEFAULT_HEAT_METRICS,
+  resolvePersonaHeatMetrics,
 } from "../constants";
 import {
   serviceHealthQuery, parseServiceHealth,
@@ -35,7 +35,6 @@ import type { CustomHeatMetric } from "../intelligence";
 import { PersonaPickerModal } from "../components/PersonaPickerModal";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { AssessmentPanel } from "../components/AssessmentPanel";
-import { AppLinksPanel } from "../components/AppLinksPanel";
 import { ForecastModal } from "../components/ForecastModal";
 import { HelpModal } from "../components/HelpModal";
 import { AutomateModal } from "../components/AutomateModal";
@@ -145,35 +144,7 @@ export function NavigatorIQ() {
   const effectiveInterval = zoom?.interval ?? tf.interval;
 
   const personaSettings = settings.personas[persona];
-  const heatMetrics = useMemo(() => {
-    const saved = personaSettings?.heatMetrics;
-    const defaults = DEFAULT_HEAT_METRICS[persona] ?? [];
-    if (!saved) return defaults;
-    // Rebuild in defaults order so new default metrics appear at their natural position.
-    // Saved values override defaults; user-added custom metrics (not in defaults) go at end.
-    const savedByLabel = new Map(saved.map((m) => [m.label, m]));
-    const defaultLabels = new Set(defaults.map((m) => m.label));
-    const result = defaults.map((def) => {
-      const m = savedByLabel.get(def.label);
-      if (!m) return def;
-      return {
-        ...m,
-        metricKey: def.metricKey,
-        denominatorKey: def.denominatorKey,
-        type: def.type,
-        dqlQuery: def.dqlQuery,
-        aggregation: def.aggregation,
-        isTraffic: def.isTraffic,
-        displayUnit: def.displayUnit,
-        warningThreshold: m.warningThreshold ?? def.warningThreshold,
-        criticalThreshold: m.criticalThreshold ?? def.criticalThreshold,
-        exploreAppPath: m.exploreAppPath ?? def.exploreAppPath,
-        repoUrl: m.repoUrl ?? def.repoUrl,
-      };
-    });
-    const custom = saved.filter((m) => !defaultLabels.has(m.label));
-    return custom.length > 0 ? [...result, ...custom] : result;
-  }, [personaSettings, persona]); // eslint-disable-line react-hooks/exhaustive-deps
+  const heatMetrics = useMemo(() => resolvePersonaHeatMetrics(persona, personaSettings?.heatMetrics), [persona, personaSettings?.heatMetrics]);
   const dqlMetrics = useMemo(() => heatMetrics.filter((m) => m.type === "dql" || Boolean(m.dqlQuery?.trim())), [JSON.stringify(heatMetrics)]); // eslint-disable-line react-hooks/exhaustive-deps
   const customHeatQ = useMemo(
     () => (isTabLoaded && heatMetrics.length > 0)
@@ -206,6 +177,10 @@ export function NavigatorIQ() {
   const dql7R = useDql({ query: dql7Q });
   const dql8R = useDql({ query: dql8Q });
   const dql9R = useDql({ query: dql9Q });
+  const dqlErrors = [dql0R, dql1R, dql2R, dql3R, dql4R, dql5R, dql6R, dql7R, dql8R, dql9R]
+    .flatMap((result, i) => dqlMetrics[i] && result.isError
+      ? [{ label: dqlMetrics[i].label, message: result.error.message }]
+      : []);
 
   const handleTabChange = (newTab: TimeframeTab) => {
     setTab(newTab);
@@ -348,6 +323,7 @@ export function NavigatorIQ() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [curResults, prevResults, persona, personaThresholds, tf, customHeatR.data, dql0R.data, dql1R.data, dql2R.data, dql3R.data, dql4R.data, dql5R.data, dql6R.data, dql7R.data, dql8R.data, dql9R.data, dqlMetrics, heatMetrics]
   );
+  const isDeveloperPartial = persona === "developer" && isLoading && assessment.dataAvailable && assessment.heatScores.length > 1;
 
   // ─── Sparkline enrichment — attach per-metric timeline to each item ────
   const assessmentWithSparklines = useMemo(() => {
@@ -449,14 +425,14 @@ export function NavigatorIQ() {
   );
 
   useEffect(() => {
-    if (!assessment.dataAvailable) return;
+    if (!assessment.dataAvailable || isDeveloperPartial) return;
     const now = Date.now();
     const prev = healthHistory[persona] ?? [];
     // Only record once per 15 min to avoid spam on auto-refresh
     if (prev.length > 0 && now - prev[prev.length - 1].ts < 15 * 60 * 1000) return;
     const next: HealthHistory = { ...healthHistory, [persona]: [...prev, { score: assessment.healthScore, ts: now }].slice(-14) };
     saveHealthRaw({ key: HEALTH_HISTORY_KEY, body: { value: JSON.stringify(next) } });
-  }, [assessment.dataAvailable, assessment.healthScore, persona]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [assessment.dataAvailable, assessment.healthScore, persona, isDeveloperPartial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Forecast helpers ───────────────────────────────────────────────────
   const [forecastSparkline, setForecastSparkline] = useState<number[]>([]);
@@ -577,8 +553,6 @@ export function NavigatorIQ() {
     [settings.customPersonas]
   );
   const activePersonaDef = allPersonas.find((p) => p.id === persona) ?? PERSONAS[0];
-  const personaLinks = settings.personas[persona]?.appLinks;
-  const allItems = [...assessmentWithSparklines.redItems, ...assessmentWithSparklines.yellowItems, ...assessmentWithSparklines.greenItems];
 
   const dtIntelligenceEnabled = settings.global?.dtIntelligenceEnabled ?? false;
   const buildDTPrompt = useCallback(() => buildDTPromptNavigatorIQ({
@@ -696,10 +670,15 @@ export function NavigatorIQ() {
       <div className="iq-content">
         <div className="iq-main">
           {dtIntelligenceEnabled && <DTIWrapper buildPrompt={buildDTPrompt} />}
-          <AssessmentPanel assessment={assessmentWithSparklines} isLoading={isLoading} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblemCounts={davisProblemCounts} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = effectiveInterval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={effectiveFrom} to={effectiveTo} onZoomRange={handleZoomRange} />
-        </div>
-        <div className="iq-sidebar">
-          <AppLinksPanel personaId={persona} savedLinks={personaLinks} assessmentItems={allItems} />
+          {dqlErrors.length > 0 && (
+            <div role="alert" style={{ padding: "12px 14px", marginBottom: 16, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, color: "#F87171", fontSize: 12 }}>
+              <strong>Metric query failed. The assessment may be incomplete.</strong>
+              {dqlErrors.map((error, i) => <div key={i} style={{ marginTop: 4 }}>{error.label}: {error.message}</div>)}
+            </div>
+          )}
+          {(isLoading || dqlErrors.length === 0 || assessment.heatScores.length > 0) && (
+            <AssessmentPanel assessment={assessmentWithSparklines} isLoading={isLoading && !isDeveloperPartial} isPartial={isDeveloperPartial} onForecast={handleForecast} persona={persona} heatMetrics={heatMetrics} deploymentBuckets={deploymentBuckets} davisProblemCounts={davisProblemCounts} davisProblems={davisProblems} onUpdateThreshold={handleUpdateThreshold} healthReadings={personaHealthReadings} getHotnessHistory={getHotnessHistory} bucketMs={(() => { const m = effectiveInterval.match(/^(\d+)([mh])$/); return m ? parseInt(m[1]) * (m[2] === "h" ? 3600000 : 60000) : 60000; })()} from={effectiveFrom} to={effectiveTo} onZoomRange={handleZoomRange} />
+          )}
         </div>
       </div>
 

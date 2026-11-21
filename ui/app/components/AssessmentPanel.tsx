@@ -1,5 +1,5 @@
 import { PopupWindow, PopupCloseButton } from "./PopupWindow";
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useId } from "react";
 import { createPortal } from "react-dom";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import type { Assessment, AssessmentItem, Trend, HeatBucketDetail, PersonaId, HeatMetricConfig } from "../types";
@@ -7,13 +7,15 @@ import type { DavisProblemsResult } from "../queries";
 import { HotnessAssistButton, HotnessAssistPanel } from "./HotnessAssist";
 import { HotnessForecastPanel } from "./HotnessForecastPanel";
 import { HotnessCalendarPanel } from "./HotnessCalendarPanel";
-import { ExploreModal } from "./ExploreModal";
+import { DqlExploreModal, ExploreModal } from "./ExploreModal";
+import { buildDqlDrilldownQuery } from "../queries";
 
 interface HealthReading { score: number; ts: number; }
 
 interface AssessmentPanelProps {
   assessment: Assessment;
   isLoading: boolean;
+  isPartial?: boolean;
   onForecast?: (item: AssessmentItem) => void;
   bucketMs?: number;
   persona?: PersonaId;
@@ -98,7 +100,11 @@ function BucketDiagPanel({
   from?: string;
   to?: string;
 }) {
-  const [exploreMetric, setExploreMetric] = useState<{ key: string; label: string; dimensionConfig?: { dimensions: string; label?: string } } | null>(null);
+  const [exploreMetric, setExploreMetric] = useState<
+    | { kind: "metric"; key: string; label: string; dimensionConfig?: { dimensions: string; label?: string }; drilldownLinkTemplate?: string }
+    | { kind: "dql"; query: string; metric: HeatMetricConfig }
+    | null
+  >(null);
   const levelColor = (z: number) => z >= 2.5 ? "#FF073A" : z >= 1.5 ? "#FF3D9A" : z >= 0.75 ? "#FFF04D" : "#4589FF";
   const levelLabel = (z: number) => z >= 2.5 ? "Critical Spike" : z >= 1.5 ? "Warm" : z >= 0.75 ? "Elevated" : "Normal";
 
@@ -189,7 +195,11 @@ function BucketDiagPanel({
           const barW = m.zScore === 0
             ? (m.value >= 0 && m.value <= 1 ? Math.round(m.value * 100) : 25)
             : Math.min(100, Math.abs(m.zScore) / 3 * 100);
-          const canExplore = !m.isTraffic && !!m.metricKey;
+          const metric = heatMetrics?.find((hm) => hm.label === m.label);
+          const dqlDrilldown = metric && (metric.type === "dql" || metric.dqlQuery?.trim())
+            ? buildDqlDrilldownQuery(metric, from ?? "now()-2h", to ?? "now()", `${intervalMinutes ?? 5}m`)
+            : undefined;
+          const canExplore = !!dqlDrilldown || (!m.isTraffic && !!m.metricKey);
           const hasAppLink = !!m.exploreAppPath;
           const openAppLink = () => {
             try { window.open(`${getEnvironmentUrl()}/ui/apps/${m.exploreAppPath}`, "_blank"); }
@@ -197,23 +207,31 @@ function BucketDiagPanel({
           };
           return (
             <div key={i} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4, marginBottom: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{m.label}</span>
                   {canExplore && (
                     <button
                       onClick={() => {
-                        const metric = heatMetrics?.find((hm) => hm.label === m.label);
-                        setExploreMetric({ key: m.metricKey!, label: m.label, dimensionConfig: metric?.dimensionConfig });
+                        if (dqlDrilldown && metric) {
+                          setExploreMetric({ kind: "dql", query: dqlDrilldown, metric });
+                        } else if (m.metricKey) {
+                          const key = metric?.metricKey === "dt.service.request.failure_count" && metric.type === "ratio" && metric.denominatorKey === "dt.service.request.count"
+                            ? "dt.service.request.failure_rate"
+                            : m.metricKey === "dt.service.response.time" ? "dt.service.request.response_time" : m.metricKey;
+                          setExploreMetric({ kind: "metric", key, label: m.label, dimensionConfig: metric?.dimensionConfig, drilldownLinkTemplate: metric?.drilldownLinkTemplate });
+                        }
                       }}
                       title={"Follow the red " + String.fromCharCode(8212) + " see impacted entities"}
-                      style={{ background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.25)", borderRadius: 4, color: "#7ab4ff", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
-                    >{String.fromCharCode(8599)}</button>
+                      aria-label={`Follow the Red for ${m.label}`}
+                      style={{ background: "rgba(69,137,255,0.15)", border: "1px solid rgba(69,137,255,0.4)", borderRadius: 4, color: "#a9ceff", fontSize: 11, fontWeight: 600, padding: "2px 6px", cursor: "pointer", lineHeight: 1.4 }}
+                    >Follow the Red {String.fromCharCode(8599)}</button>
                   )}
                   {hasAppLink && (
                     <button
                       onClick={openAppLink}
                       title={"Open " + m.label + " in app"}
+                      aria-label={`Open ${m.label} in its configured app`}
                       style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)", borderRadius: 4, color: "#c084fc", fontSize: 10, padding: "1px 5px", cursor: "pointer", lineHeight: 1.4 }}
                     >{String.fromCharCode(8599)}</button>
                   )}
@@ -234,15 +252,19 @@ function BucketDiagPanel({
             </div>
           );
         })}
-        {exploreMetric && (
+        {exploreMetric?.kind === "metric" && (
           <ExploreModal
             metricKey={exploreMetric.key}
             metricLabel={exploreMetric.label}
             from={from ?? "now()-2h"}
             to={to ?? "now()"}
             dimensionConfig={exploreMetric.dimensionConfig}
+            drilldownLinkTemplate={exploreMetric.drilldownLinkTemplate}
             onClose={() => setExploreMetric(null)}
           />
+        )}
+        {exploreMetric?.kind === "dql" && (
+          <DqlExploreModal query={exploreMetric.query} metric={exploreMetric.metric} from={from ?? "now()-2h"} to={to ?? "now()"} onClose={() => setExploreMetric(null)} />
         )}
       </div>
       {/* Concurrent signals — other metrics also elevated in this bucket */}
@@ -303,7 +325,7 @@ function fmtDuration(ms: number): string {
 }
 
 function ClickableHeatStrip({
-  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket, from = "now()-2h", to = "now()", onZoomRange,
+  scores, bucketLabel, selectedBucket, onSelectBucket, onAssist, onForecast, onCalendar, deploymentBuckets, davisProblemCounts, davisProblems, flashBucket, from = "now()-2h", to = "now()", onZoomRange, visible,
 }: {
   scores: number[]; bucketLabel: string; selectedBucket: number | null;
   onSelectBucket: (i: number | null) => void;
@@ -318,6 +340,7 @@ function ClickableHeatStrip({
   from?: string;
   to?: string;
   onZoomRange?: (from: string, to: string) => void;
+  visible: boolean;
 }) {
   if (scores.length < 2) return null;
   const maxZ = Math.max(...scores, 1);
@@ -398,17 +421,17 @@ function ClickableHeatStrip({
       if (prev && prev.left === next.left && prev.width === next.width) return prev;
       return next;
     });
-  }, [activeMin, activeMax]);
+  }, [activeMin, activeMax, visible]);
 
   return (
     <div style={{ marginBottom: 20 }}>
       {/* Header row */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}>
             Activity Heat {String.fromCharCode(183)} {bucketLabel} buckets
           </span>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>({scores.length} intervals {String.fromCharCode(183)} click or drag to zoom)</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>Select a bucket to investigate {String.fromCharCode(183)} drag to zoom ({scores.length} intervals)</span>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <HotnessAssistButton onClick={onAssist} />
@@ -519,7 +542,7 @@ function ClickableHeatStrip({
                 {/* Bar area */}
                 <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
                   <div
-                    title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click or drag to zoom`}
+                    title={`Bucket ${i + 1}: Z=${z.toFixed(2)}${hasDeploy ? " · deployment" : ""}${problemCount > 0 ? ` · ${problemCount} problem${problemCount !== 1 ? "s" : ""} opened` : ""} — click to investigate or drag to zoom`}
                     style={{
                       width: "100%", height: `${Math.max(8, (z / maxZ) * 100)}%`,
                       background: barColor(z), borderRadius: 2,
@@ -750,9 +773,10 @@ function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
   const colors = { red: "#EF4444", yellow: "#F59E0B", green: "#10B981" };
   const color = colors[item.severity];
 
-  const openApp = (appPath: string) => {
-    try { window.open(`${getEnvironmentUrl()}/ui/apps/${appPath}`, "_blank"); }
-    catch { window.open(`/ui/apps/${appPath}`, "_blank"); }
+  const openApp = (appPath: string, tab?: string) => {
+    const path = `/ui/apps/${appPath}${tab ? `?tab=${encodeURIComponent(tab)}` : ""}`;
+    try { window.open(`${getEnvironmentUrl()}${path}`, "_blank", "noopener,noreferrer"); }
+    catch { window.open(path, "_blank", "noopener,noreferrer"); }
   };
 
   return (
@@ -806,7 +830,7 @@ function AssessmentItemRow({ item, onForecast, index, onUpdateThreshold }: {
           )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
             {item.builtinAppPath && <AppButton label={item.builtinAppLabel ?? "Open App"} onClick={() => openApp(item.builtinAppPath!)} color="#4589FF" />}
-            {item.customApp && <AppButton label={item.customApp.label} onClick={() => openApp(item.customApp!.appPath)} color="#7C3AED" />}
+            {item.customApp && <AppButton label={item.customApp.tab ? `${item.customApp.label} → ${item.customApp.tab}` : item.customApp.label} onClick={() => openApp(item.customApp!.appPath, item.customApp!.tab)} color="#7C3AED" />}
           </div>
         </div>
       )}
@@ -968,7 +992,29 @@ function HealthBadge({ health }: { health: "red" | "yellow" | "green" }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────
 
-export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemCounts, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()", onZoomRange }: AssessmentPanelProps) {
+function SectionHeader({ title, description, expanded, controls, onToggle, summary }: {
+  title: string; description: string; expanded: boolean; controls: string;
+  onToggle: () => void; summary?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={onToggle}
+      style={{ width: "100%", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, textAlign: "left", background: "rgba(69,137,255,0.12)", border: "1px solid rgba(69,137,255,0.35)", borderRadius: 8, padding: "12px 16px", color: "#e8eeff", cursor: "pointer", marginBottom: 12 }}
+    >
+      <span style={{ flex: "1 1 260px", minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 15, fontWeight: 700 }}>{title}</span>
+        <span style={{ display: "block", marginTop: 3, fontSize: 12, fontWeight: 400, color: "rgba(232,238,255,0.7)" }}>{description}</span>
+      </span>
+      {summary}
+      <span aria-hidden="true" style={{ fontSize: 16, color: "#a9ceff" }}>{expanded ? "▴" : "▾"}</span>
+    </button>
+  );
+}
+
+export function AssessmentPanel({ assessment, isLoading, isPartial, onForecast, bucketMs = 60000, persona, heatMetrics, deploymentBuckets, davisProblemCounts, davisProblems, onUpdateThreshold, healthReadings, getHotnessHistory, from = "now()-2h", to = "now()", onZoomRange }: AssessmentPanelProps) {
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -976,6 +1022,11 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [flashBucket, setFlashBucket] = useState<number | null>(null);
   const [focusRed, setFocusRed] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(true);
+  const [timeframeOpen, setTimeframeOpen] = useState(false);
+  const sectionId = useId();
+  const activityId = `${sectionId}-activity`;
+  const timeframeId = `${sectionId}-timeframe`;
 
   const diagDrag = useDrag({ x: 30, y: 120 });
   const assistDrag = useDrag({ x: 50, y: 90 });
@@ -1037,6 +1088,9 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
 
   return (
     <div>
+      {isPartial && <div role="status" style={{ fontSize: 12, marginBottom: 10, color: "#C9D8F0" }}>Showing available metrics. Assessment and heat scores may change as remaining queries finish.</div>}
+      <SectionHeader title="Activity & Spikes" description="Spot unusual intervals and investigate what drove them." expanded={activityOpen} controls={activityId} onToggle={() => setActivityOpen(v => !v)} />
+      <div id={activityId} hidden={!activityOpen}>
       {/* IQ Banner */}
       <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 180 }}>
@@ -1054,17 +1108,6 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
             />
           </div>
         )}
-        <div
-          style={{ display: "flex", gap: 16, cursor: "help" }}
-          title={"Assessment item counts " + String.fromCharCode(8212) + " not hotness scores. Expand the sections below (Needs Immediate Attention, Potential Issues, Environment Healthy) to see per-metric details."}
-        >
-          {[{ v: assessment.redItems.length, label: "Critical", color: "#EF4444" }, { v: assessment.yellowItems.length, label: "Warning", color: "#F59E0B" }, { v: assessment.greenItems.length, label: "Healthy", color: "#10B981" }, { v: total, label: "Total", color: "rgba(255,255,255,0.6)" }].map((s) => (
-            <div key={s.label} style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.v}</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Clickable heat strip */}
@@ -1084,9 +1127,26 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           from={from}
           to={to}
           onZoomRange={onZoomRange}
+          visible={activityOpen}
         />
       )}
+      </div>
 
+      <SectionHeader
+        title="Timeframe Assessment"
+        description="Review overall health and metric status for the selected timeframe."
+        expanded={timeframeOpen}
+        controls={timeframeId}
+        onToggle={() => setTimeframeOpen(v => !v)}
+        summary={
+          <span title="Assessment item counts, not hotness scores. Total also includes traffic metrics." style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            {[{ v: assessment.redItems.length, label: "Critical", color: "#F87171" }, { v: assessment.yellowItems.length, label: "Warning", color: "#FBBF24" }, { v: assessment.greenItems.length, label: "Healthy", color: "#34D399" }, { v: total, label: "Total", color: "#d0d8e8" }].map((s) => (
+              <span key={s.label} style={{ fontSize: 12, fontWeight: 600, color: s.color, whiteSpace: "nowrap" }}>{s.v} {s.label}</span>
+            ))}
+          </span>
+        }
+      />
+      <div id={timeframeId} hidden={!timeframeOpen}>
       {/* Narrative */}
       {assessment.narrative && <TypewriterNarrative text={assessment.narrative} />}
 
@@ -1118,6 +1178,7 @@ export function AssessmentPanel({ assessment, isLoading, onForecast, bucketMs = 
           </>
         );
       })()}
+      </div>
 
       {/* Bucket diagnosis panel */}
       {diagOpen && selectedDetail && (

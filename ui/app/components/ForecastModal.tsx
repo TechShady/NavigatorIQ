@@ -1,5 +1,6 @@
 import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { escapeHtml } from "./escapeHtml";
 
 // ─── Linear regression forecast ───
 export function linearForecast(data: number[], forecastBuckets: number): number[] {
@@ -331,7 +332,7 @@ export interface ForecastModalProps {
   fromMs: number;
   toMs: number;
   onClose: () => void;
-  getRequeryData: (analyzeDays: number, datapointMinutes: number) => Promise<number[]>;
+  getRequeryData: (analyzeDays: number, datapointMinutes: number) => Promise<number[] | { values: number[]; startMs: number; endMs: number }>;
 }
 
 export type ForecastMethod = "linear" | "holt-winters" | "triple-exp" | "prophet" | "arima" | "sarima";
@@ -440,6 +441,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   const [appliedDatapoints, setAppliedDatapoints] = useState(DEFAULT_DATAPOINTS);
   const [appliedForecastDays, setAppliedForecastDays] = useState(DEFAULT_FORECAST_DAYS);
   const [activeSparkline, setActiveSparkline] = useState<number[]>(sparkline);
+  const [historyWindow, setHistoryWindow] = useState<{ startMs: number; endMs: number } | null>(null);
   const [isRequerying, setIsRequerying] = useState(false);
   const [requeryError, setRequeryError] = useState<string | null>(null);
 
@@ -448,10 +450,16 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   useEffect(() => {
     setIsRequerying(true);
     setRequeryError(null);
+    let active = true;
     getRequeryData(DEFAULT_ANALYZE_DAYS, DEFAULT_DATAPOINTS)
-      .then((data) => { if (data.length > 0) setActiveSparkline(data); })
-      .catch(() => setRequeryError("Failed to load data"))
-      .finally(() => setIsRequerying(false));
+      .then((data) => {
+        const values = Array.isArray(data) ? data : data.values;
+        if (!values.length) throw new Error("No history returned.");
+        if (active) { setActiveSparkline(values); setHistoryWindow(Array.isArray(data) ? null : data); }
+      })
+      .catch((error: unknown) => { if (active) setRequeryError(error instanceof Error ? error.message : String(error)); })
+      .finally(() => { if (active) setIsRequerying(false); });
+    return () => { active = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleApply = useCallback(async () => {
@@ -461,8 +469,14 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
       setRequeryError(null);
       try {
         const data = await getRequeryData(pendingAnalyzeDays, pendingDatapoints);
-        if (data.length > 0) setActiveSparkline(data);
-      } catch { setRequeryError("Requery failed — showing previous data"); }
+        const values = Array.isArray(data) ? data : data.values;
+        if (!values.length) throw new Error("No history returned.");
+        setActiveSparkline(values);
+        setHistoryWindow(Array.isArray(data) ? null : data);
+      } catch (error) {
+        setRequeryError(`Requery failed: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
       finally { setIsRequerying(false); }
     }
     setAppliedAnalyzeDays(pendingAnalyzeDays);
@@ -471,8 +485,8 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
   }, [pendingAnalyzeDays, pendingDatapoints, pendingForecastDays, appliedAnalyzeDays, appliedDatapoints, getRequeryData]);
 
   const historicalData = useMemo(() => activeSparkline.filter((v) => v != null && isFinite(v)), [activeSparkline]);
-  const activeFromMs = Date.now() - appliedAnalyzeDays * 24 * 3600 * 1000;
-  const activeToMs = Date.now();
+  const activeToMs = historyWindow?.endMs ?? Date.now();
+  const activeFromMs = historyWindow?.startMs ?? activeToMs - appliedAnalyzeDays * 24 * 3600 * 1000;
 
   const forecastData = useMemo(() => {
     if (historicalData.length < 2) return [];
@@ -573,7 +587,8 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
       { lbl: "Data interval", val: datapointLabel(appliedDatapoints) },
       { lbl: "Forecast horizon", val: `${appliedForecastDays} days` },
     ].map(r => `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2a2e4a"><span style="color:#9ca3af">${r.lbl}</span><strong>${r.val}</strong></div>`).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Forecast — ${label}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f1221;color:#e8eaf0;font-family:'Segoe UI',system-ui,sans-serif;padding:32px;font-size:13px}h1{font-size:20px;margin-bottom:4px}.sub{color:#6b7280;font-size:12px;margin-bottom:20px}.content{margin-bottom:16px}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}strong{color:#111}@page{margin:1cm}}</style></head><body><h1>📈 ${label} — ${appliedForecastDays}-Day Forecast</h1><div class="sub">Generated ${new Date().toLocaleString()}</div><div class="content">${rows}</div></body></html>`;
+    const safeLabel = escapeHtml(label);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Forecast — ${safeLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f1221;color:#e8eaf0;font-family:'Segoe UI',system-ui,sans-serif;padding:32px;font-size:13px}h1{font-size:20px;margin-bottom:4px}.sub{color:#6b7280;font-size:12px;margin-bottom:20px}.content{margin-bottom:16px}strong{color:#e8eaf0}@media print{body{background:#fff;color:#111}strong{color:#111}@page{margin:1cm}}</style></head><body><h1>📈 ${safeLabel} — ${appliedForecastDays}-Day Forecast</h1><div class="sub">Generated ${new Date().toLocaleString()}</div><div class="content">${rows}</div></body></html>`;
     w.document.write(html);
     w.document.close();
     setTimeout(() => w.print(), 400);
@@ -598,7 +613,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
                 { value: "linear", label: "Linear Regression" },
               ]}
             />
-            <button onClick={exportForecastPdf} style={{ background: "rgba(69,137,255,0.15)", color: "#4589FF", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+            <button onClick={exportForecastPdf} disabled={isRequerying || historicalData.length === 0} style={{ background: "rgba(69,137,255,0.15)", color: "#4589FF", border: "1px solid rgba(69,137,255,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
               📄 PDF
             </button>
             <PopupCloseButton onClick={onClose} style={{ background: "rgba(128,128,128,0.2)", color: "#fff", border: "1px solid rgba(128,128,128,0.3)", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>✕ Close</PopupCloseButton>
@@ -636,7 +651,7 @@ export function ForecastModal({ label, sparkline, color = "#4589FF", onClose, ge
           <svg width={W} height={H} style={{ display: "block", cursor: "crosshair" }} onMouseMove={handleMouseMove} onMouseLeave={() => setHoverIdx(null)}>
             {yTicks.map((t, i) => (<g key={i}><line x1={MARGIN.left} y1={t.y} x2={W - MARGIN.right} y2={t.y} stroke="rgba(128,128,128,0.15)" strokeWidth={1} /><text x={MARGIN.left - 8} y={t.y + 4} textAnchor="end" fill="rgba(255,255,255,0.6)" fontSize={11}>{formatAxisValue(t.value)}</text></g>))}
             {timeLabels.map((l, i) => (<text key={i} x={l.x} y={H - MARGIN.bottom + 20} textAnchor="middle" fill="rgba(255,255,255,0.6)" fontSize={10}>{l.text}</text>))}
-            {nowX !== null && (<><line x1={nowX} y1={MARGIN.top} x2={nowX} y2={H - MARGIN.bottom} stroke="rgba(255,255,255,0.2)" strokeDasharray="4,4" strokeWidth={1} /><text x={nowX} y={MARGIN.top - 8} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={10}>Now</text></>)}
+            {nowX !== null && (<><line x1={nowX} y1={MARGIN.top} x2={nowX} y2={H - MARGIN.bottom} stroke="rgba(255,255,255,0.2)" strokeDasharray="4,4" strokeWidth={1} /><text x={nowX} y={MARGIN.top - 8} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={10}>{historyWindow ? "History end" : "Now"}</text></>)}
             {confidencePoly && <polygon points={confidencePoly} fill={color} fillOpacity={0.08} />}
             {historicalPath && <path d={historicalPath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />}
             {historicalData.map((v, i) => <circle key={`h-${i}`} cx={xScale(i)} cy={yScale(v)} r={historicalData.length > 60 ? 1.5 : 3} fill={color} opacity={0.8} />)}

@@ -1,6 +1,7 @@
 import { PopupWindow, PopupCloseButton } from "./PopupWindow";
 import React from "react";
 import { createPortal } from "react-dom";
+import "./HotnessCalendarPanel.css";
 
 // ─── Types & Constants ────────────────────────────────────────────────────────
 
@@ -222,7 +223,7 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
   const [scores, setScores]           = React.useState<number[]>(heatScores);
   const [gridBucketMs, setGridBucketMs] = React.useState(bucketMs);
   const [loading, setLoading]         = React.useState(true);
-  const [hover, setHover]             = React.useState<{ dow: number; hour: number; val: number | null } | null>(null);
+  const [hover, setHover]             = React.useState<{ dow: number; hour: number; val: number | null; x: number; y: number } | null>(null);
   const [filterLevel, setFilterLevel] = React.useState<LevelKey | null>(null);
   const [showAnalysis, setShowAnalysis] = React.useState(false);
   const [highlightMode, setHighlightMode] = React.useState<HighlightMode>(null);
@@ -284,8 +285,12 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
     if (!showAnalysis) setShowAnalysis(true);
   };
 
-  const CELL_W = 28, CELL_H = 14, GAP = 2, LEFT_PAD = 42;
-  const panelW = LEFT_PAD + 7 * (CELL_W + GAP) + 48;
+  const panelW = 300;
+  const hoverText = hover
+    ? hover.val !== null
+      ? `${DAYS[hover.dow]} ${fmtHour(hover.hour)} — avg Z-score: ${hover.val.toFixed(2)}σ (${LEVELS.find(level => level.key === getLevel(hover.val))!.label})`
+      : `${DAYS[hover.dow]} ${fmtHour(hover.hour)} — no data`
+    : null;
 
   const content = (
     <PopupWindow style={{
@@ -321,54 +326,58 @@ export function HotnessCalendarPanel({ heatScores, bucketMs, pos, onDragStart, o
       </div>
 
       {/* Body */}
-      <div style={{ padding: "13px 14px 12px", overflowY: "auto", flex: 1 }}>
+      <div style={{ padding: "13px 14px 12px", overflow: "auto", flex: 1 }} onScroll={() => setHover(null)}>
         {loading ? (
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", padding: 32, fontSize: 13 }}>Loading 7 days of data…</div>
         ) : (
           <>
-            {/* Day-of-week column headers */}
-            <div style={{ display: "flex", marginLeft: LEFT_PAD, marginBottom: 4, gap: GAP }}>
-              {DAYS.map(d => (
-                <div key={d} style={{ width: CELL_W, textAlign: "center", fontSize: 9, color: "rgba(255,255,255,0.4)", fontWeight: 700 }}>{d}</div>
+            <div className="iq-hotness-grid">
+              <span />
+              {DAYS.map(d => <div key={d} className="iq-hotness-day">{d}</div>)}
+              {HOURS.map(h => (
+                <React.Fragment key={h}>
+                  <div className="iq-hotness-hour">{fmtHour(h)}</div>
+                  {DAYS.map((day, dow) => {
+                    const val = grid[dow][h];
+                    const key = getLevel(val);
+                    const isHov = hover?.dow === dow && hover?.hour === h;
+                    const label = val === null
+                      ? `${day} ${fmtHour(h)} — no data`
+                      : `${day} ${fmtHour(h)} — avg Z-score: ${val.toFixed(2)}σ (${LEVELS.find(level => level.key === key)!.label})`;
+                    return (
+                      <div
+                        key={dow}
+                        className="iq-hotness-cell"
+                        role="img"
+                        aria-label={label}
+                        style={{
+                          background: levelColor(key),
+                          opacity: cellOpacity(key, dow, h),
+                          borderColor: isHov ? "rgba(255,255,255,0.8)" : "transparent",
+                        }}
+                        onMouseEnter={event => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setHover({
+                            dow, hour: h, val,
+                            x: Math.max(8, Math.min(rect.left, window.innerWidth - 288)),
+                            y: rect.bottom + 52 < window.innerHeight ? rect.bottom + 6 : Math.max(8, rect.top - 46),
+                          });
+                        }}
+                        onMouseLeave={() => setHover(null)}
+                      />
+                    );
+                  })}
+                </React.Fragment>
               ))}
             </div>
-
-            {/* Hour rows */}
-            {HOURS.map(h => (
-              <div key={h} style={{ display: "flex", alignItems: "center", marginBottom: GAP, gap: GAP }}>
-                <div style={{ width: LEFT_PAD - GAP, textAlign: "right", paddingRight: 6, fontSize: 9, color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
-                  {fmtHour(h)}
-                </div>
-                {DAYS.map((_, dow) => {
-                  const val = grid[dow][h];
-                  const key = getLevel(val);
-                  const isHov = hover?.dow === dow && hover?.hour === h;
-                  return (
-                    <div
-                      key={dow}
-                      style={{
-                        width: CELL_W, height: CELL_H, borderRadius: 3,
-                        background: levelColor(key),
-                        opacity: cellOpacity(key, dow, h),
-                        border: isHov ? "1px solid rgba(255,255,255,0.6)" : "1px solid transparent",
-                        boxSizing: "border-box", cursor: "default",
-                        transition: "opacity 0.12s ease, border 0.1s",
-                      }}
-                      onMouseEnter={() => setHover({ dow, hour: h, val })}
-                      onMouseLeave={() => setHover(null)}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+            {hover && hoverText && createPortal(
+              <div className="iq-hotness-tooltip" role="tooltip" style={{ left: hover.x, top: hover.y }}>{hoverText}</div>,
+              document.body
+            )}
 
             {/* Hover tooltip */}
             <div style={{ height: 22, marginTop: 5, fontSize: 11, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>
-              {hover
-                ? hover.val !== null
-                  ? `${DAYS[hover.dow]} ${fmtHour(hover.hour)} — avg Z-score: ${hover.val.toFixed(2)}σ`
-                  : `${DAYS[hover.dow]} ${fmtHour(hover.hour)} — no data`
-                : "Hover a cell to see average hotness"}
+              {hoverText ?? "Hover a cell to see average hotness"}
             </div>
 
             {/* Clickable legend */}

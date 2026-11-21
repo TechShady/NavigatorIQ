@@ -53,7 +53,7 @@ export function PersonaPickerModal({ appVersion, whatsNew, personas, defaultPers
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 99998, background: "rgba(0,0,0,0.92)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <style>{`@keyframes iq-ppmodal-in { from { opacity:0; transform:translateY(-20px) scale(0.97); } to { opacity:1; transform:none; } }`}</style>
-      <PopupWindow style={{ background: "rgba(10,14,28,0.98)", border: "1px solid rgba(69,137,255,0.3)", borderTop: "3px solid #4589FF", borderRadius: 14, width: "100%", maxWidth: 820, boxShadow: "0 24px 80px rgba(0,0,0,0.85),0 0 40px rgba(69,137,255,0.08)", animation: "iq-ppmodal-in 0.3s cubic-bezier(0.34,1.2,0.64,1)", overflow: "hidden", fontFamily: '"Inter",system-ui,sans-serif' }}>
+      <PopupWindow style={{ background: "rgba(10,14,28,0.98)", border: "1px solid rgba(69,137,255,0.3)", borderTop: "3px solid #4589FF", borderRadius: 14, width: "100%", maxWidth: 820, maxHeight: "calc(100dvh - 48px)", boxSizing: "border-box", boxShadow: "0 24px 80px rgba(0,0,0,0.85),0 0 40px rgba(69,137,255,0.08)", animation: "iq-ppmodal-in 0.3s cubic-bezier(0.34,1.2,0.64,1)", overflowX: "hidden", overflowY: "auto", fontFamily: '"Inter",system-ui,sans-serif' }}>
         {/* Header */}
         <div style={{ background: "linear-gradient(135deg,rgba(69,137,255,0.1) 0%,rgba(69,137,255,0.03) 100%)", borderBottom: "1px solid rgba(69,137,255,0.18)", padding: "28px 32px 22px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
@@ -120,7 +120,7 @@ export function PersonaPickerModal({ appVersion, whatsNew, personas, defaultPers
                 </div>
               </div>
               <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.35)", lineHeight: 1.5 }}>
-                Switch personas anytime using the role chip in the header. Customize app links and thresholds in <strong style={{ color: "rgba(255,255,255,0.55)" }}>Settings</strong>.
+                Switch personas anytime using the role chip in the header. Customize metrics and thresholds in <strong style={{ color: "rgba(255,255,255,0.55)" }}>Settings</strong>.
               </div>
             </div>
             <div style={{ marginTop: "auto" }}>

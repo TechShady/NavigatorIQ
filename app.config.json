@@ -3,7 +3,7 @@
   "environmentUrl": "https://guu84124.apps.dynatrace.com",
   "app": {
     "name": "NavigatorIQ Launcher",
-    "version": "0.4.106",
+    "version": "0.4.122",
     "icon": "icon.svg",
     "description": "Persona-driven operational intelligence for Dynatrace (community app)",
     "id": "my.navigator.iq.app",
@@ -23,6 +23,7 @@
       { "name": "storage:system:read", "comment": "read system data" },
       { "name": "storage:security:read", "comment": "read security data" },
       { "name": "storage:user-sessions:read", "comment": "read user session / RUM event data for custom DQL metrics" },
+      { "name": "storage:user.sessions:read", "comment": "read user.sessions data for custom DQL metrics" },
       { "name": "storage:user.events:read", "comment": "read user.events table (RUM/DEM) for custom DQL metrics" },
       { "name": "environment-api:user-sessions:read", "comment": "environment API access to user session data for custom DQL metrics" },
       { "name": "environment-api:metrics:read", "comment": "read metrics v2" },

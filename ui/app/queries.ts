@@ -17,6 +17,33 @@ import type {
 
 // ─── DQL Query Builders ────────────────────────────────────────────────────
 
+export function buildEntityBreakdownQuery(metricKey: string, entityField: string, from: string, to: string, scale: number, dimensions?: string): string {
+  const fields = dimensions?.trim() ? dimensions.split(",").map(dimension => {
+    const field = dimension.trim();
+    return /^entityName\((dt\.entity\.[\w.]+)\)$/.exec(field)?.[1] ?? field;
+  }) : [entityField];
+  if (fields.some(field => !/^[a-zA-Z_][\w]*(?:\.[\w-]+)*$/.test(field))) {
+    throw new Error("Follow the Red dimensions must be metric field names (for example, dt.entity.service).");
+  }
+  const entity = fields.find(field => field === entityField);
+  const names = fields.map(field => field.startsWith("dt.entity.")
+    ? `coalesce(entityName(${field}), toString(${field}), "Unknown")`
+    : `coalesce(toString(${field}), "Unknown")`);
+  const ratio = metricKey === "dt.service.request.failure_rate";
+  const count = ["dt.service.request.failure_count", "dt.service.request.count"].includes(metricKey);
+  const aggregation = ratio
+    ? "failures=sum(dt.service.request.failure_count, scalar:true, default:0), requests=sum(dt.service.request.count, scalar:true)"
+    : count ? `val=sum(${metricKey}, scalar:true)` : `val=avg(${metricKey}, scalar:true)`;
+  const value = ratio ? "if(requests > 0, failures * 100.0 / requests)" : scale === 1 ? "val" : `val * ${scale}`;
+  const displayName = names.length === 1 ? names[0] : `concat(${names.join(', " / ", ')})`;
+  return `timeseries ${aggregation}, from:${from}, to:${to}, by:{${fields.join(", ")}}
+| fieldsAdd avg=${value}
+| filter isNotNull(avg)
+| sort avg desc
+| limit 10
+| fields entityId=${entity ? `toString(${entity})` : '""'}, displayName=${displayName}, avg`;
+}
+
 export function serviceHealthQuery(from: string, to: string, interval = "auto"): string {
   return `timeseries
   err=sum(dt.service.request.failure_count),
@@ -406,6 +433,201 @@ export function buildDqlHeatQuery(metric: HeatMetricConfig, from: string, to: st
   return query;
 }
 
+export function isMobileSessionDrilldown(metric: HeatMetricConfig): boolean {
+  const sessionCountQuery = /^\s*fetch\s+user\.sessions(?:\s*,\s*from\s*:\s*\$\{from\}\s*,\s*to\s*:\s*\$\{to\})?\s*\|\s*filter\s+dt\.rum\.application\.type\s*==\s*"mobile"\s*\|\s*makeTimeseries\s+value\s*=\s*count\(\)\s*,\s*interval\s*:\s*\$\{interval\}\s*,\s*time\s*:\s*start_time\s*$/;
+  return !metric.drilldownQuery?.trim() && metric.dimensionConfig?.dimensions.trim() === "frontend.name" && sessionCountQuery.test(metric.dqlQuery ?? "");
+}
+
+export function getMobileErrorDrilldownFrontend(metric: HeatMetricConfig): string | undefined {
+  const literal = String.raw`("(?:[^"\\]|\\.)*")`;
+  const main = new RegExp(String.raw`^\s*timeseries\s+value\s*=\s*sum\s*\(\s*dt\.frontend\.error\.count\s*\)\s*,\s*filter\s*:\s*frontend\.name\s*==\s*${literal}\s*,\s*from\s*:\s*\$\{from\}\s*,\s*to\s*:\s*\$\{to\}\s*,\s*interval\s*:\s*\$\{interval\}\s*$`).exec(metric.dqlQuery ?? "");
+  const drill = new RegExp(String.raw`^\s*timeseries\s+value\s*=\s*sum\s*\(\s*dt\.frontend\.error\.count\s*,\s*scalar\s*:\s*true\s*\)\s*,\s*by\s*:\s*\{\s*frontend\.name\s*,\s*error\.type\s*\}\s*,\s*filter\s*:\s*frontend\.name\s*==\s*${literal}\s*,\s*from\s*:\s*\$\{from\}\s*,\s*to\s*:\s*\$\{to\}\s*\|\s*fields\s+displayName\s*=\s*concat\s*\(\s*frontend\.name\s*,\s*" / "\s*,\s*coalesce\s*\(\s*error\.type\s*,\s*"Unknown"\s*\)\s*\)\s*,\s*value\s*\|\s*sort\s+value\s+desc\s*$`).exec(metric.drilldownQuery ?? "");
+  if (!main || !drill) return undefined;
+  try {
+    const frontend: unknown = JSON.parse(main[1]);
+    const drillFrontend: unknown = JSON.parse(drill[1]);
+    return typeof frontend === "string" && frontend.trim() && frontend === drillFrontend ? frontend : undefined;
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+}
+
+export function buildDqlDrilldownQuery(metric: HeatMetricConfig, from: string, to: string, interval: string): string | undefined {
+  const errorFrontend = getMobileErrorDrilldownFrontend(metric);
+  if (errorFrontend) return `timeseries value=sum(dt.frontend.error.count, scalar:true),
+  by:{frontend.name, error.type}, filter:frontend.name == ${JSON.stringify(errorFrontend)}, from:${from}, to:${to}
+| fields displayName=concat(frontend.name, " / ", coalesce(error.type, "Unknown")), value, frontend.name, error.type
+| sort value desc`;
+  if (metric.drilldownQuery?.trim()) {
+    return buildDqlHeatQuery({ ...metric, dqlQuery: metric.drilldownQuery }, from, to, interval);
+  }
+
+  if (!isMobileSessionDrilldown(metric)) return undefined;
+
+  return `fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter isNotNull(frontend.name)
+| summarize value=count(), by:{displayName=frontend.name}
+| sort value desc
+| limit 50`;
+}
+
+export function buildMobileErrorDetailQuery(frontend: string, errorType: string | null, from: string, to: string, kind: "history" | "dimension" | "impact", interval = "1h"): string {
+  const filter = `frontend.name == ${JSON.stringify(frontend)} and ${errorType === null ? "isNull(error.type)" : `error.type == ${JSON.stringify(errorType)}`}`;
+  if (kind === "history") return `timeseries value=sum(dt.frontend.error.count, default:0), filter:${filter}, from:${from}, to:${to}, interval:${interval}`;
+  const base = `fetch user.events, from:${from}, to:${to}
+| filter ${filter}
+| filter characteristics.has_error == true`;
+  if (kind === "dimension") return `${base}
+| summarize value=count(), by:{country=geo.country.name, os=os.name}
+| sort value desc`;
+  return `${base}
+| summarize events=count(), sessions=countDistinct(dt.rum.session.id), users=countDistinct(dt.rum.instance.id)`;
+}
+
+export function mobileSessionHistoryWindow(to: string, nowMs = Date.now()): { from: string; to: string; startMs: number } {
+  const endMs = resolveDqlTimeframeEnd(to, nowMs);
+  const alignedEnd = Math.floor(Math.min(endMs, nowMs - 2 * 3600000) / 3600000) * 3600000;
+  const startMs = alignedEnd - 7 * 86400000;
+  return { from: `"${new Date(startMs).toISOString()}"`, to: `"${new Date(alignedEnd).toISOString()}"`, startMs };
+}
+
+export function resolveDqlTimeframeEnd(to: string, nowMs = Date.now()): number {
+  const relative = /^now\(\)(?:-(\d+)(ms|s|m|h|d|w))?$/.exec(to);
+  const units: Record<string, number> = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
+  const endMs = relative
+    ? nowMs - (relative[1] ? Number(relative[1]) * units[relative[2]] : 0)
+    : Date.parse(to.replace(/^"|"$/g, ""));
+  if (!Number.isFinite(endMs)) throw new Error("Cannot determine the selected timeframe end for history.");
+  return endMs;
+}
+
+export function buildDqlDetailQuery(template: string, row: string, from: string, to: string, interval?: string): string {
+  const required = interval ? ["row", "from", "to", "interval"] : ["row", "from", "to"];
+  for (const name of required) {
+    if (!template.includes(`\${${name}}`)) throw new Error(`Detail DQL must include \${${name}}.`);
+  }
+  return template.replace(/\$\{(row|from|to|interval)\}/g, (_, key: string) => {
+    if (key === "row") return JSON.stringify(row);
+    if (key === "from") return from;
+    if (key === "to") return to;
+    if (!interval) throw new Error("The dimension query cannot use ${interval}.");
+    return interval;
+  });
+}
+
+function historyTimestampMs(value: unknown): number {
+  // The query SDK converts nested timeframe timestamps to Date; raw DQL uses ISO strings.
+  return value instanceof Date ? value.getTime() : typeof value === "string" ? Date.parse(value) : NaN;
+}
+
+export function parseDqlHistory(records: DqlRecord[], startMs: number, endMs: number, bucketMs: number): number[] {
+  const record = records[0];
+  if (records.length !== 1 || !Array.isArray(record?.value) || !record.timeframe || typeof record.timeframe !== "object"
+    || !("start" in record.timeframe) || !("end" in record.timeframe)
+    || historyTimestampMs(record.timeframe.start) !== startMs || historyTimestampMs(record.timeframe.end) !== endMs
+    || record.value.length !== (endMs - startMs) / bucketMs) {
+    throw new Error("History query must return one complete value array with the requested timeframe and interval.");
+  }
+  const values = record.value.map((v: unknown) => typeof v === "number" ? v : NaN);
+  if (values.length < 2 || values.some((v: number) => !Number.isFinite(v) || v < 0))
+    throw new Error("History contains missing, negative, or invalid values; forecasting requires complete non-negative values.");
+  return values;
+}
+
+export interface DqlDimensionSlice {
+  name: string;
+  value: number;
+  avg?: number;
+  unit?: string;
+  numerator?: number;
+  denominator?: number;
+}
+
+export function aggregateDqlDimensions(records: Record<string, unknown>[], field: "country" | "os"): DqlDimensionSlice[] {
+  const rate = records.some(record => "numerator" in record || "denominator" in record);
+  const grouped = new Map<string, { value: number; numerator: number }>();
+  const nonNegative = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
+  for (const record of records) {
+    const value = rate ? record.denominator : record.value;
+    const numerator = rate ? record.numerator : 0;
+    if (!("country" in record) || !("os" in record)
+      || (record.country != null && typeof record.country !== "string")
+      || (record.os != null && typeof record.os !== "string")
+      || !nonNegative(value) || !nonNegative(numerator) || (rate && numerator > value)) {
+      throw new Error("Dimension query must return country and os with non-negative numeric value, or numeric numerator and denominator with 0 <= numerator <= denominator.");
+    }
+    const name = typeof record[field] === "string" && record[field] ? record[field] : "Unknown";
+    const group = grouped.get(name) ?? { value: 0, numerator: 0 };
+    group.value += value;
+    group.numerator += numerator;
+    if (!Number.isFinite(group.value) || !Number.isFinite(group.numerator)) throw new Error("Dimension totals exceed the supported numeric range.");
+    grouped.set(name, group);
+  }
+  return Array.from(grouped, ([name, group]) => rate
+    ? { name, value: group.value, numerator: group.numerator, denominator: group.value, avg: group.value > 0 ? 100 * (group.numerator / group.value) : 0, unit: "%" }
+    : { name, value: group.value })
+    .filter(slice => !rate || slice.value > 0)
+    .sort((a, b) => b.value - a.value);
+}
+
+export function dqlHistoryChunks(startMs: number, endMs: number, bucketMs: number): { startMs: number; endMs: number }[] {
+  const count = (endMs - startMs) / bucketMs;
+  if (!Number.isInteger(count) || count < 2) throw new Error("Invalid history window or interval.");
+  const chunks = Math.ceil(count / 1400);
+  return Array.from({ length: chunks }, (_, i) => ({
+    startMs: startMs + Math.floor(count * i / chunks) * bucketMs,
+    endMs: startMs + Math.floor(count * (i + 1) / chunks) * bucketMs,
+  }));
+}
+
+export function buildMobileSessionDetailQuery(frontend: string, from: string, to: string, kind: "history" | "dimension" | "impact", interval = "1h"): string {
+  const base = `fetch user.sessions, from:${from}, to:${to}
+| filter dt.rum.application.type == "mobile"
+| expand frontend.name
+| filter frontend.name == ${JSON.stringify(frontend)}`;
+  if (kind === "history") return `${base}
+| makeTimeseries value=count(default:0), interval:${interval}, time:start_time, from:toTimestamp(${from}), to:toTimestamp(${to})`;
+  if (kind === "dimension") return `${base}
+| summarize value=count(), by:{country=geo.country.name, os=os.name}
+| sort value desc`;
+  return `${base}
+| summarize sessions=count(), crashes=countIf(error.has_crash == true), crashCoverage=countIf(isNotNull(error.has_crash)), errors=countIf(error.count > 0), errorCoverage=countIf(isNotNull(error.count))`;
+}
+
+export function parseMobileSessionHistory(records: DqlRecord[], startMs?: number): number[] | null {
+  if (records.length !== 1 || !Array.isArray(records[0].value)) return null;
+  if (startMs !== undefined) {
+    const timeframe = records[0].timeframe;
+    if (!timeframe || typeof timeframe !== "object" || !("start" in timeframe) || !("end" in timeframe)
+      || historyTimestampMs(timeframe.start) !== startMs || historyTimestampMs(timeframe.end) !== startMs + 7 * 86400000
+      || records[0].value.length !== 168) return null;
+  }
+  const values = records[0].value.map((value: unknown) =>
+    typeof value === "number" || (typeof value === "string" && value.trim() !== "") ? Number(value) : NaN);
+  return values.length >= 2 && values.every((value: number) => Number.isFinite(value) && value >= 0) ? values : null;
+}
+
+export function parseDqlDrilldownRecords(records: DqlRecord[]): { displayName: string; value: number; frontend?: string; errorType?: string | null }[] | null {
+  const rows = records.map((record) => {
+    const rawValue = record.value;
+    const value = typeof rawValue === "number" || (typeof rawValue === "string" && rawValue.trim() !== "")
+      ? Number(rawValue)
+      : NaN;
+    if (typeof record.displayName !== "string" || !record.displayName.trim() || !Number.isFinite(value)) return null;
+    const row: { displayName: string; value: number; frontend?: string; errorType?: string | null } = { displayName: record.displayName, value };
+    if (typeof record["frontend.name"] === "string" && (typeof record["error.type"] === "string" || record["error.type"] === null)) {
+      row.frontend = record["frontend.name"];
+      row.errorType = record["error.type"];
+    }
+    return row;
+  });
+  if (rows.some((row) => row === null)) return null;
+  return rows.filter((row): row is NonNullable<typeof row> => row !== null).sort((a, b) => b.value - a.value);
+}
+
 // Extract the DT metric key from a simple timeseries DQL query, e.g. "timeseries val=avg(dt.host.cpu.usage), ..."
 function extractMetricKeyFromDql(dqlQuery?: string): string | undefined {
   if (!dqlQuery) return undefined;
@@ -476,7 +698,7 @@ export function makeMetricFmt(unit?: MetricDisplayUnit): (v: number) => string {
   }
 }
 
-function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] {
+export function parseMetricTimeline(raw: number[], unit?: MetricDisplayUnit): number[] {
   switch (unit) {
     case "ns->ms": return raw.map((v) => v / 1000000);
     case "µs->ms": return raw.map((v) => v / 1000);
